@@ -1,0 +1,190 @@
+/* Meowtro design tokens — spec §4.
+   Single source of truth. Every colour, size and duration in the app
+   resolves here. Nothing downstream hardcodes a hex. */
+
+/* Three themes, one mechanism. `data-theme` on :root selects between them
+   (map/MapControls.tsx cycles it); every block below redefines the SAME
+   token names, so nothing downstream branches on the theme.
+
+     paper (default, no attribute)  rev 1-3: cream stock, Fraunces, ink
+                                    linework, square corners, no shadow,
+                                    paper grain on.
+     light / dark                   rev 4: glass HUD, native display stack,
+                                    rounded translucent panels, real blur
+                                    and shadow, grain off.
+
+   Paper is not "glass with the blur turned down" conceptually, but it IS
+   that mechanically: it sets --blur-glass to 0, --shadow-glass and
+   --edge-highlight to transparent, and --surface-glass to an opaque
+   raised-paper mix. That's what lets shell.css carry one set of panel
+   rules instead of a paper set and a glass set. */
+
+:root {
+  /* Ground and ink — paper (default) */
+  --paper: #f4efe4;
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+
+  /* The one accent, and the only other colour */
+  --rust: #9a3f2b;
+  --sage: #6b7f62;
+
+  /* Derived — used for rules, wells, hover states.
+     Always mixed from the five above, never a new hex. */
+  --rule: color-mix(in srgb, var(--ink) 18%, transparent);
+  --rule-strong: color-mix(in srgb, var(--ink) 42%, transparent);
+  --well: color-mix(in srgb, var(--ink) 4%, transparent);
+  /* EXPERIMENTAL — mockup only. A light putty tone for extruded buildings:
+     paper reads as flush with the ground, pure ink reads as a black block. */
+  --building: color-mix(in srgb, var(--paper) 70%, var(--ink-soft) 30%);
+
+  /* Type — Fraunces is loaded for the paper theme (index.html). The glass
+     themes swap --font-display to the native stack below; the webfont then
+     simply goes unused rather than being conditionally loaded. */
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Material — paper. Panels are bordered, square and flat: the glass
+     recipe below resolves to no-ops here so one rule set serves all three
+     themes. --panel-border is the one token that has to exist for paper's
+     sake specifically (glass sets it to `none` — depth comes from the
+     shadow/highlight pair instead of a drawn edge). */
+  --panel-border: 1px solid var(--rule-strong);
+  --blur-glass: 0px;
+  --shadow-glass: 0 0 #0000;
+  --edge-highlight: 0 0 #0000;
+  --surface-glass: color-mix(in srgb, var(--paper) 70%, #fff);
+  --surface-glass-strong: color-mix(in srgb, var(--paper) 60%, #fff);
+  --surface-hover: color-mix(in srgb, var(--paper) 60%, var(--ink) 6%);
+
+  /* Scale — 1.25 minor third off a 16px body */
+  --t-xs: 0.7rem;
+  --t-sm: 0.8rem;
+  --t-base: 1rem;
+  --t-lg: 1.25rem;
+  --t-xl: 1.563rem;
+  --t-2xl: 1.953rem;
+  --t-3xl: 2.441rem;
+  --t-4xl: 3.052rem;
+
+  /* Space — 8px base */
+  --s-1: 0.25rem;
+  --s-2: 0.5rem;
+  --s-3: 0.75rem;
+  --s-4: 1rem;
+  --s-6: 1.5rem;
+  --s-8: 2rem;
+  --s-12: 3rem;
+  --s-16: 4rem;
+
+  /* Paper does not have rounded corners. 4px is the ceiling.
+     (The glass themes raise this to 20px — see below.) */
+  --radius: 2px;
+
+  /* Motion — spec §8. Restraint is the style. */
+  --dur-micro: 120ms;
+  --dur-plate: 700ms;
+  --dur-ink: 900ms;
+  --ink-stagger: 60ms;
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+/* --- Glass, shared by both HUD themes, rev 4 --------------------------
+   One rounded scale (not per-component), one blur amount. The shadow and
+   highlight are NOT shared: they're tuned per theme below, because a pair
+   that reads right on dark glass is too heavy / too invisible on light
+   glass and vice versa. Deliberately not derived from --ink either — --ink
+   flips from near-black to near-white between these two, while a shadow
+   has to stay dark-toned and an edge highlight light-toned in both. */
+:root[data-theme='light'],
+:root[data-theme='dark'] {
+  --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --radius: 20px;
+  --panel-border: none;
+  --blur-glass: 24px;
+  --surface-glass: color-mix(in srgb, var(--paper) 70%, transparent);
+  --surface-glass-strong: color-mix(in srgb, var(--paper) 70%, transparent);
+  --surface-hover: color-mix(in srgb, var(--paper) 85%, transparent);
+}
+
+/* Light glass. --rust here is #c2410c, not paper's #9a3f2b and not the
+   original #e8622e: against this theme's near-white --paper, #e8622e is
+   only 3.07:1 as text (plate labels, selected rail item, hover states),
+   below the 4.5:1 AA floor. #c2410c is 4.69:1. Dark's --rust passes
+   already at 7.11:1, and paper's #9a3f2b passes against cream. */
+:root[data-theme='light'] {
+  --paper: #f3f4f7;
+  --ink: #191b20;
+  --ink-soft: #696d7c;
+  --rust: #c2410c;
+  --sage: #5b9a4c;
+
+  --shadow-glass: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
+}
+
+/* Dark glass. Same five names, different values; every derived token above
+   recomputes automatically since color-mix() reads the live property. */
+:root[data-theme='dark'] {
+  --paper: #12141c;
+  --ink: #f4f5f8;
+  --ink-soft: #9296a6;
+  --rust: #ff7a45;
+  --sage: #6fbf5c;
+
+  /* Heavier shadow, subtler highlight than light glass above — tuned for
+     dark panels sitting on an already-dark page. */
+  --shadow-glass: 0 12px 40px rgba(0, 0, 0, 0.28);
+  --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-micro: 1ms;
+    --dur-plate: 1ms;
+    --dur-ink: 1ms;
+    --ink-stagger: 0ms;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 14, 'SOFT' 0, 'WONK' 0;
+  font-size: var(--t-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Paper grain, spec §4 -------------------------------------------
+   Fixed overlay, multiply blend, above the map and below the UI.
+   This one detail does most of the work of looking printed. */
+.grain {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+.grain[data-on='false'] {
+  display: none;
+}
+/* Glass does not have paper grain. Hidden here rather than by unmounting
+   <Grain /> in App.tsx so the theme switch stays one attribute flip with no
+   React state threaded through it — the same reason every other paper/glass
+   difference is a token. Note this cannot be `[data-theme] .grain`: paper is
+   also reachable *with* the attribute set (the cycle writes data-theme="paper"
+   after a full loop), so the glass themes are named explicitly. */
+:root[data-theme='light'] .grain,
+:root[data-theme='dark'] .grain {
+  display: none;
+}

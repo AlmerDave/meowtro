@@ -1,0 +1,280 @@
+/* The app shell: where the map, the index rail and the plate sit.
+   Only placement lives here. Every colour and size is a token. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+/* This is meant to read as a fixed, single-screen map, not a page — the
+   document has no scrollable content since phase 4's scroll camera was
+   reverted, so the native scrollbar affordance is hidden. Scrolling itself
+   (wheel, trackpad, touch) still works; only the visible track/thumb are
+   gone, and over the map the wheel is MapLibre's. Scoped to the map
+   page — the styleguide imports this file too and should keep its
+   scrollbar, it's an actual scrolling document. */
+body:has(.map) {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* legacy Edge */
+}
+body:has(.map)::-webkit-scrollbar {
+  display: none; /* Chromium (Edge, Chrome, Safari) */
+}
+
+/* --- Map ---------------------------------------------------------------
+   Two classes, deliberately. maplibre-gl.css sets `.maplibregl-map {
+   position: relative }` and is injected after this file, so a plain `.map`
+   rule loses the tie and `inset: 0` stops applying. The container then has no
+   height, and a zero-height MapLibre map requests no tiles, fires no `load`
+   and reports no error: it just sits there looking like a network problem. */
+.maplibregl-map.map,
+.map {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+/* MapLibre paints its own background; the paper comes from the style object. */
+.maplibregl-canvas:focus {
+  outline: none;
+}
+
+/* --- Map labels, spec §6 ----------------------------------------------- */
+.map-labels {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.map-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+}
+.map-label[data-kind='park'],
+.map-label[data-kind='landmark'] {
+  font-family: var(--font-display);
+  font-size: var(--t-sm);
+  letter-spacing: 0.01em;
+}
+.map-label[data-kind='park'] {
+  color: var(--sage);
+}
+.map-label[data-kind='landmark'] {
+  color: var(--ink);
+}
+
+/* --- Map controls, EXPERIMENTAL mockup ---------------------------------
+   Compass + 2D/3D toggle, styled to match the rail/plate instead of
+   MapLibre's default control chrome. See map/MapControls.tsx. */
+.map-controls {
+  position: fixed;
+  z-index: 3;
+  right: var(--s-8);
+  bottom: var(--s-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+/* One panel recipe for all three themes: the paper theme resolves the blur
+   to 0 and the shadow/highlight to transparent while keeping a drawn
+   border, the glass themes do the reverse (tokens.css). At 2.25rem square,
+   glass's --radius: 20px reads as a circle and paper's 2px as a stamped
+   square, so the corner needs no separate token either. */
+.map-control {
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  color: var(--ink);
+  cursor: pointer;
+}
+/* Its own token, not `var(--well)`: this replaces the panel's whole
+   background rather than washing over it (unlike .rail button:hover, which
+   sits inside an already-painted panel), so a 4% ink tint would strip the
+   glass themes' translucency off on hover instead of tinting it. */
+.map-control:hover {
+  background: var(--surface-hover);
+}
+.map-control-text {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.06em;
+}
+
+/* --- Cat markers, flat-mode DOM pin, map/CatMarkers.tsx -----------------
+   Positioning is maplibregl.Marker's job (it appends its own container
+   above the canvas); only the glyph's own look lives here. The pitched-mode
+   ground-plane dot is a MapLibre circle layer instead and needs no CSS. */
+.cat-pin-glyph {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink) 35%, transparent));
+}
+
+/* --- Index rail --------------------------------------------------------- */
+.rail {
+  position: fixed;
+  z-index: 3;
+  top: var(--s-8);
+  left: var(--s-8);
+  width: 15rem;
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  /* Clips the children's own borders to the rounded corner on the glass
+     themes; a no-op at paper's 2px. */
+  overflow: hidden;
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+.rail h1 {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  font-size: var(--t-xl);
+  font-variation-settings: 'opsz' 96, 'WONK' 1;
+  font-weight: 600;
+  border-bottom: 1px solid var(--rule);
+}
+.rail p {
+  margin: 0;
+  padding: var(--s-3) var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  border-bottom: 1px solid var(--rule);
+}
+.rail button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  padding: var(--s-2) var(--s-4);
+  text-align: left;
+}
+.rail button:last-child {
+  border-bottom: 0;
+}
+.rail button:hover {
+  background: var(--well);
+}
+.rail button[data-selected='true'] {
+  color: var(--rust);
+}
+.rail button span {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
+/* --- Plate placement, spec §7 ------------------------------------------
+   Placement only. Motion owns opacity/transform (plate/Plate.tsx) — a CSS
+   transition on the same properties would fight it every open. */
+.plate {
+  position: fixed;
+  z-index: 3;
+  top: var(--s-8);
+  right: var(--s-8);
+  width: 26.25rem;
+  max-height: calc(100vh - 4rem);
+  overflow: auto;
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+.plate-head,
+.plate-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-4);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  padding: var(--s-3) var(--s-4);
+}
+.plate-head {
+  border-bottom: 1px solid var(--rule);
+  color: var(--rust);
+  letter-spacing: 0.1em;
+}
+.plate-foot {
+  border-top: 1px solid var(--rule);
+  color: var(--ink-soft);
+}
+.plate-foot button {
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+.plate-foot button:hover {
+  color: var(--rust);
+}
+.plate-figure {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  border-bottom: 1px solid var(--rule);
+  background: var(--well);
+  color: var(--ink-soft);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+.plate-body {
+  padding: var(--s-4);
+}
+.plate-body h3 {
+  font-size: var(--t-2xl);
+  font-variation-settings: 'opsz' 72, 'WONK' 1;
+  font-weight: 600;
+  margin: 0;
+  line-height: 1.1;
+}
+.plate-body .sub {
+  color: var(--ink-soft);
+  font-size: var(--t-sm);
+  margin: var(--s-1) 0 var(--s-4);
+}
+.plate-body dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 9rem 1fr;
+  gap: var(--s-2) var(--s-4);
+  font-size: var(--t-sm);
+}
+.plate-body dt {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  padding-top: 0.2em;
+}
+.plate-body dd {
+  margin: 0;
+}
+

@@ -7,14 +7,39 @@ single pin — because cats don't sit still. Click one and the map eases over, a
 specimen plate opens, and the cat renders as a slowly-turning 3D figure in a
 pencil-and-ink shader.
 
-Cream paper. Ink linework. Pencil hatching for turf. No glass cards, no neon,
-no purple gradient.
+A **light / dark glass HUD** — translucent blurred panels, real shadow, one
+warm accent — switched day-to-night from a button on the map. A third theme,
+**paper** (cream stock, ink linework, pencil hatching for turf, the original
+field-guide identity), is fully built and one attribute away, just not on the
+toggle. No neon, no purple gradient, in any of them.
 
 ## Status
 
-Design phase. Nothing built yet.
+**Phase 5 of 6 built.** Design system, registry bridge, the BGC map with
+territory polygons, and the specimen plate with its 3D cat. Phase 4's
+scroll-driven camera was built and then reverted — the map's drag and zoom
+are plain MapLibre now. Remaining: phase 6, polish and proof.
 
-- **Full spec:** [`docs/superpowers/specs/2026-08-16-meowtro-design.md`](docs/superpowers/specs/2026-08-16-meowtro-design.md)
+- **Build plan — start here:** [`docs/superpowers/plans/2026-08-16-meowtro-build-plan.md`](docs/superpowers/plans/2026-08-16-meowtro-build-plan.md)
+  The checkpoint file. Records what is done, what is next, and the exact next command.
+- **Design spec:** [`docs/superpowers/specs/2026-08-16-meowtro-design.md`](docs/superpowers/specs/2026-08-16-meowtro-design.md)
+- **Design system:** [`app/front-end/src/tokens.css`](app/front-end/src/tokens.css)
+  All three themes live here. Every paper/glass difference is the same token
+  name with a different value — nothing downstream branches on the theme.
+- **Registry bridge:** [`app/front-end/src/app.css`](app/front-end/src/app.css)
+  Written once. Every component installed after it inherits the palette.
+
+```bash
+cd app/front-end && npm install && npm run dev
+#   /                  the app — map, territories, specimen plate
+#   /styleguide.html   the design system, section 06 is the bridge
+```
+
+Rev 2 changed the motion goal: this is a vehicle for learning how to integrate
+animation libraries and assemble from component registries. Six libraries, each
+owning one named moment — see §8 of the spec. Only the map style, the territory
+layers, the cat markers and the paper grain are hand-authored; everything else
+installs.
 
 ## The short version
 

@@ -1,0 +1,27 @@
+<!doctype html>
+<!-- data-theme is set here, not in React: a bare :root IS the paper theme
+     (tokens.css), so without it the page would paint cream for one frame
+     before the app mounted and corrected it. Light is the shipped default;
+     the map's toggle moves between light and dark from there. Set this to
+     "paper" to bring rev 1-3's field-guide identity back — it is still
+     fully built, just off the toggle (see TOGGLE_THEMES in map/style.ts). -->
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Meowtro · Community cats of Bonifacio Global City</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Fraunces is the paper theme's display face only; the glass themes
+         use the native stack. Kept loaded so paper stays one attribute away
+         rather than one dependency away. -->
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

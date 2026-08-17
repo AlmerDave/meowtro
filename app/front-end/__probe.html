@@ -1,0 +1,59 @@
+<!doctype html>
+<html>
+  <body style="margin:0">
+    <div id="out" style="font:13px monospace; white-space:pre-wrap; padding:8px"></div>
+    <div id="map" style="width:900px;height:420px"></div>
+    <script type="module">
+      import * as maplibregl from 'maplibre-gl'
+      import { Protocol } from 'pmtiles'
+      import '/src/tokens.css'
+      import { buildStyle } from '/src/map/style.ts'
+      import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
+      maplibregl.setWorkerUrl(workerUrl)
+
+      const out = document.getElementById('out')
+      const log = (m) => (out.textContent += m + '\n')
+      window.onerror = (e) => log('WINDOW ERROR: ' + e)
+      window.addEventListener('unhandledrejection', (e) => log('REJECTION: ' + e.reason))
+
+      const proto = new Protocol()
+      maplibregl.addProtocol('pmtiles', proto.tile)
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: buildStyle(),
+        center: [121.05, 14.551],
+        zoom: 14.6,
+        renderWorldCopies: false,
+        attributionControl: { compact: true },
+        minZoom: 13.5,
+        maxZoom: 17,
+        dragRotate: false,
+      })
+      map.on('error', (e) => log('MAP ERROR: ' + (e.error?.message ?? JSON.stringify(e))))
+      map.on('style.load', () => log('STYLE OK'))
+      map.on('load', () => log('LOAD OK'))
+      map.once('idle', () => log('IDLE'))
+
+      setTimeout(async () => {
+        log('workerUrl: ' + maplibregl.getWorkerUrl())
+        log('isSourceLoaded: ' + map.isSourceLoaded('bgc'))
+        log('roads features: ' + map.querySourceFeatures('bgc', { sourceLayer: 'roads' }).length)
+        try {
+          const tj = await proto.tile(
+            { type: 'json', url: 'pmtiles:///bgc.pmtiles' },
+            new AbortController()
+          )
+          log('DIRECT tilejson: ' + JSON.stringify(tj.data).slice(0, 200))
+          const t = await proto.tile(
+            { type: 'arrayBuffer', url: 'pmtiles:///bgc.pmtiles/15/27402/15045' },
+            new AbortController()
+          )
+          log('DIRECT tile bytes: ' + (t.data ? t.data.byteLength : 'null'))
+        } catch (err) {
+          log('DIRECT FAIL: ' + err.message)
+        }
+      }, 5000)
+    </script>
+  </body>
+</html>

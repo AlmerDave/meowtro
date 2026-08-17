@@ -1,8 +1,8 @@
 # Meowtro — Design
 
 **Date:** 2026-08-16
-**Revised:** 2026-08-16 (rev 2 — motion goal changed, see §0; rev 3 — opt-in 3D map mode, see §0b)
-**Status:** Approved design. Design system implemented, app not yet built.
+**Revised:** 2026-08-16 (rev 2 — motion goal changed, see §0; rev 3 — opt-in 3D map mode, see §0b; rev 4 — visual identity pivot to a dark/light glass HUD, see §0c); 2026-08-18 (rev 5 — rev 4's pivot downgraded from a replacement to a third theme, see §0d)
+**Status:** Rev 5 implemented. Rev 4's glass HUD ships as the app's two toggleable themes (light default, dark); rev 1-3's field-guide identity is **not** deleted after all — it survives as a third, fully-built theme kept off the toggle. See §0d.
 **Scope:** v1 only. v2 is sketched at the end to protect the seams, not to be built.
 
 ---
@@ -86,6 +86,110 @@ optional way of looking at the same map.
 
 ---
 
+## 0c. What changed in rev 4, and why
+
+Rev 1-3 committed to a single, non-negotiable identity: a 1950s naturalist
+field guide, deliberately reacting against "the default failure mode...
+dark UI, glassmorphism, a purple-blue gradient, Inter, and a neon accent"
+(§4, rev 1-3). That defence held for three revisions.
+
+**Rev 4 reverses it, deliberately and with eyes open.** The user supplied
+two reference mockups (`docs/images-reference/dark-theme.jpg`,
+`light-theme.jpg`) specifying a dark/light glass-panel HUD for this exact
+app — same content model, named cats, plate numbering, `LINE 03 · TRACK
+38TH`-style designations — which is, feature for feature, the look §4 was
+written to avoid. This was raised directly and confirmed: the call is a
+full pivot, not a variant living alongside the field guide.
+
+This is not the first time the idea surfaced. The build plan's decision
+log already recorded a "night-mode variant" backlog item, scoped as a dark
+HUD **alongside** the cream design, auto-switched by time of day, with
+territories visible only on selection. Rev 4 supersedes that framing: both
+palettes now use the HUD language (there is no cream variant left to
+switch back to), and the toggle is user-controlled, not time-based. One
+piece of that old note is kept — territories move from hatching to a glow
+treatment, detailed in §6.
+
+**What did not change.** The territory concept (§2), the plate content and
+route-designation motif (§3), the v1/v2 data seam (§9), and the motion
+library curriculum (§8) — none of those depend on the paper-vs-glass
+material choice.
+
+**Why the anti-slop checklist survives, rewritten rather than deleted.**
+"No AI slop" was never really about avoiding dark UI or rounded corners
+specifically — those were rev 1's chosen tells for that era's default
+failure mode. The actual constraint, restated: *could this have been
+produced by prompting for a nice website, with nobody making a deliberate
+choice at any step?* Rev 4's checklist (§4) targets 2026's actual tells
+instead: Inter/Roboto/Space Grotesk as body/display type, the default
+indigo-to-purple gradient, and flat semi-opaque rectangles standing in for
+real glass. Doing glassmorphism *well* — real blur, one deliberate accent
+colour, a material that holds up next to a real Apple HIG surface — is a
+harder, more specific commitment than avoiding the aesthetic altogether,
+which is the same logic rev 1 used to justify committing to cream and ink.
+
+**On the font complaint that started this.** Fraunces was never the
+generic-AI tell — a live check turned up the opposite: Inter, Roboto and
+Space Grotesk are what a generator defaults to, and Fraunces was rev 1's
+specific rejection of that. What reads as uncanny in the current build is
+more likely the `WONK` axis (`shell.css`, headings set `'WONK' 1`), which
+deliberately distorts letterforms for a hand-inked wobble — a legitimate
+choice for a print pastiche, and an odd one once the print pastiche itself
+is gone. Rev 4 drops Fraunces for the native `-apple-system`/`system-ui`
+stack: no webfont weight, and it matches the reference's Apple-HIG-adjacent
+card language natively rather than approximating it. `JetBrains Mono`
+stays for plate/coordinate labels — it was never the part that was flagged.
+
+---
+
+## 0d. What changed in rev 5, and why
+
+Rev 4 was written as a *replacement*: "the call is a full pivot, not a
+variant living alongside the field guide" (§0c), and rev 1-3's cream
+identity was to be deleted. Rev 5 keeps the pivot's outcome — the app ships
+the glass HUD, light by default, dark by toggle — but **does not delete the
+field guide.**
+
+The reason is mechanical, not sentimental. Rev 4 had already built a
+`data-theme` attribute on `:root` with two complete palettes behind it, and
+every single thing that separated paper from glass (colour, radius, border,
+blur, shadow, edge highlight, surface, display face) turned out to be
+expressible as a value of a token that already had to exist for the
+light/dark split anyway. Paper as a *third value* of that same mechanism
+costs one CSS block and changes no component. Deleting it would have cost
+more edits than keeping it.
+
+So:
+
+- **`light` and `dark`** are the shipped themes. `light` is the default,
+  declared as `data-theme="light"` on `<html>` in `index.html` — a bare
+  `:root` is the paper theme, so the default has to be stated or the page
+  flashes cream before React mounts.
+- **`paper`** is complete and reachable (`data-theme="paper"`), including
+  the grain overlay and the Fraunces webfont, but is **not** on the map's
+  theme button. The single thing excluding it is the `TOGGLE_THEMES` array
+  in `map/style.ts`. The styleguide still switches all three, so the paper
+  theme stays exercised rather than rotting.
+- Rev 4's claim that "there is no cream variant left to switch back to"
+  (§0c) is therefore **withdrawn**. There is one; it is just not offered.
+
+**Also folded in at rev 5**, from the branch that had continued on the rev
+1-3 line while rev 4 was built: the cat markers (a DOM pin in flat view, a
+ground-plane `circle` with `circle-pitch-alignment: 'map'` in pitched view),
+the shared centroid helper they and rev 4's glow both use, native `sky`
+atmosphere for the 3D view, and the camera recentre onto Milo's territory.
+Rev 4's glow and rev 3's markers were developed independently and both
+claimed the MapLibre source id `territory-centroids`; they now hold separate
+sources, because the marker layer tears its own down on every flat/3D toggle
+and the glow must not inherit that lifecycle.
+
+**What did not change.** Everything §0c listed as surviving the rev 4 pivot
+(the territory concept, the plate content, the v1/v2 data seam, the motion
+curriculum) survives rev 5 too, plus rev 4's own glass material and theme
+machinery, which rev 5 only extended by one value.
+
+---
+
 ## 1. What this is
 
 An interactive field guide to the community cats of Bonifacio Global City,
@@ -97,9 +201,9 @@ Goals, in priority order:
 1. **Learn animation-library integration.** Six libraries, each with exactly
    one job in the app, each teaching a pattern the others don't. §8 is the
    real spine of this document.
-2. **A visual identity that could not have come from a template.** Unchanged
-   from rev 1 and non-negotiable — the libraries serve the art direction, not
-   the reverse.
+2. **A visual identity that could not have come from a template.** The
+   specific identity changed in rev 4 (§0c, §4); the constraint itself
+   didn't — the libraries serve the art direction, not the reverse.
 3. **A real community tool, eventually.** BGC has an actual cat-feeder
    community. v1 is seeded and offline, but the data layer is built so a real
    backend slots in behind it without touching the UI.
@@ -146,64 +250,94 @@ no route graph.
 
 ---
 
-## 4. Art direction — naturalist field guide
+## 4. Art direction — dark/light glass HUD (rev 4)
 
-The brief was explicitly "no AI slop." The test: **could this have been
-produced by prompting for a nice website?** The default failure mode is dark
-UI, glassmorphism, a purple-blue gradient, Inter, and a neon accent. The
-defence is not taste, it is commitment to a specific referent.
+The brief, restated for rev 4: **could this have been produced by prompting
+for a nice website, with nobody making a deliberate choice at any step?**
+The 2026 default failure mode is Inter/Roboto/Space Grotesk type, a default
+indigo-to-purple gradient, and flat semi-opaque rectangles standing in for
+real glass. The defence is the same as rev 1's: commit to a specific
+referent and hold every value to it, rather than avoid a whole aesthetic
+wholesale.
 
-The referent: a 1950s naturalist's field survey. Cream stock, letterpress
-serif, ink linework, pencil hatching, specimen plates numbered in the corner.
+The referent: the two user-supplied mockups
+(`docs/images-reference/dark-theme.jpg`, `light-theme.jpg`) — a
+translucent-glass HUD close to Apple's Find My/Maps card language. Rounded
+surfaces, real material depth (blur plus a crisp highlight edge plus a soft
+colour-matched shadow, not a flat rectangle with `border-radius`), one warm
+accent used for selection and glow, one green reserved for parks.
 
-> **Why this survives rev 2.** Heavy motion over a generic look reads as a
-> template with plugins. Heavy motion over a committed print referent is the
-> combination that actually distinguishes the awwwards reference class. The
-> static identity is what stops the animation from being the whole idea.
+> **Why rev 1-3's identity is gone, not kept as a variant.** Considered and
+> rejected: keeping cream-and-ink as a "day" mode and this as "night." Two
+> reference images in the same HUD language, not one cream + one dark, is
+> what the user actually supplied — see §0c.
 
-**Implemented** in `src/tokens.css`. Every colour, size and duration in the
-app resolves there; nothing downstream hardcodes a hex.
+**Implemented** in `src/tokens.css`. Two full palettes, light and dark,
+selected by a `data-theme` attribute on `:root` and toggled by the user, not
+by `prefers-color-scheme`. The five token names from rev 1-3 are kept
+(`--paper`, `--ink`, `--ink-soft`, `--rust`, `--sage`) even though "paper"
+no longer names a paper surface — renaming every call site for semantic
+purity is churn the change doesn't need; the token is the surface colour
+regardless of what the era calls it.
 
-| Token | Value | Notes |
-|---|---|---|
-| `--paper` | `#F4EFE4` | Ground. Never pure white. |
-| `--ink` | `#1C1917` | Type and linework. Never pure black. |
-| `--ink-soft` | `#57534E` | Secondary type, grid rules. |
-| `--rust` | `#9A3F2B` | The one accent. Plate numbers, active territory. |
-| `--sage` | `#6B7F62` | Parks and green cover only. |
+`app.css`'s `@custom-variant dark (&:is(.dark *))` bridge (rev 1-3) existed
+to do one thing: stop the OS's `prefers-color-scheme` from restyling a page
+that was always cream, by making sure `.dark` was never actually set. Rev 4
+repurposes rather than removes it — the toggle now deliberately sets
+`data-theme` (light/dark) on `:root`, and it is still never driven by the OS
+preference, only by the in-app control. The "never let the OS decide" part
+of the original intent survives; only the "so nothing happens" part does not.
 
-Derived tokens (`--rule`, `--rule-strong`, `--well`, and, as of rev 3,
-`--building`) are `color-mix` results off those five. No sixth hex enters
-the system.
+| Token | Light | Dark | Notes |
+|---|---|---|---|
+| `--paper` | near-white surface | near-black navy | Ground / glass surface base. |
+| `--ink` | near-black text | near-white text | Type. |
+| `--ink-soft` | muted grey | muted blue-grey | Secondary type. |
+| `--rust` | warm orange | brighter warm orange, glow-capable | The one accent — selection, glow, active state. |
+| `--sage` | muted green | brighter green, legible on navy | Parks only. |
 
-Type: **Fraunces** for display and body — a variable serif whose `opsz` and
-`WONK` axes give large headings genuine letterpress character while body text
-stays sober — and **JetBrains Mono** for coordinates, dates, and route
-designations. **Two families, no more.**
+Exact hex values are pulled from the reference JPGs during implementation,
+not guessed here — still two values per token, so the "no sixth hex"
+discipline from rev 1-3 holds, just doubled for two themes.
 
-Texture: a fixed paper-grain overlay via SVG `feTurbulence`, composited with
-`mix-blend-mode: multiply` at low opacity, above the map and below the UI so
-map and interface share one paper. This detail does most of the work of making
-the page look printed rather than rendered.
+Derived tokens (`--rule`, `--rule-strong`, `--well`, `--building`) stay
+`color-mix` results off those five, and recompute automatically per theme
+since `color-mix` reads the live custom property.
 
-### The anti-slop checklist
+New tokens for the material itself, same centralisation as colour: a rounded
+radius scale (replacing the ≤4px ceiling), a blur amount, and a shadow
+recipe (soft, colour-matched, not a default OS drop-shadow) — no component
+hand-tunes its own glass.
 
-Applied at every review. **Revised in rev 2** — the last item is replaced.
+Type: **`-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui,
+sans-serif`** for display and body — zero webfont weight, and it matches the
+reference's native-card feel directly rather than approximating it with a
+downloaded face. **JetBrains Mono** stays for coordinates, dates, and route
+designations. Two families, no more — unchanged in spirit from rev 1-3, just
+a different sans.
 
-- No `border-radius` above 4px. Paper does not have rounded corners.
-- No box-shadow used as depth. Depth comes from linework and overlap.
-- No gradient except the paper grain.
+Texture: the paper-grain overlay (`Grain.tsx`) is dropped. Glass doesn't
+have paper grain; keeping it would be the one leftover tell that nobody
+revisited the whole system when the material changed.
+
+### The anti-slop checklist (rev 4)
+
+Replaces the rev 1-3 list in full. The target failure mode changed, so the
+checklist enforcing against it has to.
+
+- No Inter, Roboto, Space Grotesk, or Geist. The native system-ui stack or
+  nothing.
+- No default indigo-to-purple gradient. The only accent is the one warm
+  colour; the only other hue is the park green.
+- No flat semi-opaque rectangle standing in for glass. Every translucent
+  surface needs real `backdrop-filter` blur, a crisp inner highlight edge,
+  and a shadow tuned to the theme.
+- No copy-pasted radius/blur/shadow values per component. Every glass
+  surface pulls from the same small token set.
 - No emoji, anywhere.
 - No centered hero with a headline and two buttons.
-- ~~Every animation must be nameable in terms of what it tells the user.~~
-  **Replaced by:** every animation must be *nameable*, and must be
-  attributable to exactly one library per §8. Ambition is now allowed;
-  ambiguity about which runtime owns a moment is not.
-
-The last item changed because "does this tell the user something?" was the
-right filter for a restrained app and the wrong one for a scroll-driven
-narrative, where atmosphere is part of the point. The replacement keeps the
-discipline that actually mattered: knowing why each moving thing exists.
+- Every animation must be nameable, and attributable to exactly one library
+  per §8 — unchanged from rev 2.
 
 ---
 
@@ -307,6 +441,47 @@ layers:
 Selection uses `feature-state`, not layer rebuilds: the selected territory
 goes to `0.32` opacity and gains a `--rust` boundary while every other drops
 to `0.05`.
+
+> **Rev 4 — glow treatment.** Hatched fill is replaced by a thin outline.
+> The outline and fill (the pre-existing `line`/`fill` layers) stay always
+> visible at low resting intensity, unchanged in spirit from before rev 4,
+> so overlapping territories still read as shared turf at a glance — the
+> payoff §2 is built around, kept deliberately rather than lost to the
+> reference's selection-only look. Selecting a cat brings its outline to
+> full colour and adds a glow: a third, new `circle` layer at each
+> territory's centroid, not a DOM overlay, whose `circle-blur` paint
+> property gives the soft radial falloff for free. Unlike the outline/fill,
+> the glow itself is selection-only — zero radius and opacity for every
+> non-selected state — matching the reference's clean "one spotlight" look
+> and avoiding three overlapping blurs turning the resting map into a haze.
+>
+> The glow does **not** read `feature-state`, unlike the fill and line
+> layers — this was tried first and abandoned: MapLibre does not transition
+> feature-state-derived (data-driven) paint values, only constant or
+> camera-only (zoom-based) ones, so a feature-state-driven radius/opacity
+> would snap instead of bloom. The working mechanism is a layer `filter` set
+> to the selected cat's id, plus direct `setPaintProperty` calls on
+> `circle-radius`/`circle-opacity` fired once per selection change (not
+> per-cat; `circle-color` is set separately, on theme change, the same
+> token-reread pattern the fill/line layers already use). The filter is
+> pinned through a ref rather than tracking `selectedId` directly, so a
+> deselect fades the glow out on the feature it was already showing instead
+> of yanking the filter to a non-matching id before the fade can play.
+> `circle-radius`'s selected value is itself a zoom-interpolate expression,
+> camera-only so it still transitions, so the glow's on-screen size tracks
+> the territory's actual geographic size across the map's zoom range rather
+> than a fixed pixel radius. The general lesson, worth keeping for future
+> layers: reach for filter + camera-expression whenever something
+> feature-specific needs to actually animate in/out, not feature-state.
+>
+> **Rev 4 — live theme switching.** `map/style.ts` currently resolves
+> colour once via `getComputedStyle` at construction time. Flipping
+> `data-theme` on `:root` doesn't repaint an already-built MapLibre style by
+> itself, so the toggle handler re-resolves each token and calls
+> `map.setPaintProperty()` per layer, rather than `map.setStyle()` (which
+> would flicker and re-fetch/re-parse the whole style). Same token-read
+> pattern `style.ts` already has, just triggered on toggle instead of once
+> at load.
 
 **New in rev 2 — the map is a scroll stage.** The map pins full-viewport while
 the narrative column scrolls over it. Camera position is a function of scroll
@@ -556,5 +731,10 @@ Proportional to a static front end with no backend:
 - 3D plate works, and degrades to a static illustration without WebGL.
 - Keyboard-navigable end to end, including past the pinned section.
 - Teardown test passes: no leaked triggers, instances, or GL contexts.
-- The anti-slop checklist (§4) passes on review.
+- The anti-slop checklist (§4, rev 4) passes on review.
 - Deploys as static files.
+- **Rev 4.** Both themes reviewed against their reference JPGs. Toggle
+  switches instantly with no map flicker. Text contrast checked against both
+  the navy and light surfaces (WCAG AA). Territory glow legible and
+  performant with all cats' outlines visible at once, not just the selected
+  one.

@@ -1,0 +1,204 @@
+/* Styleguide page only. The app proper does not import this. */
+
+.page {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: var(--s-16) var(--s-8) var(--s-16);
+}
+
+.page,
+.toolbar {
+  position: relative;
+  z-index: 2;
+}
+
+/* --- Masthead --- */
+.masthead {
+  border-bottom: 1px solid var(--rule-strong);
+  padding-bottom: var(--s-6);
+  margin-bottom: var(--s-12);
+}
+.masthead h1 {
+  font-size: var(--t-4xl);
+  font-variation-settings: 'opsz' 144, 'SOFT' 0, 'WONK' 1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  margin: 0 0 var(--s-3);
+}
+.masthead p {
+  margin: 0;
+  max-width: 34rem;
+  color: var(--ink-soft);
+}
+
+/* --- Sections --- */
+section {
+  margin-bottom: var(--s-16);
+}
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: var(--s-2);
+  margin-bottom: var(--s-6);
+}
+.sec-head h2 {
+  font-size: var(--t-lg);
+  font-weight: 600;
+  font-variation-settings: 'opsz' 24, 'WONK' 0;
+  margin: 0;
+}
+.num {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--rust);
+  letter-spacing: 0.12em;
+}
+.note {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  margin-left: auto;
+}
+
+/* --- Theme cycle demo --- */
+.theme-cycle {
+  display: flex;
+  gap: var(--s-2);
+  margin-bottom: var(--s-8);
+}
+.theme-toggle {
+  padding: var(--s-2) var(--s-4);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink);
+  cursor: pointer;
+}
+.theme-toggle:hover {
+  background: var(--well);
+}
+.theme-toggle[data-active='true'] {
+  border-color: var(--rust);
+  color: var(--rust);
+}
+.theme-toggle .off-toggle {
+  color: var(--ink-soft);
+}
+
+/* --- Palette: all three themes side by side, values read live -----------
+   Replaces the old single-theme swatch grid. The hexes are sampled off
+   :root, not typed in (Styleguide.tsx's readPalette), so a token edit shows
+   up here without anyone remembering to update a list. */
+.palette-head,
+.palette-row {
+  display: grid;
+  grid-template-columns: 7rem repeat(3, 1fr) 1.4fr;
+  gap: var(--s-3);
+  align-items: center;
+  padding: var(--s-2) 0;
+  border-bottom: 1px solid var(--rule);
+}
+.palette-head {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.palette-name {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+.palette-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: none;
+  padding: var(--s-1);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-micro) var(--ease);
+}
+.palette-chip:hover {
+  border-color: var(--rule-strong);
+}
+.palette-chip .swatch-fill {
+  width: 1.5rem;
+  height: 1.5rem;
+  flex-shrink: 0;
+  border-radius: calc(var(--radius) / 2);
+  border: 1px solid var(--rule);
+}
+.palette-chip .hex {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+}
+.palette-role {
+  font-size: var(--t-sm);
+  color: var(--ink-soft);
+}
+
+/* --- Type specimens --- */
+.specimen {
+  border-bottom: 1px solid var(--rule);
+  padding: var(--s-4) 0;
+  display: grid;
+  grid-template-columns: 8rem 1fr;
+  gap: var(--s-4);
+  align-items: baseline;
+}
+.specimen:last-child {
+  border-bottom: none;
+}
+.specimen .label {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.specimen .sample {
+  min-width: 0;
+}
+
+/* The plate specimen is the real component, borrowed from shell.css.
+   Only its placement is undone. */
+.plate-specimen .plate {
+  position: static;
+  max-height: none;
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+/* --- Gate 2, the registry bridge --- */
+.bridge {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3);
+  align-items: center;
+}
+.bridge-note {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  margin: var(--s-4) 0 0;
+}
+
+/* --- Material ----------------------------------------------------------
+   The material swatch is the real .rail (shell.css), same borrow-and-undo
+   technique as .plate-specimen .plate above: only its fixed placement is
+   overridden, never the material itself (border/blur/shadow/radius/edge
+   highlight), so cycling the theme above shows exactly what the app does. */
+.glass-demo .rail {
+  position: static;
+  width: 18rem;
+}

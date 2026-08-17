@@ -1,0 +1,139 @@
+/* The app's global stylesheet: Tailwind on, then our tokens, then the bridge.
+   Everything below :root is shadcn's generated theme with its palette replaced
+   by ours. Nothing here invents a colour; every value resolves to tokens.css. */
+@import 'tailwindcss';
+@import './tokens.css';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+/* Binds `dark:` to a .dark ancestor instead of the OS setting. We never set
+   .dark, so this is what stops a dark-mode visitor from getting dark cards on
+   cream paper. Do not remove: deleting it re-enables prefers-color-scheme. */
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    /* Two families, spec §4. Utilities that ask for sans get whatever
+       --font-display resolves to for the active theme (Fraunces on paper,
+       the native stack on glass). font-mono is not mapped: our mono is used
+       via var(--font-mono) directly. */
+    --font-heading: var(--font-display);
+    --font-sans: var(--font-display);
+
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+
+    /* Every radius collapses to the one value, whatever the theme sets it
+       to: shadcn's default scale multiplies up to 2.6x, which would clear
+       paper's 4px ceiling (spec §4) and, on glass, hand each component its
+       own corner instead of the one shared rounded scale. */
+    --radius-sm: var(--radius);
+    --radius-md: var(--radius);
+    --radius-lg: var(--radius);
+    --radius-xl: var(--radius);
+    --radius-2xl: var(--radius);
+    --radius-3xl: var(--radius);
+    --radius-4xl: var(--radius);
+
+    /* One shadow recipe, every step aliases to it — no component picks its
+       own. On glass that's the real depth; on paper --shadow-glass is
+       transparent (tokens.css) so depth still comes from linework and
+       overlap, spec §4. Transparent rather than `none` so a composed
+       box-shadow stays valid CSS either way. */
+    --shadow-2xs: var(--shadow-glass);
+    --shadow-xs: var(--shadow-glass);
+    --shadow-sm: var(--shadow-glass);
+    --shadow: var(--shadow-glass);
+    --shadow-md: var(--shadow-glass);
+    --shadow-lg: var(--shadow-glass);
+    --shadow-xl: var(--shadow-glass);
+    --shadow-2xl: var(--shadow-glass);
+}
+
+/* --- The bridge, spec §4 --------------------------------------------------
+   shadcn's variable names on the left, our five tokens on the right. Written
+   once. Every component pulled from any registry after this inherits it.
+   Chart and sidebar variables were deleted rather than mapped: nothing in this
+   app charts or has a sidebar, and dead colour is how a palette drifts. */
+:root {
+    --background: var(--paper);
+    --foreground: var(--ink);
+
+    /* The same surface the rail and specimen plate use: raised paper on the
+       paper theme, translucent glass on the HUD themes. One token, so a
+       pulled-in card matches the hand-authored panels in all three. */
+    --card: var(--surface-glass-strong);
+    --card-foreground: var(--ink);
+    --popover: var(--surface-glass-strong);
+    --popover-foreground: var(--ink);
+
+    /* The one accent. */
+    --primary: var(--rust);
+    --primary-foreground: var(--paper);
+
+    --secondary: var(--well);
+    --secondary-foreground: var(--ink);
+    --muted: var(--well);
+    --muted-foreground: var(--ink-soft);
+    --accent: var(--well);
+    --accent-foreground: var(--rust);
+
+    /* No red. A field guide warns in the same ink it prints in. */
+    --destructive: var(--rust);
+
+    --border: var(--rule);
+    --input: var(--rule-strong);
+    --ring: var(--rust);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+  .maplibregl-popup-content {
+    @apply bg-transparent! shadow-none! p-0! rounded-none!;
+    }
+  .maplibregl-popup-tip {
+    @apply hidden!;
+    }
+  .maplibregl-ctrl-attrib {
+    @apply bg-background! text-muted-foreground! border-border! rounded-md! border! shadow-sm!;
+    }
+  .maplibregl-ctrl-attrib a {
+    @apply text-muted-foreground!;
+    }
+  .maplibregl-ctrl-attrib a:hover {
+    @apply text-foreground!;
+    }
+  .maplibregl-ctrl-attrib-button {
+    @apply bg-transparent! dark:invert;
+    }
+  /* dark: above is dead (bound to .dark, which this app never sets — the
+     dark theme uses [data-theme] on :root instead), so it's re-scoped here
+     to the mechanism actually in use. Without this, the attribution
+     button's black-filled SVG icon is invisible on the dark theme's
+     near-black panel, and compact attributionControl (map/MapCanvas.tsx)
+     makes this button the only way to reach the CC-BY credit for the 3D cat
+     model (see map/style.ts's source attribution string). */
+  :root[data-theme='dark'] .maplibregl-ctrl-attrib-button {
+    filter: invert(1);
+    }
+}
