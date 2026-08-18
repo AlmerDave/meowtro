@@ -11,6 +11,7 @@ import {
   FLAT_PITCH,
   applyMapTheme,
   animateSky,
+  SKY_RENDERS_AT_DEFAULT,
   DEFAULT_THEME,
   type Theme,
 } from './style'
@@ -157,8 +158,14 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
   // Sky is invisible until pitched (buildSky's comment in style.ts), so the
   // breathing animation only runs while isFlat is false — no point paying
   // for a rAF loop the flat/default view never renders.
+  //
+  // SKY_RENDERS_AT_DEFAULT is the second half of that same argument: with
+  // DEFAULT_PITCH back at 55 the sky has no screen area at any camera this
+  // app can reach, so the loop would be calling setSky every frame to paint
+  // nothing. Derived from the pitch rather than hardcoded, so raising
+  // DEFAULT_PITCH past the threshold switches this back on by itself.
   useEffect(() => {
-    if (!map || !isLoaded || isFlat) return
+    if (!map || !isLoaded || isFlat || !SKY_RENDERS_AT_DEFAULT) return
     return animateSky(map)
   }, [map, isLoaded, isFlat])
 

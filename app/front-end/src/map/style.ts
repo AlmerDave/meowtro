@@ -65,14 +65,29 @@ export const BGC_BOUNDS: [[number, number], [number, number]] = [
    rather than down at Venice Grand Canal Mall on McKinley Hill's lower edge. */
 export const BGC_CENTER: [number, number] = [121.05, 14.5512]
 
+/** The pitch below which MapLibre's `sky` draws no pixels at all:
+    getMercatorHorizon (maplibre-gl's transform.ts) crosses height/2 around
+    here, and below it the horizon line sits above y=0 so the sky region has
+    no screen area to fill. */
+const SKY_MIN_PITCH = 69
+
 // EXPERIMENTAL — the mockup's default camera. Committed shape is pitch 0.
-// 75, not something gentler like 55: MapLibre's sky only clears the top of
-// the viewport once pitch pushes past ~69° (getMercatorHorizon in
-// maplibre-gl's transform.ts crosses height/2 there) — below that the
-// horizon line sits above y=0 and `sky` never draws a single pixel. 55 was
-// silently invisible for exactly this reason.
-export const DEFAULT_PITCH = 75
+//
+// Back to 55 (user direction, 2026-08-18). It had been raised to 75 to get
+// above SKY_MIN_PITCH and make the native sky visible, and that worked, but
+// it cost the thing the project is actually about: at 75 the camera sees the
+// whole of Metro Manila to the horizon plus the edge of the tile extract,
+// and BGC — a small, walkable, gridded district — stops being legible as a
+// place. The sky was the cheaper thing to give up. See SKY_RENDERS_AT_DEFAULT
+// below: the atmosphere code is all still here and correct, it just has no
+// screen area to paint at this pitch.
+export const DEFAULT_PITCH = 55
 export const FLAT_PITCH = 0
+
+/** Whether the pitched view actually shows any sky. Derived rather than
+    hardcoded so that raising DEFAULT_PITCH back over the threshold turns the
+    atmosphere and its animation on again with no other edit. */
+export const SKY_RENDERS_AT_DEFAULT = DEFAULT_PITCH >= SKY_MIN_PITCH
 
 /* Backlog "Clouds" item, plan A: native atmosphere instead of a hand-drawn
    overlay. Pitch-dependent — invisible until the 3D toggle is on. Tokens
@@ -319,15 +334,25 @@ export const DEFAULT_THEME: Theme = 'light'
 const LIGHT_BY_THEME: Record<Theme, LightSpecification> = {
   paper: { anchor: 'map', position: [1.5, 210, 40], color: '#ffffff', intensity: 0.3 },
   light: { anchor: 'map', position: [1.5, 210, 35], color: '#ffffff', intensity: 0.45 },
-  dark: { anchor: 'map', position: [1.5, 235, 70], color: '#ffd9b0', intensity: 0.28 },
+  /* Neutral white, not the warm #ffd9b0 this started as (user review,
+     2026-08-18): a warm light multiplied against the facade's own warm lit
+     windows turned every tower muddy brown, which read as sludge rather
+     than as night. The warmth belongs in the windows, which are a light
+     source, not on the walls, which are only reflecting.
+     Polar 55 rather than 70 for the same reason: a sun that low rakes the
+     whole facade and exaggerated the cast. */
+  dark: { anchor: 'map', position: [1.5, 235, 55], color: '#ffffff', intensity: 0.34 },
 }
 
 /* Per-theme facade recipe, rev 6 §2.5. `paper` is absent on purpose, not by
    omission: it gets no pattern at all and falls back to the flat --building
    fill. Do not add a paper entry to "complete" this table. */
 const FACADE_RECIPE: Partial<Record<Theme, { glass: string; density: number }>> = {
-  // Scattered: a tower at night is partly occupied, never fully lit.
-  dark: { glass: '--facade-lit', density: 0.34 },
+  /* Scattered: a tower at night is partly occupied, never fully lit.
+     0.18 rather than the 0.34 this shipped at (user review, 2026-08-18):
+     a third of every facade lit reads as a wall of amber rather than as
+     scattered windows, and it is what made the dark theme feel heavy. */
+  dark: { glass: '--facade-lit', density: 0.18 },
   // Every cell: in daylight a window is just a mullion, and every floor has
   // one, so the grid is regular rather than random.
   light: { glass: '--facade-glass', density: 1 },
