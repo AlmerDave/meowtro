@@ -13,15 +13,37 @@
 
 ## RESUME HERE
 
-**Last completed:** Phase 8 — the rev 4 / rev 3 branch merge, 2026-08-18.
-`npx tsc -b --force` and `npm run build` both pass. **Not yet visually
-reviewed** (the agent doing this cannot self-launch a browser — see gate
-3's decision below); that review is the immediate next step.
+**Last completed:** Phase 9 — rev 6, the map material pass, 2026-08-18, on
+branch `rev6-map-material-and-sheet`. `npx tsc -b` and `npm run build` both
+pass. **Not yet visually reviewed**; three gates are open and each needs a
+screenshot from the user (the agent cannot self-launch a browser, see gate
+3's decision below).
 
-Phase 7's glass HUD and the cat-markers/clouds work had been built on two
-divergent branches (`worktree-meowtro-rev4-hud` and `master`) and are now
-one tree, with **nothing dropped from either side**. Design spec rev 5
-(`../specs/2026-08-16-meowtro-design.md` §0d) records the reasoning.
+Design spec: [`../specs/2026-08-18-map-material-and-sheet-design.md`](../specs/2026-08-18-map-material-and-sheet-design.md)
+Plan: [`2026-08-18-rev6-map-material-and-sheet.md`](./2026-08-18-rev6-map-material-and-sheet.md)
+
+Before rev 6 started, the **Clouds** work (both plans, plus the sky pitch-floor
+fix) was found sitting uncommitted in the working tree from an earlier
+session and was committed first, as `9223b6c`, so it could not be lost under
+the rev 6 edits to the same three files.
+
+**What rev 6 shipped:** per-theme building facade texture
+(`fill-extrusion-pattern` from a runtime canvas, `map/facade.ts`), road
+casing, the previously unused `landcover` layer, per-theme directional
+`light`, a `photo` URL on `Cat` with thumbnails in a shared `ui/CatRow.tsx`,
+and a vaul bottom sheet below 900px (`ui/CatSheet.tsx`).
+
+**What rev 6 deliberately did not ship:** POI category badges. The user was
+given the density trade directly and chose the field guide, so spec §6's
+sparse-labelling rule stands and no `symbol` layer or glyph pipeline was
+built. Rounded building corners were planned and dropped:
+`fill-extrusion-rounded-corner-distance` is in maplibre-gl 6.3.0's
+TypeScript types but absent from the runtime style spec, so the validator
+would reject it. Recheck on a future MapLibre bump.
+
+---
+
+## Phase 8 — the rev 4 / rev 3 branch merge, 2026-08-18
 
 **The shape that came out of it:**
 - **Three themes, one mechanism.** Rev 4's `data-theme` attribute on

@@ -2,10 +2,12 @@
 
 A hand-inked field guide to the community cats of Bonifacio Global City.
 
-Twelve named residents, each mapped by the **territory they roam** rather than a
-single pin — because cats don't sit still. Click one and the map eases over, a
-specimen plate opens, and the cat renders as a slowly-turning 3D figure in a
-pencil-and-ink shader.
+Named residents, each mapped by the **territory they roam** rather than a
+single pin — because cats don't sit still. Click one and a specimen plate
+opens, and the cat renders as a slowly-turning 3D figure in a pencil-and-ink
+shader. Three are seeded today; three is what proves the overlapping
+territories read correctly, and the rest are a data-entry session, not a
+design question.
 
 A **light / dark glass HUD** — translucent blurred panels, real shadow, one
 warm accent — switched day-to-night from a button on the map. A third theme,
@@ -48,7 +50,7 @@ installs.
 | **Place** | Bonifacio Global City, Taguig — small, walkable, gridded, and it has a real cat-feeder community. |
 | **v1** | Map + cat profiles + territory zones. Seeded data, no backend. |
 | **v2** | Sighting reports and community-submitted cats, once v1 earns it. |
-| **Stack** | Vite · React · TypeScript · MapLibre GL · Protomaps · react-three-fiber |
+| **Stack** | Vite · React · TypeScript · MapLibre GL · Protomaps · react-three-fiber · vaul |
 | **Why it exists** | A deliberate front-end craft project: real 3D on the web, motion that means something, and a visual identity that could not have been generated from a template. |
 
 ## Inspiration
