@@ -356,3 +356,83 @@ body:has(.map)::-webkit-scrollbar {
   margin: 0;
 }
 
+
+/* --- Mobile sheet, rev 6 section 4, ui/CatSheet.tsx ---------------------
+   Same panel recipe as .rail and .plate, rounded at the top only, because
+   the bottom edge sits off-screen at every detent.
+
+   z-index 4: above the panels (3) and the grain/labels (1), since below the
+   breakpoint this is the only chrome and nothing should ever sit over it.
+   vaul owns transform and height, so nothing here may set either. */
+.cat-sheet {
+  position: fixed;
+  z-index: 4;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+/* vaul's own Handle, styled to the token system rather than its default. */
+.cat-sheet-handle {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 0.25rem;
+  margin: var(--s-2) auto;
+  border-radius: 999px;
+  background: var(--rule-strong);
+  cursor: grab;
+}
+/* Visually hidden, still announced. Deliberately not display:none, which
+   would drop it from the accessibility tree and defeat the whole point of
+   having a title. */
+.cat-sheet-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* The single scroll container in the sheet. vaul reads scrollTop here to
+   tell a scroll from a drag, so nothing inside may scroll on its own. */
+.cat-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* --- Below the breakpoint ----------------------------------------------
+   The plate is a fixed-position glass panel on desktop and plain content
+   inside the sheet on mobile. Scoping its positioning to this query is the
+   entire adaptation: no second component, no variant prop.
+
+   Its own overflow has to go too, or it becomes a nested scroll container
+   and vaul can no longer distinguish a scroll from a drag. Its material is
+   stripped for the same reason a card inside a card is wrong: the sheet is
+   already the glass surface. */
+@media (max-width: 900px) {
+  .plate {
+    position: static;
+    width: 100%;
+    max-height: none;
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    box-shadow: none;
+  }
+  /* Clear of the sheet's peek detent (96px) and of a thumb reaching for the
+     handle above it. */
+  .map-controls {
+    bottom: calc(96px + var(--s-4));
+  }
+}
