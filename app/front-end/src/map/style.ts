@@ -60,7 +60,12 @@ export const BGC_BOUNDS: [[number, number], [number, number]] = [
 export const BGC_CENTER: [number, number] = [121.05, 14.5512]
 
 // EXPERIMENTAL — the mockup's default camera. Committed shape is pitch 0.
-export const DEFAULT_PITCH = 55
+// 75, not something gentler like 55: MapLibre's sky only clears the top of
+// the viewport once pitch pushes past ~69° (getMercatorHorizon in
+// maplibre-gl's transform.ts crosses height/2 there) — below that the
+// horizon line sits above y=0 and `sky` never draws a single pixel. 55 was
+// silently invisible for exactly this reason.
+export const DEFAULT_PITCH = 75
 export const FLAT_PITCH = 0
 
 /* Backlog "Clouds" item, plan A: native atmosphere instead of a hand-drawn
@@ -70,16 +75,44 @@ export const FLAT_PITCH = 0
    Extracted from buildStyle() so applyMapTheme can re-apply it: `sky` is a
    root style property, not a layer, so it is the one themed thing below
    that setPaintProperty cannot reach (map.setSky handles it instead). */
-function buildSky(): SkySpecification {
+// One breath every 24s. `sky` has no texture or position to animate — the
+// blend floats are the only lever, so "lively" here reads as the haze
+// slowly thickening and thinning, not shapes moving. That's the ceiling of
+// native `sky`; see the design spec's Clouds backlog item for the
+// canvas-overlay fallback (Plan B) if this ceiling isn't enough.
+const SKY_BREATHE_PERIOD_MS = 24_000
+
+function buildSky(elapsedMs = 0): SkySpecification {
+  const breathe = Math.sin((elapsedMs / SKY_BREATHE_PERIOD_MS) * Math.PI * 2)
   return {
-    'sky-color': token('--paper'),
-    'horizon-color': token('--ink'),
+    // sky-color used to be --paper too — identical to the ground/earth fill,
+    // so even a correctly-sized sky region painted the exact same shade as
+    // everything below it and read as nothing. --ink-soft gives it an
+    // overcast, cloud-grey body distinct from the ground; horizon-color
+    // stays --paper (not --ink) so it fades to a pale haze at the skyline
+    // instead of a hard dark line.
+    'sky-color': token('--ink-soft'),
+    'horizon-color': token('--paper'),
     'fog-color': token('--paper'),
-    'fog-ground-blend': 0.5,
-    'horizon-fog-blend': 0.6,
-    'sky-horizon-blend': 0.5,
-    'atmosphere-blend': 0.8,
+    'fog-ground-blend': 0.75 + breathe * 0.08,
+    'horizon-fog-blend': 0.85 + breathe * 0.06,
+    'sky-horizon-blend': 0.75 + breathe * 0.08,
+    'atmosphere-blend': 0.9 + breathe * 0.1,
   }
+}
+
+/** Starts the sky's breathing animation; call the returned function to stop
+    it (pitch back to flat, theme unmount). Skipped under reduced motion —
+    the sky then just holds buildSky()'s t=0 values, same as before this
+    existed. */
+export function animateSky(map: MapLibreMap): () => void {
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return () => {}
+  const start = performance.now()
+  let frame = requestAnimationFrame(function tick(now) {
+    map.setSky(buildSky(now - start))
+    frame = requestAnimationFrame(tick)
+  })
+  return () => cancelAnimationFrame(frame)
 }
 
 export function buildStyle(): StyleSpecification {

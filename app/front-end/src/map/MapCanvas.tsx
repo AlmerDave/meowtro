@@ -10,12 +10,14 @@ import {
   BGC_CENTER,
   FLAT_PITCH,
   applyMapTheme,
+  animateSky,
   DEFAULT_THEME,
   type Theme,
 } from './style'
 import { Territories } from './Territories'
 import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
+import { Clouds } from './Clouds'
 import { MapControls } from './MapControls'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
@@ -114,7 +116,10 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
       // camera is disabled below — orientation only ever changes from a
       // button press, never a drag.
       pitch: FLAT_PITCH,
-      maxPitch: 70,
+      // Must clear DEFAULT_PITCH (style.ts) — MapLibre clamps easeTo's pitch
+      // to this ceiling, so a cap below the toggle's target silently pins
+      // the camera short of it.
+      maxPitch: 76,
       dragRotate: false,
       touchPitch: false,
       // Selecting cats is click-to-toggle (Territories.tsx) — two quick
@@ -149,6 +154,14 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
     applyMapTheme(map)
   }, [map, isLoaded, theme])
 
+  // Sky is invisible until pitched (buildSky's comment in style.ts), so the
+  // breathing animation only runs while isFlat is false — no point paying
+  // for a rAF loop the flat/default view never renders.
+  useEffect(() => {
+    if (!map || !isLoaded || isFlat) return
+    return animateSky(map)
+  }, [map, isLoaded, isFlat])
+
   return (
     <div className="map" ref={container}>
       <MapContext.Provider value={{ map, isLoaded, isFlat, setIsFlat, theme, setTheme }}>
@@ -169,6 +182,7 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
               onHover={onHover}
             />
             <MapLabels />
+            <Clouds />
             <MapControls />
           </>
         )}
