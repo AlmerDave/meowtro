@@ -243,9 +243,33 @@ export function Territories({ cats, selectedId, onSelect, hoveredId, onHover }: 
       map.off('mouseenter', FILL, setHover)
       map.off('mousemove', FILL, setHover)
       map.off('mouseleave', FILL, clearHover)
-      clearHover()
     }
+    /* No clearHover() here. This effect depends on selectedId so that
+       handleClick can toggle against a fresh value, which means it tears
+       down and rebuilds on every click, and clearing the hover in that
+       teardown wiped the hover the click had just been made on. The pointer
+       is still sitting on the territory, so no mouseenter fires to restore
+       it: the territory's hover paint dropped out and the cursor reverted
+       from pointer to grab, both while the mouse had not moved. Leaving
+       hover alone is correct here; the real teardown is below. */
   }, [map, isLoaded, selectedId, onSelect, onHover])
+
+  /* The real teardown, split out of the handler effect above so it does not
+     also run on every click. A hover left set as this component goes away
+     would strand the rail's row highlight on a cat whose territory is no
+     longer on screen, and leave the canvas stuck showing a pointer cursor.
+
+     Both deps are stable for this component's whole life, MapCanvas only
+     renders <Territories> once it has an instance, and onHover is a setState
+     so listing them honestly still means "runs once, on the way out",
+     without an empty array that would capture whatever map was at mount. */
+  useEffect(
+    () => () => {
+      if (map) map.getCanvas().style.cursor = ''
+      onHover(null)
+    },
+    [map, onHover],
+  )
 
   // Selection and hover: state only, no rebuild, no re-render of the layers.
   useEffect(() => {

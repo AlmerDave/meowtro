@@ -93,8 +93,15 @@ body:has(.map)::-webkit-scrollbar {
 }
 
 /* --- Map controls, EXPERIMENTAL mockup ---------------------------------
-   Compass + 2D/3D toggle, styled to match the rail/plate instead of
-   MapLibre's default control chrome. See map/MapControls.tsx. */
+   Theme + 2D/3D toggle, styled to match the rail/plate instead of MapLibre's
+   default control chrome. See map/MapControls.tsx. (No compass: bearing
+   never changes, so there is nothing for one to reset, the rationale is
+   written out in full there.)
+
+   One capsule, not two floating squares. The pair are one cluster of view
+   settings, and the glass they are made of is cheaper to pay for once. The
+   capsule carries the material (it is in the panel recipe below); the
+   buttons inside are transparent until hovered. */
 .map-controls {
   position: fixed;
   z-index: 3;
@@ -102,28 +109,91 @@ body:has(.map)::-webkit-scrollbar {
   bottom: var(--s-8);
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
+  align-items: stretch;
+  padding: var(--s-1);
+  border-radius: var(--radius);
 }
-/* Material comes from the shared panel recipe below, so this control is
-   made of the same glass as the rail and the plate by construction rather
-   than by two lists of declarations agreeing. At 2.25rem square, glass's
-   --radius: 20px reads as a circle and paper's 2px as a stamped square, so
-   the corner needs no separate token either. */
+/* Hairline between the two, inset from the capsule's edge so it reads as a
+   divider rather than as the capsule being cut in half. */
+.map-control-rule {
+  height: 1px;
+  margin: 1px var(--s-2);
+  background: var(--rule);
+}
+/* Both glyph states occupy one cell, so the button never resizes as they
+   cross and the capsule never reflows under the pointer. */
+.map-control-glyph {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+}
+
+/* The hover label. A CSS-only slide-out off data-tip, not a tooltip
+   component: these two buttons never move, need no delay, and have no
+   clipping ancestor to escape, which is the entire problem set a tooltip
+   library exists for. aria-label already names the button, so this is
+   decoration on top of an accessible control, never the only label. */
+.map-control::after {
+  content: attr(data-tip);
+  position: absolute;
+  right: calc(100% + var(--s-2));
+  top: 50%;
+  padding: 3px var(--s-2);
+  border-radius: 999px;
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  opacity: 0;
+  /* Slides out from the button it belongs to, so the label reads as coming
+     from the control rather than appearing beside it. */
+  transform: translateY(-50%) translateX(var(--s-2)) scale(0.94);
+  transform-origin: right center;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-press) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .map-control:hover::after,
+  .map-control:focus-visible::after {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0) scale(1);
+  }
+}
+/* The material now lives on .map-controls (the capsule); these are plain
+   transparent targets inside it. grid rather than place-items alone because
+   both glyph states share cell 1/1 while they cross.
+
+   At 2.25rem square inside a --radius capsule, a slightly tighter corner
+   here reads as a key inside a case rather than as a second capsule. */
 .map-control {
+  position: relative;
   display: grid;
   place-items: center;
   width: 2.25rem;
   height: 2.25rem;
-  border-radius: var(--radius);
+  padding: 0;
+  border: 0;
+  border-radius: calc(var(--radius) * 0.7);
+  background: none;
   color: var(--ink);
   cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
 }
-/* Its own token, not `var(--well)`: this replaces the panel's whole
-   background rather than washing over it (unlike .rail button:hover, which
-   sits inside an already-painted panel), so a 4% ink tint would strip the
-   glass themes' translucency off on hover instead of tinting it. */
-.map-control:hover {
-  background: var(--surface-hover);
+/* --well, not --surface-hover: this now washes over a panel that is already
+   painted (the capsule), which is exactly the case --well is for. The old
+   rule used --surface-hover because the button *was* the panel. */
+@media (hover: hover) and (pointer: fine) {
+  .map-control:hover {
+    background: var(--well);
+  }
 }
 .map-control-text {
   font-family: var(--font-mono);
@@ -150,15 +220,86 @@ body:has(.map)::-webkit-scrollbar {
    they were in rev 6. Paper resolves the blur to 0 and the shadow/highlight
    to transparent while keeping a drawn border; the glass themes do the
    reverse (tokens.css), so this one rule serves all three. */
+/* .cat-deck-item and .cat-panel carry the same recipe but declare it
+   themselves (see the mobile section): the deck's cards each need it
+   individually because the deck between them has to stay transparent for the
+   map, which is the one case this shared rule cannot express. */
 .rail,
 .plate,
-.cat-sheet,
-.map-control {
+.map-controls {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
   -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
   box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+/* Elevation on approach, for the two panels that are things you act on. The
+   rail is not in this list on purpose: it is furniture that is always there,
+   and furniture that rises when the pointer crosses it is restless.
+
+   Paper resolves --shadow-lift to the same transparent no-op as
+   --shadow-glass, so a paper panel simply does not lift, one token, no
+   theme branch, same mechanism as everything else here. */
+.plate,
+.map-controls {
+  transition: box-shadow var(--dur-panel) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .plate:hover,
+  .map-controls:hover {
+    box-shadow: var(--shadow-lift), var(--edge-highlight);
+  }
+}
+
+/* --- Specular sweep, ui/Specular.tsx -----------------------------------
+   The light the glass catches. Two elements: a window clipped to the panel's
+   own corner, and one soft blob inside it that Motion translates to the
+   pointer.
+
+   The window exists because .plate must not clip (the hero photo leaves the
+   card mid-flight, see the note on .plate), so the sweep cannot borrow its
+   host's overflow and has to carry its own.
+
+   Paper resolves --specular to transparent: printed stock does not have a
+   highlight, and this is the same one-token-per-theme mechanism as the blur
+   and the shadow rather than a rule that names a theme. */
+.specular {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--dur-panel) var(--ease-out);
+}
+.specular[data-lit='true'] {
+  opacity: 1;
+}
+.specular-light {
+  /* Sized and offset so its centre sits at the panel's origin before Motion
+     moves it; the hook then writes the raw pointer offset with no -50% to
+     compose against. */
+  position: absolute;
+  top: calc(var(--specular-size) / -2);
+  left: calc(var(--specular-size) / -2);
+  width: var(--specular-size);
+  height: var(--specular-size);
+  --specular-size: 22rem;
+  background: radial-gradient(circle closest-side, var(--specular), transparent);
+}
+
+/* Everything after the sweep in a panel has to be positioned, or the sweep
+   (z-index 0, positioned) paints over its statically-positioned siblings and
+   washes the text out. */
+.rail-head,
+.rail-panel,
+.plate-hero,
+.plate-body,
+.plate-foot {
+  position: relative;
+  z-index: 1;
 }
 
 /* One focus ring for everything interactive. Drawn in the active cat's
@@ -170,9 +311,11 @@ body:has(.map)::-webkit-scrollbar {
 .rail-clear:focus-visible,
 .rail-empty button:focus-visible,
 .plate-close:focus-visible,
+.plate-hero-loading button:focus-visible,
 .plate-view:focus-visible,
 .plate-copy:focus-visible,
-.cat-sheet-bar button:focus-visible,
+.cat-panel-close:focus-visible,
+.cat-scrim:focus-visible,
 .map-control:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -196,12 +339,60 @@ body:has(.map)::-webkit-scrollbar {
   padding: var(--s-4) var(--s-3) var(--s-3) var(--s-4);
 }
 .rail h1 {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
   margin: 0;
   font-size: var(--t-lg);
   font-variation-settings: 'opsz' 96, 'WONK' 1;
   font-weight: 600;
   line-height: 1;
   letter-spacing: -0.02em;
+}
+
+/* The survey is live. The only perpetual motion in the app, and the reason
+   it is allowed: a field survey either is or is not currently running, and
+   a static dot claims the same thing without being able to prove it.
+
+   Two seconds and a shallow opacity floor, so it reads as a slow pulse
+   rather than a blink or a spinner. Scale is on a pseudo-element ring
+   instead of the dot, so the dot itself never softens. */
+.rail-live {
+  position: relative;
+  flex-shrink: 0;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--rust);
+}
+.rail-live::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rust) 40%, transparent);
+  animation: rail-live-pulse 2s var(--ease-out) infinite;
+}
+@keyframes rail-live-pulse {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.4);
+  }
+}
+/* Reduced motion keeps the dot, it carries meaning, and drops the ring,
+   which is the part that moves. */
+@media (prefers-reduced-motion: reduce) {
+  .rail-live::after {
+    animation: none;
+  }
 }
 .rail-title p {
   margin: var(--s-1) 0 0;
@@ -314,7 +505,16 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink);
 }
 
+/* The readout. Set as an instrument label, not a sentence: mono, tracked
+   out, uppercase, and the count in tabular figures so a 3 and a 10 occupy
+   the same width and the words after them never shift. */
 .rail-count {
+  display: flex;
+  /* center, not baseline: .rail-count-n is an overflow:hidden box, and an
+     overflow-clipped inline box takes its bottom margin edge as its
+     baseline, which drops the digit a few pixels below its own label. */
+  align-items: center;
+  gap: var(--s-1);
   margin: var(--s-3) 0 var(--s-2);
   padding: 0 var(--s-4);
   font-family: var(--font-mono);
@@ -322,6 +522,21 @@ body:has(.map)::-webkit-scrollbar {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+/* The digit rolls when the filter changes it. Clipped to one line's height
+   so the outgoing number leaves through the floor rather than pushing the
+   label down with it. */
+.rail-count-n {
+  position: relative;
+  display: inline-grid;
+  overflow: hidden;
+  height: 1em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.rail-count-n > span {
+  grid-area: 1 / 1;
 }
 
 /* ponytail: no scroll here. Three cats (data/cats.seed.ts), and a scrolling
@@ -368,7 +583,7 @@ body:has(.map)::-webkit-scrollbar {
   align-items: center;
   gap: var(--s-3);
   width: 100%;
-  padding: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-3);
   border: 0;
   border-radius: calc(var(--radius) * 0.6);
   background: none;
@@ -377,9 +592,47 @@ body:has(.map)::-webkit-scrollbar {
   font-size: var(--t-sm);
   color: var(--ink);
   text-align: left;
+  transition: background var(--dur-ui) var(--ease-out);
 }
-.cat-row:hover {
+/* Hover visuals are CSS and the transform is Motion's (see CatRow's header
+   note). They key off data-hovered rather than :hover, so hovering the
+   territory on the map lights the row too, and so a touch tap cannot leave
+   the state stuck on. */
+.cat-row[data-hovered='true'] {
   background: var(--well);
+}
+
+/* --- The spine ---------------------------------------------------------
+   The row's whole state display, in the cat's own colour: a hairline at
+   rest, thicker and saturated on hover, full height and solid when
+   selected. Height and opacity carry the state rather than colour, so the
+   three steps are still distinguishable for anyone who cannot separate
+   rust from sage.
+
+   scaleY, not height: height is a layout property and this animates on
+   every hover of every row. */
+.cat-row-spine {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  z-index: 1;
+  width: 2px;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--accent);
+  opacity: 0.3;
+  transform: translateY(-50%) scaleY(0.6);
+  transition:
+    opacity var(--dur-ui) var(--ease-out),
+    transform var(--dur-ui) var(--ease-out);
+}
+.cat-row[data-hovered='true'] .cat-row-spine {
+  opacity: 0.7;
+  transform: translateY(-50%) scaleY(1);
+}
+.cat-row[data-selected='true'] .cat-row-spine {
+  opacity: 1;
+  transform: translateY(-50%) scaleY(1.5);
 }
 /* The travelling marker (layoutId="cat-row-active"). Painted behind the row's
    own content, which is why every child below sits at z-index 1. */
@@ -402,18 +655,72 @@ body:has(.map)::-webkit-scrollbar {
    failed, or away in an open plate. Deliberately NOT overflow:hidden: the
    photo has to be able to leave. */
 .cat-row-slot {
+  /* relative for the loading sweep's ::after, below. */
+  position: relative;
   flex-shrink: 0;
   width: 2.75rem;
   height: 2.75rem;
   border-radius: var(--radius-media);
   background: var(--well);
   box-shadow: inset 0 0 0 1px var(--rule);
+  transition:
+    transform var(--dur-ui) var(--ease-out),
+    box-shadow var(--dur-ui) var(--ease-out);
+}
+/* The slot scales, never .cat-row-thumb: the thumb carries the layoutId that
+   flies to the plate, so Motion owns its transform and a CSS one here would
+   be overwritten the instant a plate opened. */
+.cat-row[data-hovered='true'] .cat-row-slot {
+  transform: scale(1.05);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.cat-row[data-selected='true'] .cat-row-slot {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 .cat-row-thumb {
   width: 100%;
   height: 100%;
   object-fit: cover;
   border-radius: inherit;
+}
+
+/* Loading shimmer. Stated as "a pending photo is present" rather than "no
+   photo yet", which is what makes the three cases come out right with one
+   selector: a settled photo stops it, a failed photo stops it (CatRow marks
+   both), and a slot whose photo has flown to the plate never starts it,
+   that slot is empty on purpose, not waiting.
+
+   A sweep, not a pulse: a pulse reads as something being wrong with the
+   thing that is pulsing, a sweep reads as something arriving. */
+.cat-row-slot:has(.cat-row-thumb:not([data-settled]))::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    color-mix(in srgb, var(--ink) 7%, transparent) 50%,
+    transparent 80%
+  );
+  background-size: 250% 100%;
+  animation: slot-sweep 1.4s var(--ease) infinite;
+}
+@keyframes slot-sweep {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+/* Reduced motion keeps a static tint, the slot still reads as occupied and
+   waiting, without anything travelling across it. */
+@media (prefers-reduced-motion: reduce) {
+  .cat-row-slot:has(.cat-row-thumb:not([data-settled]))::after {
+    animation: none;
+    background: color-mix(in srgb, var(--ink) 5%, transparent);
+  }
 }
 
 .cat-row-text {
@@ -442,7 +749,9 @@ body:has(.map)::-webkit-scrollbar {
   font-family: var(--font-mono);
   font-size: 0.625rem;
   letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
+  transition: color var(--dur-ui) var(--ease-out);
 }
 .cat-row[data-selected='true'] .cat-row-plate {
   color: var(--accent);
@@ -507,14 +816,69 @@ body:has(.map)::-webkit-scrollbar {
   width: 100%;
   height: 100%;
 }
+/* Two occupants: the loading state, and the boundary's failure state when
+   the 3D chunk cannot be fetched at all (plate/FigureBoundary.tsx). Same
+   box, because they are the same slot reporting on the same thing. */
 .plate-hero-loading {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-3);
   height: 100%;
+  padding: var(--s-4);
   font-family: var(--font-mono);
   font-size: var(--t-xs);
   letter-spacing: 0.1em;
+  text-align: center;
   color: var(--ink-soft);
+}
+/* The way out of the failure, and the only actionable thing in it. Styled as
+   a link rather than a button so it does not compete with the plate's real
+   controls for attention. */
+.plate-hero-loading button {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* Indeterminate, because it is: the chunk's progress is not observable from
+   here without a fetch wrapper this does not need. A travelling segment
+   states "still working" honestly; a filling bar would be inventing a
+   percentage. */
+.plate-hero-loading-bar {
+  position: relative;
+  overflow: hidden;
+  width: 5rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--rule);
+}
+.plate-hero-loading-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: loading-slide 1.1s var(--ease-move) infinite;
+}
+@keyframes loading-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .plate-hero-loading-bar::after {
+    animation: none;
+    opacity: 0.4;
+  }
 }
 
 /* Everything laid over the hero gets its own scrim, because a photo is not
@@ -596,17 +960,102 @@ body:has(.map)::-webkit-scrollbar {
   overflow-y: auto;
   padding: var(--s-2) var(--s-4) var(--s-4);
 }
+/* Which record is open, above whose it is. Mono and tracked hard so it
+   reads as a filing reference rather than as a subtitle competing with the
+   name underneath it. */
+.plate-eyebrow {
+  margin: 0 0 var(--s-1);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
 .plate-body h2 {
   margin: 0;
   font-size: var(--t-2xl);
   font-variation-settings: 'opsz' 72, 'WONK' 1;
   font-weight: 600;
   line-height: 1.05;
-  letter-spacing: -0.02em;
+  /* Tighter than the rail's -0.02em: at this size the same tracking leaves
+     the caps looking spaced out. Optical, not systematic, the type scale
+     is a size scale, and tracking has to be re-set per size. */
+  letter-spacing: -0.03em;
 }
 .plate-sub {
   margin: var(--s-1) 0 var(--s-4);
   font-size: var(--t-sm);
+  color: var(--ink-soft);
+}
+
+/* --- Range, plate/TerritoryGlyph.tsx -----------------------------------
+   The one field whose value is a shape, so it gets the shape. Laid out as
+   glyph-then-text rather than stacked: the outline is a figure the text
+   captions, and a caption that starts 5rem below its figure is not one. */
+.plate-range {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) 0 var(--s-3) var(--s-3);
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.plate-range-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.territory-glyph {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-1);
+  width: 4.5rem;
+}
+.territory-glyph svg {
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: visible;
+}
+.territory-glyph-fill {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  stroke: none;
+}
+/* Plain stroke, deliberately not non-scaling-stroke. Two reasons, and the
+   first one is a correctness bug rather than a preference: Motion animates
+   pathLength by writing stroke-dasharray in user units against a
+   pathLength="1" attribute, and non-scaling-stroke changes the space dashes
+   are measured in, the outline draws in at the wrong rate or not at all.
+
+   The second is that it was not buying anything. Every glyph is authored in
+   the same 0-100 viewBox and painted at the same 72px, so 2.2 units always
+   arrives as the same ~1.6px however large the territory is; only the path
+   inside the box is scaled per cat, never the box. */
+.territory-glyph-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.2;
+  stroke-linejoin: round;
+}
+/* The same centroid the map puts its marker and its glow on, one point,
+   three renderings, so they can never disagree about where a cat lives.
+
+   transform-box: fill-box is what makes Motion's scale animate about the
+   dot's own centre. Without it an SVG transform-origin resolves against the
+   whole viewBox and the dot grows in from the corner. */
+.territory-glyph-dot {
+  fill: var(--accent);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.territory-glyph-span {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--ink-soft);
 }
 
@@ -621,7 +1070,8 @@ body:has(.map)::-webkit-scrollbar {
   padding: var(--s-2) 0 var(--s-2) var(--s-3);
   border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
 }
-.plate-field + .plate-field {
+.plate-field + .plate-field,
+.plate-range + .plate-field {
   margin-top: var(--s-2);
 }
 .plate-label {
@@ -649,94 +1099,271 @@ body:has(.map)::-webkit-scrollbar {
   letter-spacing: 0.08em;
   color: var(--ink-soft);
 }
+/* Full width now that the survey line has moved up to the eyebrow: the
+   footer has one job left, and a lone button hugging the right edge of an
+   empty bar reads as a leftover rather than as the bar's content. */
 .plate-copy {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--s-2);
-  padding: 2px var(--s-2);
-  margin-right: calc(var(--s-2) * -1);
+  /* flex, not width:100%: the negative margins that let it use the footer's
+     own padding as its hit area would push a 100%-wide item 16px past the
+     card's edge. */
+  flex: 1;
+  min-width: 0;
+  padding: var(--s-1) var(--s-2);
+  margin: 0 calc(var(--s-2) * -1);
   border: 0;
   border-radius: calc(var(--radius) * 0.4);
   background: none;
   cursor: pointer;
   font: inherit;
+  font-variant-numeric: tabular-nums;
   color: var(--ink-soft);
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out);
 }
-.plate-copy:hover {
-  background: var(--well);
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .plate-copy:hover {
+    background: var(--well);
+    color: var(--accent);
+  }
+}
+.plate-copy:active {
+  transform: scale(0.99);
+}
+/* A failure has to look different from a success, not just read
+   differently, the two words are the same length and the same weight at a
+   glance. Rust rather than a new red: the palette has five colours and an
+   error is not a sixth. */
+.plate-copy[data-state='failed'] {
+  color: var(--rust);
+}
+/* Both glyphs stacked in one cell and crossfaded, so the button does not
+   change width at the moment it is pressed. Order matters visually only:
+   whichever is on sits at opacity 1 over the other. */
+/* All three glyphs share cell 1/1 and crossfade, so the button holds its
+   width through every state change, including the one that happens under a
+   finger that is still on it. */
+.plate-copy-icon {
+  position: relative;
+  display: inline-grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  order: 2;
+}
+.plate-copy-icon > svg {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--dur-press) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.plate-copy-icon > svg[data-on='false'] {
+  opacity: 0;
+  transform: scale(0.6);
+}
+.plate-copy-icon > svg[data-on='true'] {
+  opacity: 1;
+  transform: scale(1);
+}
+.plate-copy-label {
+  order: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* --- Mobile sheet, ui/CatSheet.tsx -------------------------------------
-   Rounded at the top only, because the bottom edge sits off-screen at every
-   detent.
+/* --- Mobile: the deck and the raised panel, ui/CatDeck.tsx -------------
+   Replaces the bottom sheet. Nothing here is a drawer: the deck floats on
+   the map with the map live around it, and the panel is a separate surface
+   that only exists while a cat is open. See CatDeck's header for why the
+   sheet went.
 
-   z-index 4: above the panels (3) and the grain/labels (1), since below the
-   breakpoint this is the only chrome and nothing should ever sit over it.
-   vaul owns transform and height, so nothing here may set either. */
-.cat-sheet {
+   z-index 4: above the panels (3) and the grain/labels (1). Below the
+   breakpoint this is the only chrome and nothing should sit over it. */
+.cat-deck {
   position: fixed;
   z-index: 4;
   right: 0;
   bottom: 0;
   left: 0;
   display: flex;
-  flex-direction: column;
-  border-radius: var(--radius) var(--radius) 0 0;
+  gap: var(--s-2);
+  /* One card's share of the deck. Named because the last card's trailing
+     margin below is derived from it, and the two must agree exactly. */
+  --card-w: 86%;
+  /* Top pad so the cards' drop shadow is not sliced off: setting overflow-x
+     on a box forces overflow-y from visible to auto, so this scroller clips
+     vertically whether it asked to or not. Not enough for dark's 40px blur,
+     which is a deliberate stop, see below.
+
+     The bottom pad clears the home indicator / gesture bar. env() resolves
+     to 0 where there is no inset, so it costs nothing on a device without
+     one and no media query is needed to tell them apart. */
+  padding: var(--s-4) var(--s-4) calc(var(--s-4) + env(safe-area-inset-bottom));
+  /* Deliberately NOT pointer-events: none with the cards opting back in.
+     That would let map taps through this band, which suits the design, but
+     this element is also the scroll container for the deck, and whether a
+     scroller with pointer-events: none still accepts a touch pan through an
+     auto child is exactly the kind of thing that differs by engine. Swiping
+     the cards is the primary gesture on this screen; trading a certain
+     interaction for a cosmetic one is the wrong way round. Revisit only with
+     a real device to test on. */
+  overflow-x: auto;
+  /* Contain, so paging past the last card does not hand the gesture to the
+     page behind it and trigger a browser overscroll. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  /* Snap targets align to the padded edge, not the scroller's border edge,
+     so a settled card sits on the same margin it would at rest. */
+  scroll-padding-inline-start: var(--s-4);
+  scrollbar-width: none;
 }
-/* vaul's own Handle, styled to the token system rather than its default. */
-.cat-sheet-handle {
+.cat-deck::-webkit-scrollbar {
+  display: none;
+}
+
+/* 86%, not 100%: the sliver of the next card is the affordance. A deck of
+   full-width cards is indistinguishable from a single card, and nothing on
+   screen would say it can be swiped.
+
+   Each card carries the panel material itself, the deck has no background,
+   because the map has to show through between the cards. That is the whole
+   difference from a sheet. */
+.cat-deck-item {
+  flex: 0 0 var(--card-w);
+  scroll-snap-align: start;
+  padding: var(--s-1);
+  border: var(--panel-border);
+  border-radius: calc(var(--radius) * 0.9);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  transition: box-shadow var(--dur-ui) var(--ease-out);
+}
+/* The last card cannot otherwise reach the leading edge: once the scroller
+   hits its end there is nothing left to scroll, so it strands short of where
+   every other card comes to rest and the deck reads as broken at the end.
+   The gap it needs is exactly the screen the card does not fill. */
+.cat-deck-item:last-child {
+  margin-inline-end: calc(100% - var(--card-w));
+}
+
+/* :has, so the card reads state off the row it contains rather than needing
+   the selection threaded into two places. */
+.cat-deck-item:has(.cat-row[data-selected='true']) {
+  box-shadow:
+    var(--shadow-glass),
+    var(--edge-highlight),
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+/* The largest close target there is, and the reason the panel needs no
+   dismiss instructions. A real <button> rather than a div with a click
+   handler: it is the primary way out, so it has to be reachable and
+   announced like one. */
+.cat-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+  background: color-mix(in srgb, var(--ink) 45%, transparent);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* The raised plate. Not full height: the strip of dimmed map left above it
+   is what says the map is still there and still where you left it. */
+.cat-panel {
+  position: fixed;
+  z-index: 6;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 92dvh;
+  border: var(--panel-border);
+  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+/* The panel's own bar: grab surface underneath, close on top of it. Sized
+   by the close button, which is the tallest thing in it. */
+.cat-panel-head {
+  position: relative;
   flex-shrink: 0;
-  width: 2.25rem;
-  height: 0.25rem;
-  margin: var(--s-2) auto;
-  border-radius: 999px;
-  background: var(--rule-strong);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: var(--s-1) var(--s-3);
+}
+
+/* The drag origin, and the only one. Covers the whole bar so the strip is
+   grabbable anywhere, with touch-action: none handing the vertical gesture
+   to Motion here; everywhere else in the panel the browser keeps it, which
+   is what lets the body scroll normally. The 4px bar it draws is a sign,
+   the bar's full area is the target. */
+.cat-panel-grab {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  touch-action: none;
   cursor: grab;
 }
-/* Visually hidden, still announced. Deliberately not display:none, which
-   would drop it from the accessibility tree and defeat the whole point of
-   having a title. */
-.cat-sheet-title {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.cat-panel-grab span {
+  width: 2.25rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: var(--rule-strong);
+  transition: width var(--dur-ui) var(--ease-out);
 }
-.cat-sheet-bar {
-  flex-shrink: 0;
-  overflow: hidden;
+.cat-panel-grab:active span {
+  width: 3rem;
 }
-.cat-sheet-bar button {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--s-1);
-  margin: 0 var(--s-2) var(--s-1);
-  padding: var(--s-2) var(--s-3) var(--s-2) var(--s-2);
+
+/* The only close on this panel, the plate's own 1.75rem one is hidden
+   below the breakpoint (see the media query at the bottom of this file).
+   Larger than it was, because on a phone this is the primary exit rather
+   than a secondary one and it has to clear the 44px touch minimum.
+
+   z-index 1 puts it over the grab surface, which fills the bar behind it;
+   without that the drag layer would swallow every tap aimed at this. */
+.cat-panel-close {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
   border: 0;
   border-radius: 999px;
   background: var(--well);
+  color: var(--ink);
   cursor: pointer;
-  font: inherit;
-  font-size: var(--t-sm);
-  color: var(--ink-soft);
+  transition: background var(--dur-ui) var(--ease-out);
 }
-.cat-sheet-bar button:active {
+.cat-panel-close:active {
   background: var(--surface-hover);
 }
-/* The single scroll container in the sheet. vaul reads scrollTop here to
-   tell a scroll from a drag, so nothing inside may scroll on its own. */
-.cat-sheet-body {
+.cat-panel-body {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 0 var(--s-2) var(--s-4);
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom));
 }
 
 /* --- Below the breakpoint ----------------------------------------------
@@ -745,9 +1372,16 @@ body:has(.map)::-webkit-scrollbar {
    entire adaptation: no second component, no variant prop.
 
    Its own scrolling body has to go flat too, or it becomes a nested scroll
-   container and vaul can no longer distinguish a scroll from a drag. Its
+   container inside .cat-panel-body and the drag/scroll handoff breaks. Its
    material is stripped for the same reason a card inside a card is wrong:
-   the sheet is already the glass surface. */
+   .cat-panel is already the glass surface.
+
+   The condition has to stay character-for-character identical to
+   MOBILE_QUERY in App.tsx. That hook decides which component tree renders
+   and this decides how it is styled, so the moment the two disagree you get
+   the sheet's markup with the floating panel's CSS: a fixed 24rem plate
+   pinned to the viewport corner inside a drawer. Same query, two consumers,
+   and no way to share one literal across a stylesheet and a module. */
 @media (max-width: 900px) {
   .plate {
     position: static;
@@ -760,6 +1394,25 @@ body:has(.map)::-webkit-scrollbar {
     -webkit-backdrop-filter: none;
     box-shadow: none;
   }
+  /* The plate has no material down here, so it has no surface to catch the
+     light on, the sweep would be a white blob drifting over the sheet's
+     content. Not covered by Specular's own coarse-pointer bail: a desktop
+     window dragged narrow is a fine pointer below the breakpoint. */
+  .plate .specular {
+    display: none;
+  }
+  /* Nothing hovers on a phone, and the lift would fire on tap and stay. */
+  .plate:hover {
+    box-shadow: none;
+  }
+  /* One close, not two. The plate draws its own in the hero corner for the
+     desktop card; down here .cat-panel-close is the primary exit, it is
+     bigger, and it sits in the panel's bar clear of the photo. Two X's a
+     centimetre apart is the bug, and the small one on the photo is the one
+     that loses: 1.75rem is under the 44px touch minimum. */
+  .plate-close {
+    display: none;
+  }
   .plate-hero {
     margin: 0 0 var(--s-2);
   }
@@ -770,9 +1423,12 @@ body:has(.map)::-webkit-scrollbar {
   .plate-foot {
     padding-inline: var(--s-2);
   }
-  /* Clear of the sheet's peek detent (96px) and of a thumb reaching for the
-     handle above it. */
+  /* Clear of the deck floating below it. The deck is one card tall and its
+     height comes from its content, so this is measured rather than derived:
+     a row (2.75rem slot + 2x --s-2) plus the card's and the deck's own
+     padding, rounded up. */
   .map-controls {
-    bottom: calc(96px + var(--s-4));
+    right: var(--s-4);
+    bottom: calc(7.5rem + env(safe-area-inset-bottom));
   }
 }

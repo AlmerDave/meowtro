@@ -6,20 +6,34 @@ import { Plate } from '@/plate/Plate'
 import { useLenis } from '@/motion/lenis'
 import { springSoft } from '@/motion/springs'
 import { Rail } from '@/ui/Rail'
-import { CatSheet } from '@/ui/CatSheet'
+import { CatDeck } from '@/ui/CatDeck'
 import { listCats, type Cat } from '@/data/catsRepo'
 
 /* 900px, rev 6 §4: the rail is 15rem and the plate 26.25rem, so with gutters
    the two collide somewhere just above 700px. 900 leaves margin rather than
    switching at the exact width where it breaks.
 
+   Width alone, deliberately. `(pointer: coarse)` was added here and then
+   taken back out: it does describe the input better, but it also overrode
+   Chrome's "Desktop site" on a phone, which is a mode someone turns on
+   precisely because they want the wide layout. Honouring the input device
+   over an explicit request for the desktop layout is second-guessing the
+   person using it, and the wide layout at that width is a real layout the
+   app supports, not a mistake to be corrected.
+
+   The practical consequence is worth knowing: Desktop site reports a ~980px
+   layout viewport scaled down to the physical screen, so the desktop rail
+   arrives correct but small. That is what the mode does to every site.
+
    Subscribed rather than read once, so rotating a tablet moves between the
    two presentations instead of stranding it in whichever one it loaded in. */
+const MOBILE_QUERY = '(max-width: 900px)'
+
 function useIsMobile() {
-  const [isMobile, setIsMobile] = useState(() => window.matchMedia('(max-width: 900px)').matches)
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches)
 
   useEffect(() => {
-    const query = window.matchMedia('(max-width: 900px)')
+    const query = window.matchMedia(MOBILE_QUERY)
     const onChange = () => setIsMobile(query.matches)
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
@@ -85,22 +99,27 @@ export default function App() {
       />
       <Grain />
 
-      {/* One sheet below the breakpoint, two floating panels above it. The
-          same CatRow and the same Plate render in both, so this is a
-          presentation switch, not a second implementation. */}
+      {/* A deck of cards on the map below the breakpoint, two floating
+          panels above it. The same CatRow and the same Plate render in
+          both, so this is a presentation switch, not a second
+          implementation.
+
+          CatDeck takes no onClose: opening a plate is a mobile-only state
+          it keeps to itself (see the note there), so there is nothing here
+          for it to close. */}
       {isMobile ? (
-        <CatSheet
+        <CatDeck
           cats={cats}
           selectedId={selectedId}
           onSelect={setSelectedId}
           onHover={setHoveredId}
-          onClose={close}
         />
       ) : (
         <>
           <Rail
             cats={cats}
             selectedId={selectedId}
+            hoveredId={hoveredId}
             onSelect={setSelectedId}
             onHover={setHoveredId}
           />

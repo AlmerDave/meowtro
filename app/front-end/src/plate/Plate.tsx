@@ -1,7 +1,10 @@
-import { Suspense, lazy, useEffect, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, Copy, X } from 'lucide-react'
 import type { Cat } from '@/data/catsRepo'
+import { FigureBoundary } from '@/plate/FigureBoundary'
+import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
+import { Specular } from '@/ui/Specular'
 import { spring, springSoft } from '@/motion/springs'
 
 /* three.js is ~1.4 MB and nothing needs it until someone asks for the 3D
@@ -46,8 +49,10 @@ const line = {
 
 export function Plate({ cat, onClose }: Props) {
   const [view, setView] = useState<'photo' | 'model'>('photo')
-  const [copied, setCopied] = useState(false)
-  const closeRef = useRef<HTMLButtonElement>(null)
+  /* Three states, not a boolean. Copying can genuinely fail, see the
+     handler, and a button that silently does nothing is worse than one
+     that says so. */
+  const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
 
   // Escape closes. A panel this size that can only be dismissed by finding
   // one small button is the single most common complaint about card UIs.
@@ -58,10 +63,10 @@ export function Plate({ cat, onClose }: Props) {
   }, [onClose])
 
   useEffect(() => {
-    if (!copied) return
-    const t = setTimeout(() => setCopied(false), 1800)
+    if (copyState === 'idle') return
+    const t = setTimeout(() => setCopyState('idle'), 1800)
     return () => clearTimeout(t)
-  }, [copied])
+  }, [copyState])
 
   return (
     <motion.article
@@ -78,6 +83,8 @@ export function Plate({ cat, onClose }: Props) {
       exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.16 } }}
       transition={springSoft}
     >
+      <Specular />
+
       <div className="plate-hero">
         <motion.img
           layoutId={`cat-photo-${cat.id}`}
@@ -86,6 +93,11 @@ export function Plate({ cat, onClose }: Props) {
           src={cat.photo}
           alt={`${cat.name}, recorded on ${cat.line}`}
           animate={{ opacity: view === 'photo' ? 1 : 0 }}
+          /* Stays mounted at opacity 0 behind the 3D view (see the header
+             note on why it may not unmount), so it has to be hidden from a
+             screen reader explicitly, otherwise the plate announces a photo
+             that is not on screen. */
+          aria-hidden={view !== 'photo'}
           onError={(e) => {
             e.currentTarget.style.visibility = 'hidden'
           }}
@@ -103,9 +115,35 @@ export function Plate({ cat, onClose }: Props) {
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
             >
-              <Suspense fallback={<span className="plate-hero-loading">Loading specimen</span>}>
-                <CatFigure colour={cat.colour} />
-              </Suspense>
+              {/* three.js is a megabyte, so this fallback is on screen for a
+                  real second or two on a first press, not a frame. It says
+                  what is happening and shows that something still is,
+                  the same sweep the rail's photo slots use, because it is the
+                  same fact being reported. */}
+              <FigureBoundary
+                fallback={
+                  <span className="plate-hero-loading">
+                    <span>The 3D view could not load.</span>
+                    <button type="button" onClick={() => setView('photo')}>
+                      Show the photo
+                    </button>
+                  </span>
+                }
+              >
+                {/* role="status" so the wait is announced. A visual-only
+                    loading state is silence to a screen reader, and this one
+                    can run for a second or two. */}
+                <Suspense
+                  fallback={
+                    <span className="plate-hero-loading" role="status">
+                      <span className="plate-hero-loading-bar" aria-hidden />
+                      <span>Rendering specimen</span>
+                    </span>
+                  }
+                >
+                  <CatFigure colour={cat.colour} />
+                </Suspense>
+              </FigureBoundary>
             </motion.div>
           )}
         </AnimatePresence>
@@ -134,7 +172,6 @@ export function Plate({ cat, onClose }: Props) {
         </div>
 
         <motion.button
-          ref={closeRef}
           type="button"
           className="plate-close"
           aria-label={`Close ${cat.name}`}
@@ -147,19 +184,34 @@ export function Plate({ cat, onClose }: Props) {
         </motion.button>
       </div>
 
-      <motion.div className="plate-body" variants={body} initial="hidden" animate="shown">
+      <motion.div className="plate-body" data-lenis-prevent variants={body} initial="hidden" animate="shown">
+        {/* The survey line used to sit in the footer, below three
+            fields nobody scrolls to. It is the second most identifying thing
+            about a cat after its name, so it sits above the name now, where
+            an eyebrow states which record you have open before you read
+            whose it is. */}
+        <motion.p className="plate-eyebrow" variants={line}>
+          {cat.line}
+        </motion.p>
         <motion.h2 variants={line}>{cat.name}</motion.h2>
         <motion.p className="plate-sub" variants={line}>
           {cat.description}
         </motion.p>
 
+        {/* Range is promoted out of the field list and given the glyph,
+            because range is the only field whose value is a shape. The other
+            two are facts and stay set as facts. */}
+        <motion.div className="plate-range" variants={line}>
+          <TerritoryGlyph catId={cat.id} delay={0.3} />
+          <div className="plate-range-text">
+            <span className="plate-label">Range</span>
+            <span className="plate-value">{cat.range}</span>
+          </div>
+        </motion.div>
+
         <motion.div className="plate-field" variants={line}>
           <span className="plate-label">First recorded</span>
           <span className="plate-value">{cat.firstRecorded}</span>
-        </motion.div>
-        <motion.div className="plate-field" variants={line}>
-          <span className="plate-label">Range</span>
-          <span className="plate-value">{cat.range}</span>
         </motion.div>
         <motion.div className="plate-field" variants={line}>
           <span className="plate-label">Disposition</span>
@@ -168,7 +220,6 @@ export function Plate({ cat, onClose }: Props) {
       </motion.div>
 
       <div className="plate-foot">
-        <span>{cat.line}</span>
         {/* Coordinates are the one value here anyone would want out of the
             app, so they are the one value you can take with you. The label
             states what happened, in the past tense of the button that did
@@ -176,10 +227,40 @@ export function Plate({ cat, onClose }: Props) {
         <button
           type="button"
           className="plate-copy"
-          onClick={() => navigator.clipboard?.writeText(cat.coordinates).then(() => setCopied(true))}
+          data-state={copyState}
+          onClick={async () => {
+            /* navigator.clipboard is undefined on insecure origins, which
+               is exactly how this gets opened on a phone over a LAN IP, and
+               writeText can also reject on a denied permission. Both used to
+               land as a button that did nothing at all, the second one with
+               an unhandled rejection behind it. Now the failure is a state
+               the button can show. */
+            try {
+              await navigator.clipboard.writeText(cat.coordinates)
+              setCopyState('done')
+            } catch {
+              setCopyState('failed')
+            }
+          }}
         >
-          {copied ? <Check size={12} /> : <Copy size={12} />}
-          <span>{copied ? 'Copied' : cat.coordinates}</span>
+          <span className="plate-copy-icon">
+            {/* All three glyphs are mounted and crossfaded in place rather
+                than swapped, so the button's width never changes under the
+                pointer at the moment it is pressed. */}
+            <Copy size={12} data-on={String(copyState === 'idle')} />
+            <Check size={12} data-on={String(copyState === 'done')} />
+            <X size={12} data-on={String(copyState === 'failed')} />
+          </span>
+          {/* aria-live, because the whole outcome of pressing this button is
+              a word change inside it, with nothing announced, a screen
+              reader user cannot tell a copy from a failure. */}
+          <span className="plate-copy-label" aria-live="polite">
+            {copyState === 'done'
+              ? 'Copied'
+              : copyState === 'failed'
+                ? 'Select the text to copy'
+                : cat.coordinates}
+          </span>
         </button>
       </div>
     </motion.article>

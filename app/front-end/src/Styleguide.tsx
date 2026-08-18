@@ -303,7 +303,10 @@ export default function Styleguide() {
             <div className="rail">
               <div className="rail-head">
                 <div className="rail-title">
-                  <h1>Meowtro</h1>
+                  <h1>
+                    Meowtro
+                    <span className="rail-live" aria-hidden />
+                  </h1>
                   <p>Bonifacio Global City</p>
                 </div>
               </div>

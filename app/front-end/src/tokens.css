@@ -101,6 +101,41 @@
   --dur-ink: 900ms;
   --ink-stagger: 60ms;
   --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  /* Three curves, one per job, because the single --ease above was
+     being asked to serve entering, moving and tinting alike and is too weak
+     for the first of those. The named jobs:
+
+       --ease-out   entering and exiting. Starts fast, so the surface is
+                    already most of the way there in the frame the user is
+                    watching hardest. Never ease-in for a UI element.
+       --ease-move  something already on screen changing place or size.
+                    Accelerates and decelerates, which is what reads as a
+                    thing moving rather than a thing being redrawn.
+       --ease-glass the drawer curve. Long tail, almost no overshoot; used
+                    where a large translucent surface travels.
+
+     --ease stays as it was and stays in use (the cloud deck, the search
+     field) so nothing already tuned against it shifts. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-move: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
+
+  /* UI durations, distinct from the map's. Everything a person triggers and
+     watches finish sits under 300ms; --dur-plate (700ms) is the cloud deck's
+     and is not a UI number. */
+  --dur-press: 140ms;
+  --dur-ui: 200ms;
+  --dur-panel: 280ms;
+
+  /* Hover elevation. Paper has no shadow at all, so it resolves to the same
+     no-op --shadow-glass does and a paper panel simply does not lift. */
+  --shadow-lift: 0 0 #0000;
+
+  /* The pointer-tracked specular sweep on a glass panel (ui/useSpecular.ts).
+     A light source, so it is white on both glass themes and transparent on
+     paper, a printed card does not catch the light. */
+  --specular: transparent;
 }
 
 /* --- Glass, shared by both HUD themes, rev 4 --------------------------
@@ -145,7 +180,10 @@
 
   --shadow-glass: 0 8px 24px rgba(0, 0, 0, 0.12);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
-
+  --shadow-lift: 0 14px 34px rgba(0, 0, 0, 0.16);
+  /* Weaker than dark's: a light panel on a light ground shows a specular
+     sweep at a much lower opacity before it reads as a white smear. */
+  --specular: rgba(255, 255, 255, 0.5);
 }
 
 /* Dark glass. Same five names, different values; every derived token above
@@ -166,7 +204,8 @@
      dark panels sitting on an already-dark page. */
   --shadow-glass: 0 12px 40px rgba(0, 0, 0, 0.28);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
-
+  --shadow-lift: 0 20px 52px rgba(0, 0, 0, 0.4);
+  --specular: rgba(255, 255, 255, 0.14);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -175,6 +214,20 @@
     --dur-plate: 1ms;
     --dur-ink: 1ms;
     --ink-stagger: 0ms;
+
+    /* The UI durations collapse the same way. Not to 0: a 1ms transition
+       still fires transitionend and still lets a hover state be a state,
+       where `transition: none` makes some engines skip the change entirely
+       on the first paint after a class flips.
+
+       Note this kills movement, not feedback, the properties these drive
+       are colour, background and opacity as often as transform, and reduced
+       motion means less movement, not a UI that stops responding. The
+       genuinely moving parts (the live ring, the loading bar, the photo
+       sweep) each opt out at their own rule instead. */
+    --dur-press: 1ms;
+    --dur-ui: 1ms;
+    --dur-panel: 1ms;
   }
 }
 

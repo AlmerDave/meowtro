@@ -1,4 +1,6 @@
+import { AnimatePresence, motion } from 'motion/react'
 import { Moon, Sun } from 'lucide-react'
+import { spring } from '@/motion/springs'
 import { useMap } from './MapCanvas'
 import { DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
 
@@ -36,12 +38,36 @@ export function MapControls() {
   const nextTheme = TOGGLE_THEMES[(TOGGLE_THEMES.indexOf(theme) + 1) % TOGGLE_THEMES.length]
   const Icon = THEME_ICON[theme] ?? Moon
 
+  /* One capsule with a hairline between the two, rather than two detached
+     squares. They are one cluster of view settings and were reading as two
+     unrelated buttons that happened to be stacked; grouping them is also
+     what lets the material be paid for once instead of twice, which matters
+     when the material is a backdrop blur.
+
+     data-tip is picked up by a CSS-only label that slides out on hover (see
+     shell.css). Not a real tooltip component: these two never move, never
+     need a delay, and never need to escape a clipping ancestor, the three
+     problems a tooltip library exists to solve. aria-label still carries the
+     same words, so the label is decoration over an already-named button.
+
+     The capsule also arrives with the rail and the plate rather than simply
+     being there once the map loads. It was the one piece of chrome that
+     popped in, which on a screen where everything else settles reads as
+     having been forgotten. It rises from below, the edge it lives on. */
   return (
-    <div className="map-controls">
-      <button
+    <motion.div
+      className="map-controls"
+      initial={{ opacity: 0, y: 12, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ ...spring, delay: 0.15 }}
+    >
+      <motion.button
         type="button"
         className="map-control"
+        data-tip={`${THEME_LABEL[nextTheme]} theme`}
         aria-label={`Switch to ${THEME_LABEL[nextTheme]} theme`}
+        whileTap={{ scale: 0.92 }}
+        transition={spring}
         onClick={() => {
           // The attribute is the source of truth (tokens.css); setTheme only
           // exists so the canvas layers get a React dependency to re-run on.
@@ -49,20 +75,52 @@ export function MapControls() {
           setTheme(nextTheme)
         }}
       >
-        <Icon size={16} />
-      </button>
-      <button
+        {/* The glyph swaps on a quarter turn rather than cutting. Keyed on
+            the theme, so the outgoing sun and the incoming moon are two
+            elements crossing, which is the movement the button is
+            describing: one light source setting as another rises. */}
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={theme}
+            className="map-control-glyph"
+            initial={{ opacity: 0, rotate: -90, scale: 0.6 }}
+            animate={{ opacity: 1, rotate: 0, scale: 1 }}
+            exit={{ opacity: 0, rotate: 90, scale: 0.6 }}
+            transition={spring}
+          >
+            <Icon size={16} />
+          </motion.span>
+        </AnimatePresence>
+      </motion.button>
+
+      <span className="map-control-rule" aria-hidden />
+
+      <motion.button
         type="button"
         className="map-control map-control-text"
+        data-tip={isFlat ? '3D view' : 'Flat view'}
         aria-label={isFlat ? 'Switch to 3D view' : 'Switch to flat view'}
+        whileTap={{ scale: 0.92 }}
+        transition={spring}
         onClick={() => {
           const next = !isFlat
           setIsFlat(next)
           map.easeTo({ pitch: next ? FLAT_PITCH : DEFAULT_PITCH, duration: 500 })
         }}
       >
-        {isFlat ? '3D' : '2D'}
-      </button>
-    </div>
+        <AnimatePresence mode="popLayout" initial={false}>
+          <motion.span
+            key={String(isFlat)}
+            className="map-control-glyph"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -8 }}
+            transition={spring}
+          >
+            {isFlat ? '3D' : '2D'}
+          </motion.span>
+        </AnimatePresence>
+      </motion.button>
+    </motion.div>
   )
 }

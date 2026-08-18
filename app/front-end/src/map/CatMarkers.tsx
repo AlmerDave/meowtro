@@ -100,8 +100,14 @@ function CatPin({ cat, active, onClick, onMouseEnter, onMouseLeave }: PinProps) 
       style={{ color: `var(${cat.colour})` }}
       aria-label={cat.name}
       onClick={onClick}
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
+      /* Pointer events with a type check, not onMouseEnter/onMouseLeave. A
+         touch tap synthesises a mouseenter but does not reliably synthesise
+         the matching mouseleave, tap a pin, then pan the map, and the
+         hover never clears. That used to be invisible; now that hover also
+         drives the rail's row highlight and the deck card's fill, it strands
+         a cat looking hovered forever. */
+      onPointerEnter={(e) => e.pointerType === 'mouse' && onMouseEnter()}
+      onPointerLeave={(e) => e.pointerType === 'mouse' && onMouseLeave()}
     >
       <motion.svg
         width="22"
