@@ -18,12 +18,17 @@ import { FRAG, VERT } from './clouds.glsl'
    sharing MapLibre's context would buy nothing and couple this to the
    map's render lifecycle. */
 
-const CLOUD_TOKEN = '--ink-soft'
-const FOG_TOKEN = '--paper'
+/* Their own tokens, NOT --ink-soft/--paper. --paper is what the background
+   and earth layers paint the ground with, so using it here drew the haze in
+   the exact colour of the thing it floats over and the whole layer read as
+   nothing. buildSky in style.ts carries the same warning about the same
+   mistake. */
+const CLOUD_TOKEN = '--cloud'
+const FOG_TOKEN = '--haze'
 
 /* Tuning. Coverage is a threshold, so HIGHER means less cloud. */
-const COVERAGE = 0.52
-const OPACITY = 0.72
+const COVERAGE = 0.45
+const OPACITY = 0.9
 const WIND = 1.0
 
 /** Resolves a CSS custom property to normalised rgb. Goes through a real

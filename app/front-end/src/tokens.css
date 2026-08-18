@@ -119,6 +119,16 @@
   --rust: #c2410c;
   --sage: #5b9a4c;
 
+  /* Cloud deck and distance haze, rev 6, map/Clouds.tsx. Real values, not
+     mixes off --paper: the ground IS --paper (the background and earth
+     layers both paint it), so anything derived from it paints the deck in
+     the exact colour of what it is supposed to be floating over. buildSky
+     has the same warning written on it; this is that lesson applied.
+     Daylight haze is a cool grey, darker than the near-white ground, which
+     is what makes it read at all in this theme. */
+  --cloud: #ccd3e0;
+  --haze: #dde3ee;
+
   --shadow-glass: 0 8px 24px rgba(0, 0, 0, 0.12);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
 
@@ -132,6 +142,11 @@
   --ink-soft: #9296a6;
   --rust: #ff7a45;
   --sage: #6fbf5c;
+
+  /* Cloud deck and distance haze. Inverted against light: here the deck has
+     to be LIGHTER than the near-black ground to be seen at all. */
+  --cloud: #828ba3;
+  --haze: #272d3d;
 
   /* Heavier shadow, subtler highlight than light glass above — tuned for
      dark panels sitting on an already-dark page. */

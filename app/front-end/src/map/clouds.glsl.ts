@@ -31,8 +31,8 @@ out vec4 outColor;
 
 uniform float uTime;      // seconds
 uniform vec2  uRes;
-uniform vec3  uCloud;     // cloud body colour, from --ink-soft
-uniform vec3  uFog;       // distance haze colour, from --paper
+uniform vec3  uCloud;     // cloud body colour, from --cloud
+uniform vec3  uFog;       // distance haze colour, from --haze
 uniform float uCoverage;  // 0 = overcast, 1 = clear
 uniform float uOpacity;
 uniform float uWind;      // multiplier on every octave's drift
@@ -95,20 +95,24 @@ void main() {
   density = smoothstep(0.0, 0.7, density);
 
   /* Two fades, both needed:
-     - near: the deck passes under the camera at the bottom of the frame, so
-       cloud there would be a smear across the foreground rather than
-       something the viewer is looking through.
+     - near: the deck passes under the camera at the very bottom of the
+       frame, so cloud there would be a foreground smear rather than
+       something the viewer looks through. Kept narrow (0.16, was 0.42) so
+       the deck reaches down among the towers instead of hanging in a strip
+       across the top of the screen.
      - far: at the top the deck compresses toward a singularity, and without
        this the noise aliases into a hard band. */
-  float near = smoothstep(0.0, 0.42, vUv.y);
-  float far = 1.0 - smoothstep(0.72, 1.0, vUv.y);
+  float near = smoothstep(0.0, 0.16, vUv.y);
+  float far = 1.0 - smoothstep(0.90, 1.0, vUv.y);
   density *= near * far;
 
   /* Distance haze, independent of the cloud: the far half of the frame
-     fades toward the ground colour so the city recedes instead of staying
-     equally crisp to the top of the screen. This is the part that actually
-     reads as depth. */
-  float haze = smoothstep(0.35, 1.0, vUv.y) * 0.55;
+     fades toward --haze so the city recedes instead of staying equally
+     crisp to the top of the screen. This is the part that actually reads as
+     depth. Note --haze, NOT --paper: --paper is the ground's own colour, so
+     hazing toward it paints distance in the exact shade of the thing being
+     obscured, and the layer disappears. */
+  float haze = smoothstep(0.25, 1.0, vUv.y) * 0.45;
 
   // Cloud over haze, one premultiplied result. The cloud's own alpha is
   // additive on top of the haze so an overcast patch still darkens.
