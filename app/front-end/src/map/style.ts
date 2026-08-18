@@ -1,4 +1,5 @@
 import type { Map as MapLibreMap, StyleSpecification, SkySpecification } from 'maplibre-gl'
+import { FACADE_IMAGE_ID, facadeImage } from './facade'
 
 /* The art direction as data, spec §6.
    Colours are read off :root at build time rather than written here, so
@@ -286,7 +287,47 @@ export const TOGGLE_THEMES: Theme[] = ['light', 'dark']
 /** What a bare page should start as, now that paper is off the toggle. */
 export const DEFAULT_THEME: Theme = 'light'
 
-export function applyMapTheme(map: MapLibreMap) {
+/* Per-theme facade recipe, rev 6 §2.5. `paper` is absent on purpose, not by
+   omission: it gets no pattern at all and falls back to the flat --building
+   fill. Do not add a paper entry to "complete" this table. */
+const FACADE_RECIPE: Partial<Record<Theme, { glass: string; density: number }>> = {
+  // Scattered: a tower at night is partly occupied, never fully lit.
+  dark: { glass: '--facade-lit', density: 0.34 },
+  // Every cell: in daylight a window is just a mullion, and every floor has
+  // one, so the grid is regular rather than random.
+  light: { glass: '--facade-glass', density: 1 },
+}
+
+/** Adds or refreshes the facade pattern for the active theme. Split out of
+    applyMapTheme purely for readability; it is called from there and nowhere
+    else.
+
+    Ordering matters: the image has to exist before any layer names it, which
+    is why the pattern is never part of buildStyle()'s initial object. The
+    first applyMapTheme call (MapCanvas' load effect) is what installs it. */
+function applyFacade(map: MapLibreMap, theme: Theme) {
+  if (!map.getLayer('buildings')) return
+  const recipe = FACADE_RECIPE[theme]
+
+  if (!recipe) {
+    // Back to the flat fill. undefined resets the property to its default
+    // rather than painting an empty pattern over the wall.
+    map.setPaintProperty('buildings', 'fill-extrusion-pattern', undefined)
+    return
+  }
+
+  const image = facadeImage(token('--building'), token(recipe.glass), recipe.density)
+  // No 2D context: leave whatever is already painted alone rather than
+  // clearing to an untextured block half way through a theme change.
+  if (!image) return
+
+  if (map.hasImage(FACADE_IMAGE_ID)) map.updateImage(FACADE_IMAGE_ID, image)
+  else map.addImage(FACADE_IMAGE_ID, image)
+
+  map.setPaintProperty('buildings', 'fill-extrusion-pattern', FACADE_IMAGE_ID)
+}
+
+export function applyMapTheme(map: MapLibreMap, theme: Theme) {
   for (const { id, prop, tokenName } of THEMED_LAYERS) {
     if (map.getLayer(id)) map.setPaintProperty(id, prop, token(tokenName))
   }
@@ -294,4 +335,5 @@ export function applyMapTheme(map: MapLibreMap) {
   // pitched view — theming it here rather than on the 3D toggle keeps the
   // two controls independent of each other.
   map.setSky(buildSky())
+  applyFacade(map, theme)
 }

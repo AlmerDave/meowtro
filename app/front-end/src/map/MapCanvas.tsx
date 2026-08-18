@@ -151,7 +151,7 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
   // their paint is per-cat expressions this function knows nothing about.
   useEffect(() => {
     if (!map || !isLoaded) return
-    applyMapTheme(map)
+    applyMapTheme(map, theme)
   }, [map, isLoaded, theme])
 
   // Sky is invisible until pitched (buildSky's comment in style.ts), so the
