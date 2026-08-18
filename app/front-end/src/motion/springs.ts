@@ -1,4 +1,4 @@
-/* Motion presets, rev 7. Springs, not durations: a duration says "take 320ms
+/* Motion presets. Springs, not durations: a duration says "take 320ms
    no matter what", a spring says "settle from wherever you are", which is the
    only reason an interrupted animation (click row A, change your mind, click
    row B mid-flight) looks deliberate instead of broken.

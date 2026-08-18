@@ -6,13 +6,14 @@ import { spring, springSoft } from '@/motion/springs'
 
 /* three.js is ~1.4 MB and nothing needs it until someone asks for the 3D
    view. Lazy import keeps it out of the initial load of a page whose first
-   screen is a map, and rev 7 pushes it one step further: the plate opens on
-   the photo, so the chunk is not even requested until the 3D tab is pressed. */
+   screen is a map. The Photo/3D toggle pushes that one step further: the
+   plate opens on the photo, so the chunk is not even requested until the 3D
+   tab is pressed. */
 const CatFigure = lazy(() =>
   import('@/plate/CatFigure').then((m) => ({ default: m.CatFigure })),
 )
 
-/* The specimen plate, rev 7. Motion owns the enter *and the exit* — the exit
+/* The specimen plate. Motion owns the enter *and the exit* — the exit
    is the whole reason this library is here (React unmounts a component before
    you can animate it). App.tsx keeps the <AnimatePresence>; this file must
    stay conditionally mounted for the exit to ever run. No CSS transition on

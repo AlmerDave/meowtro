@@ -296,8 +296,8 @@ export default function Styleguide() {
             <span className="note">.rail itself, borrowed from shell.css — cycle theme above</span>
           </div>
           <div className="glass-demo">
-            {/* The real structure, not a lookalike: rev 7 moved the rail's
-                children onto their own classes, and a swatch built from bare
+            {/* The real structure, not a lookalike: the rail's children
+                moved onto their own classes, and a swatch built from bare
                 <h1>/<button> would show the material correctly while showing
                 the contents wrong. */}
             <div className="rail">

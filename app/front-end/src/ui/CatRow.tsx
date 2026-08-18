@@ -2,7 +2,7 @@ import { motion } from 'motion/react'
 import type { Cat } from '@/data/catsRepo'
 import { spring, springSoft } from '@/motion/springs'
 
-/* One row of the cat index, rev 7. Shared by the desktop rail (ui/Rail.tsx)
+/* One row of the cat index. Shared by the desktop rail (ui/Rail.tsx)
    and the mobile sheet (ui/CatSheet.tsx), so the two presentations can never
    drift apart.
 

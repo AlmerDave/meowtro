@@ -144,7 +144,7 @@ body:has(.map)::-webkit-scrollbar {
   filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink) 35%, transparent));
 }
 
-/* --- Panel recipe, rev 7 ----------------------------------------------
+/* --- Panel recipe -----------------------------------------------------
    The rail, the plate and the sheet are the same material. One place to
    change it, rather than the same six declarations copied three times as
    they were in rev 6. Paper resolves the blur to 0 and the shadow/highlight
@@ -359,9 +359,9 @@ body:has(.map)::-webkit-scrollbar {
 
 /* --- Cat row, ui/CatRow.tsx --------------------------------------------
    One row recipe used by both the rail and the mobile sheet. Rev 6 drew a
-   hairline under every row; rev 7 spaces them instead and lets the hover
-   fill do the separating, which is what stops a three-item list from
-   reading as a table. */
+   hairline under every row; this spaces them instead and lets the hover fill
+   do the separating, which is what stops a three-item list from reading as
+   a table. */
 .cat-row {
   position: relative;
   display: flex;

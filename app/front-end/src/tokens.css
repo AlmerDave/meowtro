@@ -29,7 +29,7 @@
   --rust: #9a3f2b;
   --sage: #6b7f62;
 
-  /* The active cat's own territory colour, rev 7. Every panel that knows
+  /* The active cat's own territory colour. Every panel that knows
      which cat it is showing overrides this inline from `cat.colour` (see
      ui/CatRow.tsx and plate/Plate.tsx), so the accent is data, not a choice
      any component makes. The default is what chrome with no cat behind it

@@ -5,7 +5,7 @@ import type { Cat } from '@/data/catsRepo'
 import { CatRow } from '@/ui/CatRow'
 import { spring, springSoft } from '@/motion/springs'
 
-/* The index rail, rev 7. Was a static list inside App.tsx; it is its own file
+/* The index rail. Was a static list inside App.tsx; it is its own file
    now because it grew three behaviours (filter, keyboard nav, collapse) that
    have nothing to do with App's job of holding selection state.
 
