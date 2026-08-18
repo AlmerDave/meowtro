@@ -165,29 +165,6 @@ export function buildStyle(): StyleSpecification {
         paint: { 'fill-color': paper },
       },
       {
-        /* rev 6 §2.2. This source-layer ships in the extract and was never
-           used: ground cover under everything else, a wash rather than a
-           shape, so the roads and buildings above still read as the subject.
-
-           Filtered to natural kinds on purpose. Protomaps' landcover also
-           carries `urban_area`, which across a district as built-up as BGC
-           covers very nearly the whole extract - painting that sage would
-           tint the entire city green rather than picking out the greenery,
-           which is the exact opposite of the intent. */
-        id: 'landcover',
-        type: 'fill',
-        source: 'bgc',
-        'source-layer': 'landcover',
-        filter: [
-          'match',
-          ['get', 'kind'],
-          ['forest', 'grass', 'scrub', 'wetland', 'farmland'],
-          true,
-          false,
-        ],
-        paint: { 'fill-color': sage, 'fill-opacity': 0.14 },
-      },
-      {
         // A pale wash. There is no blue in this palette, so water is ink.
         id: 'water',
         type: 'fill',
@@ -225,49 +202,6 @@ export function buildStyle(): StyleSpecification {
           'fill-extrusion-opacity': 0.75,
           'fill-extrusion-height': 6,
           'fill-extrusion-vertical-gradient': true,
-        },
-      },
-      {
-        /* rev 6 §2.1. The casing half of a casing-and-fill pair: a wider,
-           darker line underneath `roads`, which is what turns a flat stroke
-           into something that reads as a road with edges. Layer order is
-           paint order, so this must stay above `roads` in this array to
-           render below it.
-
-           The width is its own `interpolate` rather than the roads layer's
-           expression plus a constant, because MapLibre rejects a zoom
-           expression nested inside arithmetic: `['+', ['interpolate', ...],
-           2.5]` fails validation. So the stops below are the roads layer's
-           stops with the casing already added in. Change one, change both. */
-        id: 'roads-casing',
-        type: 'line',
-        source: 'bgc',
-        'source-layer': 'roads',
-        layout: { 'line-cap': 'butt', 'line-join': 'round' },
-        paint: {
-          'line-color': ink,
-          'line-opacity': 0.34,
-          'line-width': [
-            'interpolate',
-            ['exponential', 1.6],
-            ['zoom'],
-            12,
-            ['match', ['get', 'kind'], 'highway', 3.2, 'major_road', 2.8, 2.4],
-            18,
-            [
-              'match',
-              ['get', 'kind'],
-              'highway',
-              18,
-              'major_road',
-              13,
-              'medium_road',
-              10,
-              'minor_road',
-              8,
-              5.5,
-            ],
-          ],
         },
       },
       {
@@ -339,11 +273,9 @@ type ThemedPaintProp = 'background-color' | 'fill-color' | 'line-color' | 'fill-
 const THEMED_LAYERS: Array<{ id: string; prop: ThemedPaintProp; tokenName: string }> = [
   { id: 'background', prop: 'background-color', tokenName: '--paper' },
   { id: 'earth', prop: 'fill-color', tokenName: '--paper' },
-  { id: 'landcover', prop: 'fill-color', tokenName: '--sage' },
   { id: 'water', prop: 'fill-color', tokenName: '--ink' },
   { id: 'parks', prop: 'fill-color', tokenName: '--sage' },
   { id: 'canopy', prop: 'fill-extrusion-color', tokenName: '--sage' },
-  { id: 'roads-casing', prop: 'line-color', tokenName: '--ink' },
   { id: 'roads', prop: 'line-color', tokenName: '--ink' },
   { id: 'buildings', prop: 'fill-extrusion-color', tokenName: '--building' },
 ]
