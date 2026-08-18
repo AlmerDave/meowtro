@@ -1,4 +1,9 @@
-import type { Map as MapLibreMap, StyleSpecification, SkySpecification } from 'maplibre-gl'
+import type {
+  Map as MapLibreMap,
+  StyleSpecification,
+  SkySpecification,
+  LightSpecification,
+} from 'maplibre-gl'
 import { FACADE_IMAGE_ID, facadeImage } from './facade'
 
 /* The art direction as data, spec §6.
@@ -129,6 +134,14 @@ export function buildStyle(): StyleSpecification {
        the type to two families and means the map needs no font server: the
        whole basemap is one 2.7 MB file that works offline. */
     sky: buildSky(),
+    /* Seeded from the attribute for the same reason MapCanvas seeds its own
+       theme state from it: index.html sets data-theme before React mounts,
+       so reading it here means the first paint is already lit correctly
+       rather than lit for the wrong theme until applyMapTheme runs. */
+    light:
+      LIGHT_BY_THEME[
+        (document.documentElement.dataset.theme as Theme | undefined) ?? DEFAULT_THEME
+      ],
     sources: {
       bgc: {
         type: 'vector',
@@ -355,6 +368,28 @@ export const TOGGLE_THEMES: Theme[] = ['light', 'dark']
 /** What a bare page should start as, now that paper is off the toggle. */
 export const DEFAULT_THEME: Theme = 'light'
 
+/* rev 6 §2.4. Without a light direction the facade pattern reads as flat
+   wallpaper, so this is a dependency of §2.5 rather than decoration of it.
+
+   `position` is [radial, azimuthal, polar]. Polar 0 is directly overhead and
+   90 is at the horizon, so the HIGHER number is the LOWER sun. Dark gets a
+   low, warm, weak sun (long raking light, evening); light gets a higher,
+   neutral, stronger one (closer to midday).
+
+   anchor 'map' rather than 'viewport' because bearing can never change here
+   (every rotate gesture is disabled in MapCanvas), so a fixed geographic sun
+   is both more physical and stable across a pitch change.
+
+   The three hex values are the one deliberate exception to "no hex outside
+   tokens.css". They are the colour of light, not of a surface: no CSS
+   surface anywhere reads them, so a token would be a value nothing else
+   could ever use. */
+const LIGHT_BY_THEME: Record<Theme, LightSpecification> = {
+  paper: { anchor: 'map', position: [1.5, 210, 40], color: '#ffffff', intensity: 0.3 },
+  light: { anchor: 'map', position: [1.5, 210, 35], color: '#ffffff', intensity: 0.45 },
+  dark: { anchor: 'map', position: [1.5, 235, 70], color: '#ffd9b0', intensity: 0.28 },
+}
+
 /* Per-theme facade recipe, rev 6 §2.5. `paper` is absent on purpose, not by
    omission: it gets no pattern at all and falls back to the flat --building
    fill. Do not add a paper entry to "complete" this table. */
@@ -403,5 +438,6 @@ export function applyMapTheme(map: MapLibreMap, theme: Theme) {
   // pitched view — theming it here rather than on the 3D toggle keeps the
   // two controls independent of each other.
   map.setSky(buildSky())
+  map.setLight(LIGHT_BY_THEME[theme])
   applyFacade(map, theme)
 }
