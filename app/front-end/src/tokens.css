@@ -122,12 +122,6 @@
   --shadow-glass: 0 8px 24px rgba(0, 0, 0, 0.12);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
 
-  /* Facade texture, rev 6. A window in daylight is darker than the wall
-     around it, not brighter, so both tones here are the unlit mullion.
-     Mixed off --building rather than being new hexes, so they track the
-     wall colour they sit on. */
-  --facade-glass: color-mix(in srgb, var(--ink) 22%, var(--building));
-  --facade-lit: color-mix(in srgb, var(--ink) 22%, var(--building));
 }
 
 /* Dark glass. Same five names, different values; every derived token above
@@ -144,14 +138,6 @@
   --shadow-glass: 0 12px 40px rgba(0, 0, 0, 0.28);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.18);
 
-  /* Facade texture, rev 6. --facade-lit is warm interior light and is the
-     one value here that is a literal rather than a mix: it is a light
-     source, not a surface tinted by the palette. Deliberately not --rust,
-     which is the single selection accent - lit windows must never compete
-     with a selected territory's glow. --facade-glass is the unlit
-     remainder, only slightly darker than the wall. */
-  --facade-glass: color-mix(in srgb, var(--ink) 18%, var(--building));
-  --facade-lit: #ffd9a3;
 }
 
 @media (prefers-reduced-motion: reduce) {

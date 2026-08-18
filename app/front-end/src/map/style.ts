@@ -4,7 +4,6 @@ import type {
   SkySpecification,
   LightSpecification,
 } from 'maplibre-gl'
-import { FACADE_IMAGE_ID, facadeImage } from './facade'
 
 /* The art direction as data, spec §6.
    Colours are read off :root at build time rather than written here, so
@@ -315,77 +314,32 @@ export const TOGGLE_THEMES: Theme[] = ['light', 'dark']
 /** What a bare page should start as, now that paper is off the toggle. */
 export const DEFAULT_THEME: Theme = 'light'
 
-/* rev 6 §2.4. Without a light direction the facade pattern reads as flat
-   wallpaper, so this is a dependency of §2.5 rather than decoration of it.
+/* rev 6 §2.4. Directional shading for the extruded buildings, which without
+   it are flat blocks of one tone at every angle. This originally existed to
+   make a facade texture read; that texture is gone (user review,
+   2026-08-18) and this stays, because volume reading as volume is worth a
+   single style property on its own.
 
    `position` is [radial, azimuthal, polar]. Polar 0 is directly overhead and
-   90 is at the horizon, so the HIGHER number is the LOWER sun. Dark gets a
-   low, warm, weak sun (long raking light, evening); light gets a higher,
-   neutral, stronger one (closer to midday).
+   90 is at the horizon, so the HIGHER number is the LOWER sun.
 
    anchor 'map' rather than 'viewport' because bearing can never change here
    (every rotate gesture is disabled in MapCanvas), so a fixed geographic sun
    is both more physical and stable across a pitch change.
 
-   The three hex values are the one deliberate exception to "no hex outside
-   tokens.css". They are the colour of light, not of a surface: no CSS
-   surface anywhere reads them, so a token would be a value nothing else
-   could ever use. */
+   The hex values are the one deliberate exception to "no hex outside
+   tokens.css": they are the colour of light, not of a surface, so no CSS
+   surface anywhere could ever read a token for them. */
 const LIGHT_BY_THEME: Record<Theme, LightSpecification> = {
   paper: { anchor: 'map', position: [1.5, 210, 40], color: '#ffffff', intensity: 0.3 },
   light: { anchor: 'map', position: [1.5, 210, 35], color: '#ffffff', intensity: 0.45 },
-  /* Neutral white, not the warm #ffd9b0 this started as (user review,
-     2026-08-18): a warm light multiplied against the facade's own warm lit
-     windows turned every tower muddy brown, which read as sludge rather
-     than as night. The warmth belongs in the windows, which are a light
-     source, not on the walls, which are only reflecting.
-     Polar 55 rather than 70 for the same reason: a sun that low rakes the
-     whole facade and exaggerated the cast. */
-  dark: { anchor: 'map', position: [1.5, 235, 55], color: '#ffffff', intensity: 0.34 },
+  /* Neutral white, not the warm #ffd9b0 this started as: the warm sun was
+     there to sit under lit windows, and with those gone it only put a muddy
+     cast on every wall. */
+dark: { anchor: 'map', position: [1.5, 235, 55], color: '#ffffff', intensity: 0.34 },
 }
 
-/* Per-theme facade recipe, rev 6 §2.5. `paper` is absent on purpose, not by
-   omission: it gets no pattern at all and falls back to the flat --building
-   fill. Do not add a paper entry to "complete" this table. */
-const FACADE_RECIPE: Partial<Record<Theme, { glass: string; density: number }>> = {
-  /* Scattered: a tower at night is partly occupied, never fully lit.
-     0.18 rather than the 0.34 this shipped at (user review, 2026-08-18):
-     a third of every facade lit reads as a wall of amber rather than as
-     scattered windows, and it is what made the dark theme feel heavy. */
-  dark: { glass: '--facade-lit', density: 0.18 },
-  // Every cell: in daylight a window is just a mullion, and every floor has
-  // one, so the grid is regular rather than random.
-  light: { glass: '--facade-glass', density: 1 },
-}
 
-/** Adds or refreshes the facade pattern for the active theme. Split out of
-    applyMapTheme purely for readability; it is called from there and nowhere
-    else.
-
-    Ordering matters: the image has to exist before any layer names it, which
-    is why the pattern is never part of buildStyle()'s initial object. The
-    first applyMapTheme call (MapCanvas' load effect) is what installs it. */
-function applyFacade(map: MapLibreMap, theme: Theme) {
-  if (!map.getLayer('buildings')) return
-  const recipe = FACADE_RECIPE[theme]
-
-  if (!recipe) {
-    // Back to the flat fill. undefined resets the property to its default
-    // rather than painting an empty pattern over the wall.
-    map.setPaintProperty('buildings', 'fill-extrusion-pattern', undefined)
-    return
-  }
-
-  const image = facadeImage(token('--building'), token(recipe.glass), recipe.density)
-  // No 2D context: leave whatever is already painted alone rather than
-  // clearing to an untextured block half way through a theme change.
-  if (!image) return
-
-  if (map.hasImage(FACADE_IMAGE_ID)) map.updateImage(FACADE_IMAGE_ID, image)
-  else map.addImage(FACADE_IMAGE_ID, image)
-
-  map.setPaintProperty('buildings', 'fill-extrusion-pattern', FACADE_IMAGE_ID)
-}
 
 export function applyMapTheme(map: MapLibreMap, theme: Theme) {
   for (const { id, prop, tokenName } of THEMED_LAYERS) {
@@ -396,5 +350,4 @@ export function applyMapTheme(map: MapLibreMap, theme: Theme) {
   // two controls independent of each other.
   map.setSky(buildSky())
   map.setLight(LIGHT_BY_THEME[theme])
-  applyFacade(map, theme)
 }
