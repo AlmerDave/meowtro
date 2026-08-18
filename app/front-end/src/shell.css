@@ -210,9 +210,12 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink-soft);
   border-bottom: 1px solid var(--rule);
 }
-.rail button {
+/* --- Cat row, rev 6 §3, ui/CatRow.tsx -----------------------------------
+   One row recipe used by both the rail and the mobile sheet. */
+.cat-row {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-3);
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--rule);
@@ -224,16 +227,40 @@ body:has(.map)::-webkit-scrollbar {
   padding: var(--s-2) var(--s-4);
   text-align: left;
 }
-.rail button:last-child {
+.cat-row:last-child {
   border-bottom: 0;
 }
-.rail button:hover {
+.cat-row:hover {
   background: var(--well);
 }
-.rail button[data-selected='true'] {
+.cat-row[data-selected='true'] {
   color: var(--rust);
 }
-.rail button span {
+/* Corner-matched to the active theme's material rather than given its own
+   value: half of glass's 20px reads as a rounded tile, half of paper's 2px
+   as a printed chip. --well shows through while the image loads, and stays
+   showing if it never does. */
+.cat-row-thumb {
+  flex-shrink: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: cover;
+  border-radius: calc(var(--radius) / 2);
+  background: var(--well);
+}
+.cat-row-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+/* min-width:0 above plus this is what stops a long name forcing the row
+   wider than the panel instead of ellipsing. */
+.cat-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cat-row-line {
   font-family: var(--font-mono);
   font-size: var(--t-xs);
   color: var(--ink-soft);

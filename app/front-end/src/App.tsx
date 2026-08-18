@@ -4,6 +4,7 @@ import { Grain } from '@/Grain'
 import { MapCanvas } from '@/map/MapCanvas'
 import { Plate } from '@/plate/Plate'
 import { useLenis } from '@/motion/lenis'
+import { CatRow } from '@/ui/CatRow'
 import { listCats, type Cat } from '@/data/catsRepo'
 
 /* Two pieces of state and props, spec §5: `selectedId`/`hoveredId`, click
@@ -50,17 +51,13 @@ export default function App() {
         <h1>Meowtro</h1>
         <p>BONIFACIO GLOBAL CITY · {cats.length} RESIDENTS</p>
         {cats.map((cat) => (
-          <button
+          <CatRow
             key={cat.id}
-            type="button"
-            data-selected={String(cat.id === selectedId)}
-            onClick={() => setSelectedId(cat.id === selectedId ? null : cat.id)}
-            onMouseEnter={() => setHoveredId(cat.id)}
-            onMouseLeave={() => setHoveredId(null)}
-          >
-            {cat.name}
-            <span>{cat.line.split(' · ')[0]}</span>
-          </button>
+            cat={cat}
+            selected={cat.id === selectedId}
+            onSelect={() => setSelectedId(cat.id === selectedId ? null : cat.id)}
+            onHover={(hovering) => setHoveredId(hovering ? cat.id : null)}
+          />
         ))}
       </nav>
 

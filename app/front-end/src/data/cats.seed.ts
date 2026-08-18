@@ -12,6 +12,15 @@ export type Cat = {
   range: string
   disposition: string
   coordinates: string
+  /** A URL, not a bundled asset, so v2 can point this at real hosted photos
+      without touching anything but this file.
+
+      Note the cost, deliberately taken: this is the one network dependency
+      in an app that is otherwise a single offline pmtiles file, so every
+      consumer must still render correctly when it fails to load. See
+      CatRow's onError. Moving these into public/ later is a data-only edit
+      here, which is the point of typing it as a URL. */
+  photo: string
 }
 
 /* Three cats, not twelve. Three is what proves the overlap reads correctly;
@@ -29,6 +38,7 @@ export const CATS: Cat[] = [
     range: 'Track 30th → Net Park loading dock',
     disposition: 'Approaches for food, not for touch',
     coordinates: '14.5512° N, 121.0500° E',
+    photo: 'https://placecats.com/millie/88/88',
   },
   {
     id: 'biscuit',
@@ -41,6 +51,7 @@ export const CATS: Cat[] = [
     range: 'Net Park lawn → 5th Avenue service road',
     disposition: 'Sleeps through everything',
     coordinates: '14.5487° N, 121.0463° E',
+    photo: 'https://placecats.com/neo/88/88',
   },
   {
     id: 'tala',
@@ -53,5 +64,6 @@ export const CATS: Cat[] = [
     range: '32nd Street underpass → the mid-block gardens',
     disposition: 'Watches from distance, never closes',
     coordinates: '14.5501° N, 121.0489° E',
+    photo: 'https://placecats.com/bella/88/88',
   },
 ]
