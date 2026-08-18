@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import FadeContent from '@/components/FadeContent'
 import { Grain } from '@/Grain'
 import { Plate } from '@/plate/Plate'
+import { CatRow } from '@/ui/CatRow'
 import { CATS } from '@/data/cats.seed'
 import { THEMES, DEFAULT_THEME, TOGGLE_THEMES, type Theme } from '@/map/style'
 
@@ -295,17 +296,28 @@ export default function Styleguide() {
             <span className="note">.rail itself, borrowed from shell.css — cycle theme above</span>
           </div>
           <div className="glass-demo">
+            {/* The real structure, not a lookalike: rev 7 moved the rail's
+                children onto their own classes, and a swatch built from bare
+                <h1>/<button> would show the material correctly while showing
+                the contents wrong. */}
             <div className="rail">
-              <h1>Meowtro</h1>
-              <p>BONIFACIO GLOBAL CITY · 12 RESIDENTS</p>
-              <button type="button">
-                Milo
-                <span>N1</span>
-              </button>
-              <button type="button" data-selected="true">
-                Biscuit
-                <span>N2</span>
-              </button>
+              <div className="rail-head">
+                <div className="rail-title">
+                  <h1>Meowtro</h1>
+                  <p>Bonifacio Global City</p>
+                </div>
+              </div>
+              <div className="rail-list">
+                {CATS.slice(0, 2).map((cat, i) => (
+                  <CatRow
+                    key={cat.id}
+                    cat={cat}
+                    selected={i === 0}
+                    onSelect={() => undefined}
+                    onHover={() => undefined}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         </section>

@@ -38,7 +38,7 @@ export const CATS: Cat[] = [
     range: 'Track 30th → Net Park loading dock',
     disposition: 'Approaches for food, not for touch',
     coordinates: '14.5512° N, 121.0500° E',
-    photo: 'https://placecats.com/millie/88/88',
+    photo: 'https://placecats.com/millie/640/480',
   },
   {
     id: 'biscuit',
@@ -51,7 +51,7 @@ export const CATS: Cat[] = [
     range: 'Net Park lawn → 5th Avenue service road',
     disposition: 'Sleeps through everything',
     coordinates: '14.5487° N, 121.0463° E',
-    photo: 'https://placecats.com/neo/88/88',
+    photo: 'https://placecats.com/neo/640/480',
   },
   {
     id: 'tala',
@@ -64,6 +64,6 @@ export const CATS: Cat[] = [
     range: '32nd Street underpass → the mid-block gardens',
     disposition: 'Watches from distance, never closes',
     coordinates: '14.5501° N, 121.0489° E',
-    photo: 'https://placecats.com/bella/88/88',
+    photo: 'https://placecats.com/bella/640/480',
   },
 ]

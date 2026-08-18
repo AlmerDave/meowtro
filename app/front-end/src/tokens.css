@@ -29,6 +29,13 @@
   --rust: #9a3f2b;
   --sage: #6b7f62;
 
+  /* The active cat's own territory colour, rev 7. Every panel that knows
+     which cat it is showing overrides this inline from `cat.colour` (see
+     ui/CatRow.tsx and plate/Plate.tsx), so the accent is data, not a choice
+     any component makes. The default is what chrome with no cat behind it
+     falls back to — the search field's focus ring, a map control. */
+  --accent: var(--rust);
+
   /* Derived — used for rules, wells, hover states.
      Always mixed from the five above, never a new hex. */
   --rule: color-mix(in srgb, var(--ink) 18%, transparent);
@@ -80,6 +87,13 @@
   /* Paper does not have rounded corners. 4px is the ceiling.
      (The glass themes raise this to 20px — see below.) */
   --radius: 2px;
+
+  /* Photographs, in the rail's thumbnail slot and in the plate's hero. One
+     token for both ends on purpose: the same photo travels between them
+     (see plate/Plate.tsx), and two different corner values would leave the
+     browser interpolating a radius across a 9x scale change — which is the
+     one way a shared-element morph visibly stretches. */
+  --radius-media: calc(var(--radius) * 0.6);
 
   /* Motion — spec §8. Restraint is the style. */
   --dur-micro: 120ms;

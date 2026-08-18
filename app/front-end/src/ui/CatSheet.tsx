@@ -1,8 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { AnimatePresence, motion } from 'motion/react'
 import { Drawer } from 'vaul'
+import { ChevronLeft } from 'lucide-react'
 import type { Cat } from '@/data/catsRepo'
 import { CatRow } from '@/ui/CatRow'
 import { Plate } from '@/plate/Plate'
+import { springSoft } from '@/motion/springs'
 
 /* The mobile presentation of the rail and the plate, rev 6 §4. Below 900px
    the two stop being independently positioned panels and share one sheet:
@@ -37,9 +40,10 @@ type Props = {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onHover: (id: string | null) => void
+  onClose: () => void
 }
 
-export function CatSheet({ cats, selectedId, onSelect, onHover }: Props) {
+export function CatSheet({ cats, selectedId, onSelect, onHover, onClose }: Props) {
   /* Controlled, because vaul has no uncontrolled option for this: the props
      are activeSnapPoint/setActiveSnapPoint and there is no
      defaultActiveSnapPoint. Opens at the middle detent so the list is
@@ -47,6 +51,13 @@ export function CatSheet({ cats, selectedId, onSelect, onHover }: Props) {
   const [snap, setSnap] = useState<number | string | null>(SNAP_POINTS[1])
 
   const selected = cats.find((c) => c.id === selectedId) ?? null
+
+  /* Selecting a cat from the peek detent would otherwise open a plate that is
+     96px tall. The sheet raises itself to fit what it was just asked to show,
+     which is the one place this component gets to move on its own. */
+  useEffect(() => {
+    if (selected) setSnap(SNAP_POINTS[2])
+  }, [selected])
 
   return (
     <Drawer.Root
@@ -72,6 +83,26 @@ export function CatSheet({ cats, selectedId, onSelect, onHover }: Props) {
             {selected ? selected.name : 'Cats of Bonifacio Global City'}
           </Drawer.Title>
 
+          {/* The plate has its own close in the hero, but on a phone the
+              gesture people reach for is "back to the list", and it belongs
+              at the top edge where a thumb already is. */}
+          <AnimatePresence initial={false}>
+            {selected && (
+              <motion.div
+                className="cat-sheet-bar"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={springSoft}
+              >
+                <button type="button" onClick={onClose}>
+                  <ChevronLeft size={14} />
+                  <span>All cats</span>
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* The single scroll container in the sheet. vaul reads scrollTop
               here to decide between scrolling and dragging, so nothing
               inside may scroll on its own: see the .plate override in
@@ -79,7 +110,7 @@ export function CatSheet({ cats, selectedId, onSelect, onHover }: Props) {
               breakpoint. */}
           <div className="cat-sheet-body">
             {selected ? (
-              <Plate cat={selected} onClose={() => onSelect(null)} />
+              <Plate cat={selected} onClose={onClose} />
             ) : (
               cats.map((cat) => (
                 <CatRow
@@ -87,8 +118,11 @@ export function CatSheet({ cats, selectedId, onSelect, onHover }: Props) {
                   cat={cat}
                   // Never marked selected in this list: reaching a selected
                   // state swaps the whole panel to that cat's plate, so a
-                  // highlighted row is a state the list cannot be in.
+                  // highlighted row is a state the list cannot be in — and
+                  // with no selected row there is nothing for the sliding
+                  // marker to sit on either.
                   selected={false}
+                  marker={false}
                   onSelect={() => onSelect(cat.id)}
                   onHover={(hovering) => onHover(hovering ? cat.id : null)}
                 />
