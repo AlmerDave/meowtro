@@ -92,6 +92,23 @@ body:has(.map)::-webkit-scrollbar {
   opacity: 1;
 }
 
+/* --- Rain, map/Rain.tsx --------------------------------------------------
+   A 2D canvas, not WebGL: see the file's own header for why. Sits at
+   z-index 2, above the clouds/labels group and below every UI panel,
+   which is also why its visibility is left entirely to the component:
+   unlike the clouds fade, rain has no transition to sit through, it is
+   either drawn or the canvas is empty, so there is no CSS state to hold
+   here beyond position and stacking. */
+.rain {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
 /* --- Map controls, EXPERIMENTAL mockup ---------------------------------
    Theme + 2D/3D toggle, styled to match the rail/plate instead of MapLibre's
    default control chrome. See map/MapControls.tsx. (No compass: bearing
@@ -201,17 +218,124 @@ body:has(.map)::-webkit-scrollbar {
   letter-spacing: 0.06em;
 }
 
-/* --- Cat markers, flat-mode DOM pin, map/CatMarkers.tsx -----------------
-   Positioning is maplibregl.Marker's job (it appends its own container
-   above the canvas); only the glyph's own look lives here. The pitched-mode
-   ground-plane dot is a MapLibre circle layer instead and needs no CSS. */
-.cat-pin-glyph {
-  display: block;
+/* --- Cat marker, map/CatMarkers.tsx ------------------------------------
+   The cat's photo in an ink-ringed disc, on a hairline stake, over the
+   ground point. Positioning is maplibregl.Marker's job (it appends its own
+   container above the canvas); only the marker's own look lives here.
+
+   Anchored 'bottom', so the foot of the stake is the geographic point. The
+   button's own box never transforms, only the head inside it does: see the
+   note in CatPin about a moving hit-box losing its own mouseup. */
+.cat-pin {
+  /* Positioned, because .cat-pin-plate is absolute against it. Without this
+     the plate number escapes to MapLibre's own marker container and lands
+     somewhere else on the map entirely. */
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--ink) 35%, transparent));
+}
+/* Flat mode has no ground disc (the circle layer is pitched-only), so the
+   stake would end in nothing. This is that mode's ground: a small foot, only
+   drawn when the disc is not there to be it. */
+.cat-pin[data-lifted='false']::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--paper);
+}
+
+.cat-pin-head {
+  display: grid;
+  place-items: center;
+  width: 2.125rem;
+  height: 2.125rem;
+  padding: 2px;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  /* The accent shows as the ring between the border and the photo, so the
+     territory colour identifies the cat even at a size where the photo is
+     just a smudge. */
+  background: var(--accent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--ink) 35%, transparent);
+}
+.cat-pin-photo {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+  /* Faded in rather than popped: fifty photos resolving at their own pace
+     otherwise flicker across the map as each one lands. */
+  opacity: 0;
+  transition: opacity var(--dur-panel) var(--ease-out);
+}
+.cat-pin-photo[data-ready='true'] {
+  opacity: 1;
+}
+/* The offline state, and the same story the rail row tells: with no network
+   this degrades to the drawing it would have been before photos existed,
+   not to a broken image. */
+.cat-pin-fallback {
+  width: 60%;
+  height: 60%;
+  color: var(--paper);
+}
+
+/* The connector. Without it the disc is floating with nothing under it and
+   has no stated location; with it, the marker is planted. Fades toward the
+   ground so it reads as a sightline rather than a drawn object competing
+   with the roads underneath. */
+.cat-pin-stake {
+  width: 1.5px;
+  height: 0.75rem;
+  border-radius: 1px;
+  background: linear-gradient(
+    to bottom,
+    var(--accent),
+    color-mix(in srgb, var(--accent) 15%, transparent)
+  );
+  transition: height var(--dur-panel) var(--ease-out);
+}
+/* Pitched: taller, so the pin clears the low buildings. Deliberately a fixed
+   height rather than something chasing the skyline with zoom, see CatPin. */
+.cat-pin[data-lifted='true'] .cat-pin-stake {
+  height: 2.75rem;
+}
+
+/* Only on the one you are looking at. Fifty plate numbers permanently on a
+   map is a legend, not a map. Absolute so revealing it cannot nudge the pin
+   off its own point. */
+.cat-pin-plate {
+  position: absolute;
+  bottom: 0;
+  left: calc(50% + var(--s-2));
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--ink-soft);
+  opacity: 0;
+  transition: opacity var(--dur-ui) var(--ease-out);
+  pointer-events: none;
+}
+.cat-pin[data-active='true'] .cat-pin-plate {
+  opacity: 1;
+}
+.cat-pin[data-active='true'] .cat-pin-head {
+  border-color: var(--accent);
+  box-shadow:
+    0 2px 10px color-mix(in srgb, var(--ink) 40%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* --- Panel recipe -----------------------------------------------------
@@ -226,7 +350,11 @@ body:has(.map)::-webkit-scrollbar {
    map, which is the one case this shared rule cannot express. */
 .rail,
 .plate,
-.map-controls {
+.map-controls,
+.record,
+.record-open,
+.sight,
+.sight-open {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
@@ -307,6 +435,7 @@ body:has(.map)::-webkit-scrollbar {
    browser's blue on a page with no blue in it. :focus-visible, not :focus —
    a mouse press on a row should not leave a ring behind it. */
 .cat-row:focus-visible,
+.cat-pin:focus-visible,
 .rail-collapse:focus-visible,
 .rail-clear:focus-visible,
 .rail-empty button:focus-visible,
@@ -314,8 +443,29 @@ body:has(.map)::-webkit-scrollbar {
 .plate-hero-loading button:focus-visible,
 .plate-view:focus-visible,
 .plate-copy:focus-visible,
+.plate-report:focus-visible,
 .cat-panel-close:focus-visible,
 .cat-scrim:focus-visible,
+.sight-open:focus-visible,
+.sight-card:focus-visible,
+.sight-scan:focus-visible,
+.scan-retake:focus-visible,
+.scan-report:focus-visible,
+.scan-manual:focus-visible,
+.sight-search input:focus-visible,
+.sight-go:focus-visible,
+.sight-place:focus-visible,
+.sight-when button:focus-visible,
+.sight-undo:focus-visible,
+.sight-back:focus-visible,
+.sight-close:focus-visible,
+.record-open:focus-visible,
+.record-save:focus-visible,
+.record-place:focus-visible,
+.record-swatch:focus-visible,
+.record-close:focus-visible,
+.record-clear:focus-visible,
+.record-input:focus-visible,
 .map-control:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -775,7 +925,7 @@ body:has(.map)::-webkit-scrollbar {
   display: flex;
   flex-direction: column;
   width: 24rem;
-  max-height: calc(100vh - var(--s-12));
+  max-height: calc(100dvh - var(--s-12));
   border-radius: var(--radius);
   /* A wash of the cat's own territory colour, top-down. The only per-cat
      chrome in the card besides the accent rules. */
@@ -846,11 +996,15 @@ body:has(.map)::-webkit-scrollbar {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* Indeterminate, because it is: the chunk's progress is not observable from
-   here without a fetch wrapper this does not need. A travelling segment
-   states "still working" honestly; a filling bar would be inventing a
-   percentage. */
-.plate-hero-loading-bar {
+/* Indeterminate, because it is: neither the 3D chunk's progress nor the
+   map's tile queue is observable from here without wrapping fetch, which
+   neither needs. A travelling segment states "still working" honestly; a
+   filling bar would be inventing a percentage.
+
+   Shared with ui/Loading.tsx, hence the neutral name. It reports the same
+   fact in both places, so it should not be two rules that have to be kept
+   agreeing. */
+.loading-bar {
   position: relative;
   overflow: hidden;
   width: 5rem;
@@ -858,7 +1012,7 @@ body:has(.map)::-webkit-scrollbar {
   border-radius: 999px;
   background: var(--rule);
 }
-.plate-hero-loading-bar::after {
+.loading-bar::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -875,7 +1029,7 @@ body:has(.map)::-webkit-scrollbar {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .plate-hero-loading-bar::after {
+  .loading-bar::after {
     animation: none;
     opacity: 0.4;
   }
@@ -1086,6 +1240,50 @@ body:has(.map)::-webkit-scrollbar {
   line-height: 1.45;
 }
 
+/* The offer at the end of the record. Full width so it reads as the row
+   after the fields rather than a control floating beside them, and outlined
+   in the cat's own accent so it is unmistakably about THIS cat without
+   competing with the plate's one filled element. */
+.plate-report {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  margin-top: var(--s-4);
+  padding: var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .plate-report:hover {
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+  }
+}
+/* Pressed, not merely hovered. A control this size on a phone gets no hover
+   at all, and without an active state a tap has nothing acknowledging it
+   between the touch and the panel changing. */
+.plate-report:active {
+  transform: scale(0.98);
+}
+
+/* --- Parked with plate/CatFigure.tsx, 2026-08-23 -----------------------
+   The Photo/3D toggle these styled was removed from Plate.tsx on user
+   direction. Nothing renders .plate-views, .plate-view, .plate-view-pill,
+   .plate-hero-model or .plate-hero-loading any more. They are kept so that
+   restoring the toggle is an edit to one component rather than a rewrite of
+   its styling, which is the same call made about the component files. */
+
 .plate-foot {
   display: flex;
   align-items: center;
@@ -1175,6 +1373,283 @@ body:has(.map)::-webkit-scrollbar {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* --- Loading screen, ui/Loading.tsx -------------------------------------
+   Above everything. The documented stack is map 0, grain/labels/clouds 1,
+   rain 2, panels 3, deck 4, scrim 5, raised panel 6; this sits clear of all of it
+   rather than one above the top, so inserting anything later cannot slip
+   underneath it by accident.
+
+   Painted --paper, not black: it is the app's own ground, so the reveal is
+   a sheet lifting off a page rather than a light being switched on. */
+.loading {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  /* Its own black, not --paper, and its own type colour with it: the sheet
+     is the same card in every theme, so it cannot inherit --ink, which is
+     near-black in the light theme and would be invisible on this. */
+  background: var(--loading-bg);
+  color: var(--loading-ink);
+}
+/* Once it is leaving, the map underneath is real and should be usable; a
+   full-screen sheet that still swallows clicks for most of a second after it
+   has visually gone is the kind of thing that reads as the app being slow. */
+.loading[data-exiting='true'] {
+  pointer-events: none;
+}
+
+/* The curtain. Taller than the viewport by exactly the bulge in Loading.tsx,
+   so the curve has somewhere to hang below the fold. It sits behind the
+   wordmark, which is why the mark is positioned. */
+.loading-curtain {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: 100%;
+  height: calc(100% + 300px);
+}
+.loading-mark {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-4);
+  text-align: center;
+}
+/* The rail's wordmark at the rail's own weight and tracking, one step up in
+   size. Deliberately not a different lockup: the first thing you see and the
+   thing in the corner afterwards should be the same object. */
+.loading-word {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: var(--t-xl);
+  font-variation-settings: 'opsz' 96, 'WONK' 1;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+}
+.loading-label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--loading-ink-soft);
+}
+
+/* --- The cube, ui/Loading.tsx ------------------------------------------
+   Adapted from "Cube Loader" by @daiv09 on 21st.dev, and the look is kept
+   exactly. Its palette is shared with nothing else in the app; see the note
+   on the loading tokens in tokens.css.
+
+   Three things about the original are not kept, all of them defects rather
+   than style:
+
+   1. Its CSS lived in a <style jsx> block, which is a Next.js feature. In
+      Vite that renders as a plain <style> tag, so the rules would go in
+      GLOBAL and unscoped, and it declares `.face`, `.front`, `.back`,
+      `.left`, `.right`, `.top` and `.bottom` as class names. Global `.top`
+      and `.left` in a shared stylesheet is a collision waiting to happen, so
+      everything here is namespaced under cube-.
+   2. backdrop-filter: blur(2px) on all six faces is dropped. Six animated
+      backdrop filters is an expensive continuous composite, and this runs in
+      the exact window where the map is parsing a 10MB pmtiles file. Against
+      a near-black card with only the core glow behind them the blur was
+      buying almost nothing. One line to restore if it is missed.
+   3. Its unused `glitch` keyframes and unused `cn` import are not carried
+      over. */
+/* The clearance under the cube is its own margin, not the stack's gap: the
+   shadow hangs 5rem below the stage, and a gap large enough to clear it
+   would also push the wordmark, label and bar that far apart from each
+   other. */
+.cube-stage {
+  margin-bottom: var(--s-12);
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 6rem;
+  height: 6rem;
+  perspective: 1200px;
+}
+/* The "changing intervals": a wash behind the cube that drifts through the
+   same three hues the faces use, slowly enough to register as a mood rather
+   than as a effect. One element, one animation, composited. */
+.cube-stage::before {
+  content: '';
+  position: absolute;
+  width: 16rem;
+  height: 16rem;
+  border-radius: 999px;
+  filter: blur(40px);
+  opacity: 0.35;
+  animation: cube-wash 12s ease-in-out infinite;
+}
+@keyframes cube-wash {
+  0%,
+  100% {
+    background: var(--cube-a);
+  }
+  33% {
+    background: var(--cube-b);
+  }
+  66% {
+    background: var(--cube-c);
+  }
+}
+
+.cube {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+  animation: cube-spin 8s linear infinite;
+}
+@keyframes cube-spin {
+  from {
+    transform: rotateX(0deg) rotateY(0deg);
+  }
+  to {
+    transform: rotateX(360deg) rotateY(360deg);
+  }
+}
+
+/* The energy source at the centre. */
+.cube-core {
+  position: absolute;
+  inset: 0;
+  width: 2rem;
+  height: 2rem;
+  margin: auto;
+  border-radius: 999px;
+  background: #fff;
+  filter: blur(12px);
+  box-shadow: 0 0 40px rgba(255, 255, 255, 0.8);
+  animation: cube-core 2s ease-in-out infinite;
+}
+@keyframes cube-core {
+  0%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+  }
+}
+
+/* Each side is a wrapper that only ever holds a rotation, so the face inside
+   it is free to animate translateZ along that side's own outward axis. Doing
+   both on one element is what makes hand-rolled CSS cubes fight themselves. */
+.cube-side {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  transform-style: preserve-3d;
+}
+.cube-side-front {
+  transform: rotateY(0deg);
+}
+.cube-side-back {
+  transform: rotateY(180deg);
+}
+.cube-side-right {
+  transform: rotateY(90deg);
+}
+.cube-side-left {
+  transform: rotateY(-90deg);
+}
+.cube-side-top {
+  transform: rotateX(90deg);
+}
+.cube-side-bottom {
+  transform: rotateX(-90deg);
+}
+
+.cube-face {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 2px solid var(--cube-a);
+  background: color-mix(in srgb, var(--cube-a) 10%, transparent);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--cube-a) 40%, transparent);
+  /* 48px is half of the 6rem cube, so the faces start exactly on its
+     surface and breathe outward from there. */
+  animation: cube-breathe 3s ease-in-out infinite;
+}
+.cube-side-right .cube-face,
+.cube-side-left .cube-face {
+  border-color: var(--cube-b);
+  background: color-mix(in srgb, var(--cube-b) 10%, transparent);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--cube-b) 40%, transparent);
+}
+.cube-side-top .cube-face,
+.cube-side-bottom .cube-face {
+  border-color: var(--cube-c);
+  background: color-mix(in srgb, var(--cube-c) 10%, transparent);
+  box-shadow: 0 0 15px color-mix(in srgb, var(--cube-c) 40%, transparent);
+}
+@keyframes cube-breathe {
+  0%,
+  100% {
+    transform: translateZ(48px);
+    opacity: 0.8;
+  }
+  50% {
+    transform: translateZ(80px);
+    opacity: 0.4;
+    border-color: rgba(255, 255, 255, 0.8);
+  }
+}
+
+.cube-shadow {
+  position: absolute;
+  bottom: -5rem;
+  width: 6rem;
+  height: 2rem;
+  border-radius: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  filter: blur(20px);
+  animation: cube-shadow 3s ease-in-out infinite;
+}
+@keyframes cube-shadow {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1.5);
+    opacity: 0.2;
+  }
+}
+
+/* Reduced motion keeps the cube, because it is the content, and stops it
+   moving. A held pose at a three-quarter angle still reads as a wireframe
+   box; a spinning one is the thing that causes trouble. */
+@media (prefers-reduced-motion: reduce) {
+  .cube {
+    animation: none;
+    transform: rotateX(-24deg) rotateY(32deg);
+  }
+  .cube-face,
+  .cube-core,
+  .cube-shadow,
+  .cube-stage::before {
+    animation: none;
+  }
+  .cube-face {
+    transform: translateZ(48px);
+  }
 }
 
 /* --- Mobile: the deck and the raised panel, ui/CatDeck.tsx -------------
@@ -1431,4 +1906,992 @@ body:has(.map)::-webkit-scrollbar {
     right: var(--s-4);
     bottom: calc(7.5rem + env(safe-area-inset-bottom));
   }
+}
+
+/* --- Record a cat, ui/RecordCat.tsx -------------------------------------
+   Bottom left, under the rail, opposite the map controls in the other
+   corner. That is the only quiet corner left on this screen, and it puts
+   "add to the index" directly below the index it adds to.
+
+   No material declared here: the trigger and the panel are both on the
+   panel recipe above, so they are the same glass as the rail and the plate
+   and follow the theme for free. */
+.record-open {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  bottom: var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .record-open:hover {
+    background: var(--surface-hover);
+  }
+}
+/* The trigger is also the cancel, so it has to say which. Hiding it while
+   the panel is open would move the target out from under the pointer that
+   just opened it. */
+.record-open[data-open='true'] {
+  color: var(--ink-soft);
+}
+
+.record {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  /* Clear of the trigger, which stays put underneath: the panel grows up
+     out of the button rather than replacing it. */
+  bottom: calc(var(--s-6) + 3rem);
+  display: flex;
+  flex-direction: column;
+  width: 19rem;
+  max-height: calc(100dvh - 12rem);
+  border-radius: var(--radius);
+}
+
+.record-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-3) var(--s-2) var(--s-4);
+}
+.record-head h2 {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+.record-close {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+/* The body scrolls, the head and the foot do not: on a short window this is
+   a tall form in a corner, and a panel that grows past the viewport would
+   put its own submit button off screen. */
+.record-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 0 var(--s-4) var(--s-3);
+}
+
+.record-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.record-label {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.record-input {
+  width: 100%;
+  padding: var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+  font-family: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  resize: vertical;
+}
+.record-input::placeholder {
+  color: color-mix(in srgb, var(--ink-soft) 65%, transparent);
+}
+
+.record-colours {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+}
+/* legend does not participate in flex layout in every engine, so it is
+   taken out of flow and the swatches lay out as the row. */
+.record-colours legend {
+  float: left;
+  width: 100%;
+  margin-bottom: var(--s-1);
+}
+.record-swatch {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 3px var(--s-2) 3px 3px;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.record-swatch span {
+  width: 0.875rem;
+  height: 0.875rem;
+  border-radius: 999px;
+  background: var(--swatch);
+}
+.record-swatch[data-on='true'] {
+  border-color: var(--swatch);
+  color: var(--ink);
+}
+
+/* The place button carries its own state in its label (the coordinates once
+   there are some), so it is wider and quieter than a normal button: it is a
+   readout you can press, not an action you repeat. */
+.record-place {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px dashed var(--rule-strong);
+  border-radius: calc(var(--radius) * 0.4);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  cursor: pointer;
+}
+.record-place[data-on='true'] {
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.record-radius {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.record-radius input {
+  flex: 1;
+  /* One line instead of a styled track: accent-color themes a native range
+     input in every current engine, and the native control already has the
+     drag, the keyboard steps and the touch target right. */
+  accent-color: var(--accent);
+}
+.record-radius input:disabled {
+  opacity: 0.4;
+}
+.record-radius-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.record-error {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--rust);
+}
+
+.record-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3) var(--s-4);
+  border-top: 1px solid var(--rule);
+}
+/* States the whole limitation of this version in one line, in the panel
+   that has it, rather than in a README nobody presenting will read out. */
+.record-note {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  line-height: 1.5;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.record-clear {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--rust);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.record-save {
+  flex-shrink: 0;
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  cursor: pointer;
+}
+
+/* Aiming. Set on <body> rather than on the canvas' inline style because
+   Territories' hover handlers write that inline style themselves, and the
+   two would take turns winning while the pointer crossed a territory. */
+body[data-placing='true'] .maplibregl-canvas {
+  cursor: crosshair !important;
+}
+
+/* Below the breakpoint the rail is gone and the deck owns the bottom of the
+   screen, so the trigger moves to the quiet top left and the panel stops
+   being a corner card and becomes a sheet with room to type in. */
+@media (max-width: 900px) {
+  .record-open {
+    top: var(--s-4);
+    bottom: auto;
+    left: var(--s-4);
+  }
+  .record {
+    top: calc(var(--s-4) + 3rem);
+    bottom: auto;
+    left: var(--s-4);
+    right: var(--s-4);
+    width: auto;
+    max-height: calc(100dvh - 12rem);
+  }
+}
+
+/* Text for screen readers only. The app had no such utility until the
+   sighting picker needed one: its result count is a live region, and a live
+   region containing "12" announces a number with no noun attached to it. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- I saw a cat, ui/ReportSighting.tsx ---------------------------------
+   Bottom left, where the admin's record panel used to sit, opposite the map
+   controls. Same corner, same material: this is the visitor's counterpart
+   to that panel, not a different kind of surface.
+
+   Everything below is layout and type. The glass comes from the panel
+   recipe near the top of this file, which .sight and .sight-open join. */
+.sight-open {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  bottom: var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sight-open:hover {
+    background: var(--surface-hover);
+  }
+}
+.sight-open[data-open='true'] {
+  color: var(--ink-soft);
+}
+
+/* Focused by script when a plate asks to start a sighting, so it must not
+   draw a focus ring the way a control would: the ring belongs to the thing
+   you pressed, not to the container that answered. */
+.sight:focus {
+  outline: none;
+}
+.sight {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  /* Grows up out of the button, which stays put underneath it. */
+  bottom: calc(var(--s-6) + 3rem);
+  display: flex;
+  flex-direction: column;
+  width: 20rem;
+  max-height: calc(100dvh - 12rem);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+/* Back on the left, cancel on the right, title between them. The back slot
+   keeps its width when there is nothing in it (step one), so the title does
+   not shift sideways as you move through the steps. */
+.sight-head {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-3) var(--s-3) var(--s-2) var(--s-3);
+}
+.sight-head h2 {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sight-back,
+.sight-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+/* --- Step one: the grid ------------------------------------------------
+   Photographs at a size you can actually match against an animal in front
+   of you, two to a row. This is the whole reason the flow starts here
+   rather than with a list of names: recognition, not recall. */
+.sight-grid {
+  /* The one part of the panel that absorbs a long list. Flex items shrink by
+     default, so without this pair the header, the search field and the note
+     would each give up a little height to a fifty-cat grid and the panel
+     would compress from every direction at once instead of scrolling. The
+     min-height is the half people forget: a flex item will not shrink below
+     its content without it, so the scrollbar never appears. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  /* auto-fill rather than a fixed two columns: the panel is 20rem on a
+     desktop and near-full-width as a mobile sheet, and this fills each with
+     as many square photos as fit rather than stretching two of them. No
+     media query, and it stays right if the panel is ever resized. */
+  grid-template-columns: repeat(auto-fill, minmax(5.25rem, 1fr));
+  gap: var(--s-2);
+  padding: 0 var(--s-3) var(--s-3);
+}
+.sight-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  /* The native answer to a long list: the browser skips layout and paint
+     for cards scrolled out of view, which is what a virtual-list library
+     would have been installed to do. contain-intrinsic-size is the half
+     that matters, it is the placeholder height used while a card is
+     skipped, and without it the scrollbar jumps as you travel. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 7.5rem;
+}
+.sight-card img {
+  width: 100%;
+  /* Square, so every cat gets the same amount of attention and the grid
+     does not ripple as photos of different proportions load in. */
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: calc(var(--radius) * 0.5);
+  /* The cat's own territory colour as the frame, the same identification
+     the pin and the rail row use. */
+  border: 2px solid var(--accent);
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sight-card:hover img {
+    transform: scale(1.03);
+  }
+}
+.sight-card-name {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+  /* A recorded cat can be given any name at all, and one long enough to
+     wrap would make its card taller than its neighbours and tear a hole in
+     the grid. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The reason the order is what it is, stated on each card rather than only
+   in the note under the grid. */
+.sight-card-away {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A sibling of the grid, not a child of it, which is what actually keeps it
+   on screen while a long list scrolls underneath. It carried position:
+   sticky for a while, which read as the reason and was doing nothing at all,
+   because nothing scrolls at this level. */
+.sight-search {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 var(--s-3) var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+  color: var(--ink-soft);
+}
+.sight-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink);
+}
+.sight-search input:focus {
+  outline: none;
+}
+.sight-count {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+.sight-empty {
+  margin: 0 var(--s-4) var(--s-3);
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+/* Under the grid rather than in it, so it does not have to fight the
+   auto-fill columns for a span. */
+.sight-hint {
+  flex-shrink: 0;
+  margin: 0;
+  padding: var(--s-2) var(--s-4) var(--s-3);
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* --- Steps two and three ---------------------------------------------- */
+.sight-body {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 0 var(--s-4) var(--s-4);
+}
+
+/* The chosen cat, carried through every remaining step so the report can
+   never be about a cat you did not mean. */
+.sight-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-3) var(--s-1) var(--s-1);
+  border-radius: 999px;
+  background: var(--well);
+  align-self: flex-start;
+}
+.sight-chip img {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  object-fit: cover;
+}
+.sight-chip span {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+
+.sight-place {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 1px dashed var(--rule-strong);
+  border-radius: calc(var(--radius) * 0.4);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  cursor: pointer;
+}
+.sight-place[data-on='true'] {
+  border-style: solid;
+  border-color: var(--rust);
+  color: var(--rust);
+}
+
+/* The one line that turns a blind tap into a judgement. */
+.sight-reach,
+.sight-summary {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.sight-when {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.sight-when legend {
+  width: 100%;
+  margin-bottom: var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sight-when button {
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.sight-when button[data-on='true'] {
+  border-color: var(--rust);
+  color: var(--ink);
+}
+
+/* The only filled button in the panel, once per step, so what to press next
+   is never a question. */
+.sight-go {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--rust);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  cursor: pointer;
+}
+.sight-go:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.sight-done {
+  align-items: center;
+  text-align: center;
+  color: var(--ink-soft);
+}
+.sight-done p {
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--ink);
+}
+.sight-undo {
+  padding: var(--s-1) var(--s-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+/* Below the breakpoint the deck owns the bottom of the screen, so this
+   moves to the quiet top left and becomes a sheet with room for the grid. */
+@media (max-width: 900px) {
+  .sight-open {
+    top: var(--s-4);
+    bottom: auto;
+    left: var(--s-4);
+  }
+  .sight {
+    top: calc(var(--s-4) + 3rem);
+    bottom: auto;
+    left: var(--s-4);
+    right: var(--s-4);
+    width: auto;
+    max-height: calc(100dvh - 14rem);
+  }
+}
+
+/* --- The scanner, ui/ScanCat.tsx ----------------------------------------
+   A photograph, a sweep over it, and a name. The look is a field
+   instrument reading a specimen, which is the same idea as the plate: this
+   is the plate's fast path, for somebody who does not know the name yet. */
+.scan {
+  /* The panel's scrolling part while the scanner is up, the same job
+     .sight-grid does for the picker. Both halves needed: flex items shrink
+     by default but will not go below their content without min-height. */
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: 0 var(--s-4) var(--s-2);
+}
+/* The note is padded for sitting under the grid, where the panel itself has
+   no horizontal padding. In here the container already provides it. */
+.scan .sight-hint {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Fixed 4:3 with the photo cropped into it. The frame must not resize
+   between the empty state, the photo and a retake, or the panel jumps
+   under the button that is about to be pressed again. */
+/* --- The overlap bug, and why it was one bug rather than three ---------
+   Everything below that says flex-shrink: 0 is fixing the same mistake.
+
+   A flex item's min-height defaults to `auto`, which resolves to the item's
+   own content size, and that is what normally stops a flex column crushing
+   its children. Two things here defeated it: .scan-status set an explicit
+   min-height, which REPLACES that automatic minimum and made it shrinkable
+   to 3.5rem while holding 400px of card, and .scan-stage's aspect-ratio box
+   carries no content to derive a minimum from at all.
+
+   So instead of the container scrolling, the children collapsed: the photo
+   lost its 4:3 and letterboxed, and the card's content overflowed its
+   3.5rem box and painted straight over the buttons underneath it.
+
+   The rule this comes down to: in a flex column that scrolls, the children
+   do not shrink. The scroller does. */
+.scan-stage {
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border-radius: calc(var(--radius) * 0.5);
+  border: 1px solid var(--rule);
+  background: var(--well);
+}
+.scan-stage img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.scan-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--ink-soft);
+}
+/* Dimmed while it is being read, so the sweep has something to be brighter
+   than and the photo reads as "under examination" rather than "shown". */
+.scan-stage[data-working='true'] img {
+  filter: saturate(0.5) brightness(0.8);
+}
+
+/* One line travelling down the frame. Two of the three properties are
+   transform and opacity, so it composites; the third is a gradient that
+   never changes. */
+.scan-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 28%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--rust) 35%, transparent),
+    transparent
+  );
+  animation: scan-sweep 1.4s var(--ease-out) infinite;
+}
+@keyframes scan-sweep {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(400%);
+  }
+}
+/* Reduced motion keeps the state, loses the travel: a held band still says
+   "being read", and it is the movement people asked not to be shown. */
+@media (prefers-reduced-motion: reduce) {
+  .scan-sweep {
+    animation: none;
+    top: 36%;
+  }
+}
+
+.scan-status {
+  flex-shrink: 0;
+  /* Kept, and safe now that it cannot shrink: with flex-shrink: 0 this is a
+     floor for SHORT content only, which is its actual job. It stops the
+     buttons walking up and down the panel as a one-line prompt is replaced
+     by a two-line error. It was only ever dangerous in combination. */
+  min-height: 3.5rem;
+}
+.scan-stage-text,
+.scan-prompt,
+.scan-bad {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.scan-stage-text {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.scan-bad {
+  color: var(--rust);
+}
+
+/* The identification card. A record, so it is bordered like one and led by
+   the accent rule the plate uses for its fields, rather than floating as
+   loose text the way a status line does. */
+.scan-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 0.5);
+  /* Nearly opaque, not --well. --well is --ink at 4%, which is glass on
+     glass: the map showed straight through it, and a selected cat's rust
+     selection glow sat under this card as an orange bloom across the type.
+     A card that states a record has to be a surface, not a tint. */
+  background: color-mix(in srgb, var(--paper) 88%, var(--ink) 5%);
+}
+.scan-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.scan-card-head img {
+  width: 3.25rem;
+  height: 3.25rem;
+  border-radius: calc(var(--radius) * 0.4);
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.scan-card p {
+  margin: 0;
+}
+.scan-card-name {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+}
+.scan-card-plate {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+  /* A survey line can be long and this sits beside a photo. One line, cut,
+     rather than a head that grows taller than the photo next to it. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.scan-card-confidence {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-2) !important;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+/* A definition list because that is what it is: a term and its value, the
+   same pairing the plate's fields make, and the semantics a screen reader
+   uses to read "Markings, orange tabby" rather than two loose strings. */
+.scan-card-facts {
+  display: grid;
+  gap: var(--s-1) var(--s-3);
+  margin: 0;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--rule);
+}
+.scan-card-facts dt {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.scan-card-facts dd {
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* Offered, not assumed: quieter than the primary action above it, louder
+   than the way out below it. */
+.scan-report {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--rust);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rust);
+  cursor: pointer;
+}
+.scan-bar {
+  flex: 1;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--rule);
+}
+.scan-bar::after {
+  content: '';
+  display: block;
+  width: var(--fill);
+  height: 100%;
+  border-radius: 999px;
+  background: var(--rust);
+}
+
+.scan-actions {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.scan-retake,
+.scan-manual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.scan-manual {
+  border-color: transparent;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The way out of the grid, for somebody who has scrolled it and still does
+   not know. Sits under the grid because that is where they end up. */
+.sight-foot {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--rule);
+}
+.sight-scan {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin: 0 var(--s-4);
+  padding: var(--s-2) 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--rust);
+  cursor: pointer;
 }

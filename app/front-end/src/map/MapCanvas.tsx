@@ -3,7 +3,10 @@ import { Map as MapLibreMap, addProtocol, prewarm, setWorkerUrl } from 'maplibre
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import type { FeatureCollection, Polygon } from 'geojson'
 import type { Cat } from '@/data/catsRepo'
+import type { Request } from '@/App'
+import { ReportSighting } from '@/ui/ReportSighting'
 import {
   buildStyle,
   BGC_BOUNDS,
@@ -19,6 +22,7 @@ import { Territories } from './Territories'
 import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
 import { Clouds } from './Clouds'
+import { Rain } from './Rain'
 import { MapControls } from './MapControls'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
@@ -35,7 +39,11 @@ addProtocol('pmtiles', new Protocol().tile)
    workers the first one took down. */
 prewarm()
 
-const DEFAULT_ZOOM = 14.6
+/** The landing camera's zoom, and also its floor (minZoom below is the
+    same number). Exported because MapControls' "whole map" button returns
+    here, and a second copy of the number in that file would be one edit
+    away from a home view that is not where the app actually starts. */
+export const DEFAULT_ZOOM = 14.6
 
 type MapContextValue = {
   map: MapLibreMap | null
@@ -54,7 +62,28 @@ type MapContextValue = {
   // that own *canvas* paint (which CSS cannot reach) something to re-run on.
   theme: Theme
   setTheme: (theme: Theme) => void
+  /* True while the record panel is waiting for a click on the map to say
+     where a cat's territory goes. Territories reads it to stand down: its
+     own click handlers would otherwise select (or deselect) a cat with the
+     same click that places the point, and the person would get a plate
+     thrown over the map they are trying to aim at. */
+  placing: boolean
+  setPlacing: (placing: boolean) => void
+  /* A mock, not a live feed (spec: no backend yet). Lives beside isFlat and
+     theme rather than in its own file, for the same reason isFlat does: one
+     boolean-shaped piece of view state, one consumer that sets it
+     (MapControls) and one that reads it (Rain), context buys nothing that
+     prop-drilling wouldn't, except not having to thread it through a
+     component that has no other reason to know about it. */
+  weather: Weather
+  setWeather: (weather: Weather) => void
 }
+
+/** Union rather than a boolean, on purpose, even with only two members
+    today: overcast and storm are already on the backlog (see Rain.tsx's
+    header), and a boolean would have to be renamed and re-typed everywhere
+    the moment either lands. */
+export type Weather = 'clear' | 'rain'
 
 const MapContext = createContext<MapContextValue | null>(null)
 
@@ -71,18 +100,48 @@ type Props = {
   onSelect: (id: string | null) => void
   hoveredId: string | null
   onHover: (id: string | null) => void
+  /** The territory shapes, from the repo rather than a static import: one
+      of them may have been recorded a second ago. */
+  territories: FeatureCollection<Polygon>
+  /** A cat was recorded. App re-reads the repo. */
+  onRecorded: () => void
+  /** The scanner identified a cat and the person wants to read about it. */
+  onOpenRecord: (id: string) => void
+  /** A plate asked to start a sighting for a cat. */
+  report: Request | null
+  /** Fired once the map has actually painted, for ui/Loading.tsx to hold on.
+      Deliberately NOT the same thing as isLoaded: that tracks the `load`
+      event, which means the style parsed, and a style can be parsed while
+      the viewport is still blank. `idle` is the first moment there is a map
+      on screen worth revealing. */
+  onReady?: () => void
 }
 
 /* Hand-written rather than pulled from mapcn. See the decision log: mapcn's
    wrapper never got past requesting tiles under maplibre-gl 6, and phase 4
    needs the raw imperative instance to drive the camera from a GSAP timeline
    anyway. This is the whole wrapper: a ref, an instance, and a context. */
-export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Props) {
+export function MapCanvas({
+  cats,
+  territories,
+  selectedId,
+  onSelect,
+  hoveredId,
+  onHover,
+  onReady,
+  onRecorded,
+  onOpenRecord,
+  report,
+}: Props) {
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MapLibreMap | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [placing, setPlacing] = useState(false)
   // Map lands flat (spec: 3D is opt-in, not the default view).
   const [isFlat, setIsFlat] = useState(true)
+  // And clear, for the same reason: an effect this visible should be
+  // something a person reaches for, not something they land in.
+  const [weather, setWeather] = useState<Weather>('clear')
   // Seeded from the attribute rather than hardcoded, so anything that sets
   // data-theme before React mounts (index.html's own `data-theme="light"`,
   // a hand-set "paper", a future persisted preference) is picked up instead
@@ -145,6 +204,16 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
     }
   }, [])
 
+  /* `idle` rather than `load`, and once. MapLibre fires idle every time it
+     settles, so the listener is removed after the first one: the loading
+     screen only cares about the first paint, and re-firing on every pan
+     would keep waking a component that has already gone. */
+  useEffect(() => {
+    if (!map || !isLoaded || !onReady) return
+    map.once('idle', onReady)
+    return () => void map.off('idle', onReady)
+  }, [map, isLoaded, onReady])
+
   // The toggle (MapControls) flips document.documentElement's data-theme
   // attribute directly, then calls setTheme — this effect is what turns that
   // state flip into an actual repaint of the basemap. The cat layers
@@ -171,11 +240,25 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
 
   return (
     <div className="map" ref={container}>
-      <MapContext.Provider value={{ map, isLoaded, isFlat, setIsFlat, theme, setTheme }}>
+      <MapContext.Provider
+        value={{
+          map,
+          isLoaded,
+          isFlat,
+          setIsFlat,
+          theme,
+          setTheme,
+          placing,
+          setPlacing,
+          weather,
+          setWeather,
+        }}
+      >
         {map && (
           <>
             <Territories
               cats={cats}
+              territories={territories}
               selectedId={selectedId}
               onSelect={onSelect}
               hoveredId={hoveredId}
@@ -183,6 +266,7 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
             />
             <CatMarkers
               cats={cats}
+              territories={territories}
               selectedId={selectedId}
               onSelect={onSelect}
               hoveredId={hoveredId}
@@ -190,7 +274,24 @@ export function MapCanvas({ cats, selectedId, onSelect, hoveredId, onHover }: Pr
             />
             <MapLabels />
             <Clouds />
-            <MapControls />
+            {/* Above the map/clouds/labels group, below every UI panel: see
+                the z-index ladder note on .loading in shell.css, kept in
+                step with this. Rendered unconditionally, like Clouds: it
+                decides for itself whether there is anything to draw. */}
+            <Rain />
+            <MapControls onSelect={onSelect} />
+            {/* The visitor's one contribution. The admin's counterpart,
+                ui/RecordCat.tsx, is deliberately NOT mounted: adding a cat
+                is a reviewed action and there is nobody to review yet. It
+                is written and working, and goes back on screen behind the
+                role check when accounts land. */}
+            <ReportSighting
+              cats={cats}
+              territories={territories}
+              onReported={onRecorded}
+              onOpenRecord={onOpenRecord}
+              report={report}
+            />
           </>
         )}
       </MapContext.Provider>
