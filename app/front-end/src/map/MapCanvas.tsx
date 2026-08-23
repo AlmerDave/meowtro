@@ -21,8 +21,8 @@ import {
 import { Territories } from './Territories'
 import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
-import { Clouds } from './Clouds'
 import { Rain } from './Rain'
+import { Storm } from './Storm'
 import { MapControls } from './MapControls'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
@@ -79,11 +79,18 @@ type MapContextValue = {
   setWeather: (weather: Weather) => void
 }
 
-/** Union rather than a boolean, on purpose, even with only two members
-    today: overcast and storm are already on the backlog (see Rain.tsx's
-    header), and a boolean would have to be renamed and re-typed everywhere
-    the moment either lands. */
-export type Weather = 'clear' | 'rain'
+/** Union rather than a boolean, and this is the pass that cashed that in:
+    `storm` landed without renaming or re-typing anything, which a boolean
+    would have forced everywhere. Overcast is still open and is now cheaper
+    still, one more member plus one row in Rain.tsx's table and Storm.tsx's
+    veil with no strikes scheduled. */
+export type Weather = 'clear' | 'rain' | 'storm'
+
+/** The cycle the control steps through, in the order a sky actually
+    deteriorates. Same shape as TOGGLE_THEMES in style.ts and stepped
+    through by the same indexOf arithmetic in MapControls, so adding
+    overcast is one edit here and none there. */
+export const WEATHERS: Weather[] = ['clear', 'rain', 'storm']
 
 const MapContext = createContext<MapContextValue | null>(null)
 
@@ -272,12 +279,18 @@ export function MapCanvas({
               hoveredId={hoveredId}
               onHover={onHover}
             />
+            {/* Before <MapLabels> on purpose: the storm's veil shares the
+                labels' z-index rung, so this order is what keeps the
+                labels painting over it and out of the gloom. It is an AA
+                constraint and the reasoning is written out in full in
+                shell.css. The lightning half of this component sits a rung
+                higher and is unaffected by where it mounts. */}
+            <Storm />
             <MapLabels />
-            <Clouds />
-            {/* Above the map/clouds/labels group, below every UI panel: see
-                the z-index ladder note on .loading in shell.css, kept in
-                step with this. Rendered unconditionally, like Clouds: it
-                decides for itself whether there is anything to draw. */}
+            {/* Above the map and labels, below every UI panel: see the
+                z-index ladder note on .loading in shell.css, kept in step
+                with this. Rendered unconditionally, like Storm: it decides
+                for itself whether there is anything to draw. */}
             <Rain />
             <MapControls onSelect={onSelect} />
             {/* The visitor's one contribution. The admin's counterpart,

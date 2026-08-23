@@ -1,21 +1,26 @@
 import { useEffect, useRef } from 'react'
-import { useMap } from './MapCanvas'
+import { useMap, type Weather } from './MapCanvas'
 
-/* Rain, first weather pass (backlog: overcast, storm).
+/* Rain, the falling half of the weather (backlog: overcast).
+
+   Storm is this file turned up, not a second system: heavier and faster,
+   and falling straight down. Everything that used to be a module constant
+   is now one row of FALL per weather, which is why storm cost no new
+   canvas and no new loop here. The dark and the lightning that make a
+   storm read as one live in map/Storm.tsx.
 
    Screen space, not map space, and that is the physically correct choice
-   rather than a shortcut. A cloud deck (Clouds.tsx) sits BETWEEN the camera
-   and the ground, so it has to live in the scene and repaint if the camera
-   pitches. Rain falls in front of the camera, in the air the viewer is
-   already standing in, so a full-viewport overlay is what real rain looks
-   like from here regardless of whether the map underneath is flat or
-   tilted: there is nothing to project onto a ground plane, because the
-   thing being drawn was never on the ground.
+   rather than a shortcut. Rain falls in front of the camera, in the air
+   the viewer is already standing in, so a full-viewport overlay is what
+   real rain looks like from here regardless of whether the map underneath
+   is flat or tilted: there is nothing to project onto a ground plane,
+   because the thing being drawn was never on the ground. Anything that
+   sat between the camera and the city would need the opposite treatment,
+   which is the trap the deleted cloud deck fell into.
 
-   Its own 2D canvas rather than joining Clouds' WebGL one: rain is a few
-   hundred moving line segments, which is what canvas 2D's path API is for,
-   and reaching for a fragment shader to draw lines would be the wrong tool
-   for a job this simple.
+   Canvas 2D rather than WebGL: rain is a few hundred moving line segments,
+   which is what the path API is for, and reaching for a fragment shader to
+   draw lines would be the wrong tool for a job this simple.
 
    Density scales with the viewport's own area (see COUNT below) rather than
    a device-detection heuristic, which is a more honest kind of "adaptive":
@@ -24,32 +29,78 @@ import { useMap } from './MapCanvas'
 
 const TOKEN = '--ink-soft'
 
-/** Drops per square CSS pixel, clamped. A phone in portrait lands near the
-    floor, a wide desktop near the ceiling, and both read as the same rain,
-    just more or less of the same sky's worth of it. */
-const AREA_DENSITY = 0.00014
-const MIN_DROPS = 70
-const MAX_DROPS = 260
+/** How hard it is coming down, one row per weather.
 
-/** Prevailing wind, in radians off straight down. Purely aesthetic: real
-    rain is rarely perfectly vertical, and a constant slant reads as weather
-    with a direction rather than a special effect with none. */
-const WIND_ANGLE = Math.PI / 13
+    - density: drops per square CSS pixel, clamped by min/max. A phone in
+      portrait lands near the floor, a wide desktop near the ceiling, and
+      both read as the same rain, just more or less of the same sky's worth
+      of it.
+    - wind: prevailing slant in radians off straight down. Purely
+      aesthetic: real rain is rarely perfectly vertical, and a constant
+      slant reads as weather with a direction rather than a special effect
+      with none.
+    - gust: two sine waves at different frequencies rather than one, and
+      rather than per-frame randomness. A single sine is a metronome, and
+      per-frame noise jitters every drop independently, which reads as
+      static rather than wind. Two waves summed drift in and out of phase,
+      the cheapest thing that stops feeling mechanical. An empty list is a
+      windless row, and costs nothing per frame rather than summing waves
+      that resolve to zero.
 
-/** Two sine waves at different frequencies rather than one, and rather than
-    per-frame randomness: a single sine is a metronome, and per-frame noise
-    jitters every drop independently, which reads as static rather than
-    wind. Two waves summed drift in and out of phase with each other, which
-    is the cheapest thing that stops feeling mechanical. */
-const GUST = [
-  { freq: 0.00042, amp: 0.35 },
-  { freq: 0.00097, amp: 0.18 },
-] as const
+    `clear` is a real row rather than a null, so nothing downstream has to
+    branch on whether there is weather. It shares rain's row outright: the
+    field is simply never drawn while it is the active one, so its values
+    only ever matter for the seeding that happens at mount. Overcast, when
+    it lands, is this same row again. */
+type Fall = {
+  readonly density: number
+  readonly min: number
+  readonly max: number
+  readonly speed: readonly [number, number]
+  readonly wind: number
+  readonly gust: readonly { readonly freq: number; readonly amp: number }[]
+}
+
+const SHOWER = {
+  density: 0.00014,
+  min: 70,
+  max: 260,
+  speed: [480, 740],
+  wind: Math.PI / 13,
+  gust: [
+    { freq: 0.00042, amp: 0.35 },
+    { freq: 0.00097, amp: 0.18 },
+  ],
+} as const satisfies Fall
+
+const FALL = {
+  clear: SHOWER,
+  rain: SHOWER,
+  storm: {
+    // Roughly double the drops, moving half again as fast. The ceiling
+    // matters more than the density here: this is the number that decides
+    // whether a phone stays at 60fps.
+    density: 0.00026,
+    min: 130,
+    max: 480,
+    speed: [640, 1020],
+    /* Windless, by direction rather than by physics: this storm is a
+       downpour, not a squall. It is the one row that opts out of the slant
+       the notes above argue for, so the drops fall dead vertical and the
+       whole sense of direction moves to the lightning, which strikes from
+       somewhere different every time (map/Storm.tsx). Both zero together:
+       a slant with no gust reads as a static hatch, which is worse than
+       either. */
+    wind: 0,
+    gust: [],
+  },
+} as const satisfies Record<Weather, Fall>
 
 type Drop = { x: number; y: number; len: number; speed: number }
 
-function makeDrop(width: number, height: number, spawn: boolean): Drop {
-  const speed = 480 + Math.random() * 260
+function makeDrop(width: number, height: number, spawn: boolean, fall: Fall): Drop {
+  const [lo, hi] = fall.speed
+  const speed = lo + Math.random() * (hi - lo)
   return {
     // A margin past both edges, not just [0, width]: with the wind's slant,
     // a drop born at y=0 travels sideways as it falls, so starting the pool
@@ -61,7 +112,10 @@ function makeDrop(width: number, height: number, spawn: boolean): Drop {
     // at the top together and arriving as one visible wave. A respawn after
     // that always restarts above the top.
     y: spawn ? Math.random() * height : -20 - Math.random() * 40,
-    len: 14 + (speed - 480) / 12,
+    // Streak length off the drop's own speed, so a storm's faster drops
+    // draw longer streaks for free. Measured from the row's own floor
+    // rather than a hardcoded 480, or storm's drops would all start long.
+    len: 14 + (speed - lo) / 12,
     speed,
   }
 }
@@ -69,15 +123,21 @@ function makeDrop(width: number, height: number, spawn: boolean): Drop {
 export function Rain() {
   const { weather, theme } = useMap()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // Read inside the loop rather than in dependencies, matching Clouds.tsx:
-  // toggling weather should not tear down and reseed the whole drop field.
-  const visibleRef = useRef(weather === 'rain')
-  visibleRef.current = weather === 'rain'
+  // Read inside the loop rather than in dependencies: toggling weather
+  // should not tear down and reseed the whole drop field.
+  const visibleRef = useRef(weather !== 'clear')
+  visibleRef.current = weather !== 'clear'
+  // The active row, same trick. rain -> storm changes the drop count, and
+  // resize() below already reseeds whenever the count it computes stops
+  // matching the field it has, so switching weather reseeds through the
+  // path that was already there rather than through a new one.
+  const fallRef = useRef<Fall>(FALL[weather])
+  fallRef.current = FALL[weather]
   const colorRef = useRef('#888')
 
   // --ink-soft is a plain hex in every theme block (tokens.css), never a
   // color-mix() result, so this can go straight to canvas strokeStyle with
-  // none of the resolved-color probe Clouds.tsx needs for its WebGL floats.
+  // none of the color-resolving probe a color-mix() token would need.
   useEffect(() => {
     colorRef.current = getComputedStyle(document.documentElement).getPropertyValue(TOKEN).trim()
   }, [theme])
@@ -95,17 +155,18 @@ export function Rain() {
        than run and simply not drawn. */
     const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-    // Capped at 1.5 for the same reason Clouds.tsx caps its own: full
-    // native resolution on a 3x phone screen is triple the fill work for
-    // hairline strokes nobody can resolve the extra sharpness of anyway.
+    // Capped at 1.5 rather than devicePixelRatio: full native resolution
+    // on a 3x phone screen is triple the fill work for hairline strokes
+    // nobody can resolve the extra sharpness of anyway.
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
     let drops: Drop[] = []
 
     const resize = () => {
+      const fall = fallRef.current
       const w = Math.floor(canvas.clientWidth * dpr)
       const h = Math.floor(canvas.clientHeight * dpr)
       const count = Math.round(
-        Math.min(MAX_DROPS, Math.max(MIN_DROPS, canvas.clientWidth * canvas.clientHeight * AREA_DENSITY))
+        Math.min(fall.max, Math.max(fall.min, canvas.clientWidth * canvas.clientHeight * fall.density))
       )
       /* The canvas ELEMENT's width/height attributes are not enough to
          decide "is there nothing to do here": under StrictMode, this effect
@@ -128,7 +189,7 @@ export function Rain() {
       // place: a phone rotating from portrait to landscape changes how much
       // sky is on screen, and the drop count should change with it exactly
       // as it would on first load at that size.
-      drops = Array.from({ length: count }, () => makeDrop(canvas.width, canvas.height, true))
+      drops = Array.from({ length: count }, () => makeDrop(canvas.width, canvas.height, true, fall))
     }
     resize()
     window.addEventListener('resize', resize)
@@ -154,13 +215,12 @@ export function Rain() {
          have sent it. */
       const dt = Math.min(now - lastTime, 50) / 1000
       lastTime = now
-      // Costs only the callback itself while off, matching Clouds.tsx's own
-      // reasoning: checked per frame so the toggle is instant either way,
-      // never a teardown-and-rebuild of the drop field. Clouds gets away
-      // with skipping ALL work here because its own invisibility is a CSS
-      // opacity transition, so a stale WebGL frame underneath is hidden
-      // regardless; this canvas has no such CSS toggle, so it has to leave
-      // itself empty on the way out instead.
+      // Costs only the callback itself while off: checked per frame so the
+      // toggle is instant either way, never a teardown-and-rebuild of the
+      // drop field. Note this cannot simply skip all work and leave the
+      // last frame sitting there, the way a layer with a CSS opacity
+      // transition over it could: nothing hides this canvas, so it has to
+      // clear itself on the way out. That is what the edge below is for.
       if (!visibleRef.current) {
         if (wasVisible) ctx.clearRect(0, 0, canvas.width, canvas.height)
         wasVisible = false
@@ -169,8 +229,9 @@ export function Rain() {
       wasVisible = true
       resize()
 
-      const gust = GUST.reduce((sum, g) => sum + Math.sin(now * g.freq) * g.amp, 0)
-      const angle = WIND_ANGLE + gust * 0.12
+      const fall = fallRef.current
+      const gust = fall.gust.reduce((sum, g) => sum + Math.sin(now * g.freq) * g.amp, 0)
+      const angle = fall.wind + gust * 0.12
       const dx = Math.sin(angle)
       const dy = Math.cos(angle)
 
@@ -181,7 +242,8 @@ export function Rain() {
           const step = drop.speed * dt * (1 + gust * 0.4) * dpr
           drop.x += dx * step
           drop.y += dy * step
-          if (drop.y - drop.len > canvas.height) Object.assign(drop, makeDrop(canvas.width, canvas.height, false))
+          if (drop.y - drop.len > canvas.height)
+            Object.assign(drop, makeDrop(canvas.width, canvas.height, false, fall))
         }
         ctx.moveTo(drop.x, drop.y)
         ctx.lineTo(drop.x + dx * drop.len * dpr, drop.y + dy * drop.len * dpr)
@@ -199,8 +261,8 @@ export function Rain() {
       cancelAnimationFrame(frame)
       window.removeEventListener('resize', resize)
     }
-    // Deliberately empty deps beyond mount, matching Clouds.tsx: weather and
-    // theme are read through the refs above, not restarted on. Rebuilding
+    // Deliberately empty deps beyond mount: weather and theme are read
+    // through the refs above, not restarted on. Rebuilding
     // this effect on every weather toggle would reseed the whole drop field
     // and cost a resize + array allocation for what should be an instant
     // show/hide.

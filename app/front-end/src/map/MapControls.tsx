@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react'
-import { CloudRain, CloudSun, Maximize, Moon, Sun } from 'lucide-react'
+import { CloudLightning, CloudRain, CloudSun, Maximize, Moon, Sun } from 'lucide-react'
 import { spring } from '@/motion/springs'
-import { DEFAULT_ZOOM, useMap } from './MapCanvas'
+import { DEFAULT_ZOOM, useMap, WEATHERS, type Weather } from './MapCanvas'
 import { BGC_CENTER, DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
 
 /* Four independent controls: theme, weather, orientation, and a way back
@@ -36,6 +36,23 @@ import { BGC_CENTER, DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
 const THEME_ICON: Record<string, typeof Sun> = { paper: Sun, light: Moon, dark: Sun }
 const THEME_LABEL: Record<string, string> = { paper: 'paper', light: 'light', dark: 'dark' }
 
+/* Weather, WEATHERS (MapCanvas.tsx). The button became a cycle rather than
+   a flip when storm landed, borrowing the theme button's arithmetic above
+   wholesale. Record<Weather, ...> rather than Record<string, ...>: unlike
+   the theme maps, which have to tolerate paper being off the cycle, every
+   weather is on this one, so the compiler should refuse a new member that
+   arrives without a glyph and a name. */
+const WEATHER_ICON: Record<Weather, typeof Sun> = {
+  clear: CloudSun,
+  rain: CloudRain,
+  storm: CloudLightning,
+}
+const WEATHER_LABEL: Record<Weather, string> = {
+  clear: 'Clear skies',
+  rain: 'Rain',
+  storm: 'Storm',
+}
+
 type Props = {
   /* Only to clear it. The capsule has no idea which cat is selected and
      does not want one: passing selectedId in would make this component
@@ -53,6 +70,9 @@ export function MapControls({ onSelect }: Props) {
   // still does something sensible from there instead of going nowhere.
   const nextTheme = TOGGLE_THEMES[(TOGGLE_THEMES.indexOf(theme) + 1) % TOGGLE_THEMES.length]
   const Icon = THEME_ICON[theme] ?? Moon
+
+  const nextWeather = WEATHERS[(WEATHERS.indexOf(weather) + 1) % WEATHERS.length]
+  const WeatherIcon = WEATHER_ICON[weather]
 
   /* One capsule with hairlines between the buttons, rather than detached
      squares. They are one cluster of view settings and were reading as
@@ -143,11 +163,14 @@ export function MapControls({ onSelect }: Props) {
       <motion.button
         type="button"
         className="map-control"
-        data-tip={weather === 'clear' ? 'Rain' : 'Clear skies'}
-        aria-label={weather === 'clear' ? 'Turn on rain' : 'Turn off rain'}
+        // Names the state the button moves TO, matching the theme button
+        // beside it. A cycle has no "off", so "turn on rain" stopped being
+        // true the moment there were three of these.
+        data-tip={WEATHER_LABEL[nextWeather]}
+        aria-label={`Change the weather to ${WEATHER_LABEL[nextWeather].toLowerCase()}`}
         whileTap={{ scale: 0.92 }}
         transition={spring}
-        onClick={() => setWeather(weather === 'clear' ? 'rain' : 'clear')}
+        onClick={() => setWeather(nextWeather)}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -158,7 +181,7 @@ export function MapControls({ onSelect }: Props) {
             exit={{ opacity: 0, rotate: 90, scale: 0.6 }}
             transition={spring}
           >
-            {weather === 'clear' ? <CloudSun size={16} /> : <CloudRain size={16} />}
+            <WeatherIcon size={16} />
           </motion.span>
         </AnimatePresence>
       </motion.button>

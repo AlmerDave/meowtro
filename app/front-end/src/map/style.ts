@@ -88,18 +88,20 @@ export const FLAT_PITCH = 0
     atmosphere and its animation on again with no other edit. */
 export const SKY_RENDERS_AT_DEFAULT = DEFAULT_PITCH >= SKY_MIN_PITCH
 
-/* Backlog "Clouds" item, plan A: native atmosphere instead of a hand-drawn
-   overlay. Pitch-dependent — invisible until the 3D toggle is on. Tokens
-   only, no new dependency.
+/* Native atmosphere, and now the only atmosphere. Pitch-dependent, so it
+   is invisible until the 3D toggle is on. Tokens only, no new dependency.
 
    Extracted from buildStyle() so applyMapTheme can re-apply it: `sky` is a
    root style property, not a layer, so it is the one themed thing below
    that setPaintProperty cannot reach (map.setSky handles it instead). */
-// One breath every 24s. `sky` has no texture or position to animate — the
-// blend floats are the only lever, so "lively" here reads as the haze
-// slowly thickening and thinning, not shapes moving. That's the ceiling of
-// native `sky`; see the design spec's Clouds backlog item for the
-// canvas-overlay fallback (Plan B) if this ceiling isn't enough.
+// One breath every 24s. `sky` has no texture or position to animate, so
+// the blend floats are the only lever and "lively" here reads as the haze
+// slowly thickening and thinning rather than shapes moving. That is the
+// ceiling of native `sky`, and it is a ceiling this project has decided to
+// accept: the canvas-overlay alternative was built (a WebGL cloud deck,
+// map/Clouds.tsx) and deleted on 2026-08-24 for looking worse than
+// nothing. Do not reach for it again as "the fallback" without reading the
+// build plan's entry on why it went.
 const SKY_BREATHE_PERIOD_MS = 24_000
 
 function buildSky(elapsedMs = 0): SkySpecification {

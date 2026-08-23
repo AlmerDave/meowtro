@@ -13,8 +13,111 @@
 
 ## RESUME HERE
 
-**Last completed:** Phase 9 — rev 6, the map material pass, 2026-08-18, on
-branch `rev6-map-material-and-sheet`. `npx tsc -b` and `npm run build` both
+**Last completed:** Weather, 2026-08-24 (below). Before that, Phase 9.
+
+---
+
+## Weather: rain and storm, 2026-08-24
+
+Not a numbered phase; picked up from the backlog. `npx tsc -b` and
+`npm run build` both pass. **Not yet visually reviewed.**
+
+`Weather` in `map/MapCanvas.tsx` is now `clear | rain | storm`, stepped
+through by `WEATHERS` using the same `indexOf + 1 % length` arithmetic
+`TOGGLE_THEMES` already uses for the theme button. Still a mock: there is
+no feed behind it, same honest framing the record panel gives its
+local-only storage.
+
+**Storm is two things, and only one of them is new code.**
+
+- `map/Rain.tsx`'s five module constants became one row per weather
+  (`FALL`). Storm is that table turned up: ~1.85x the drops at half again
+  the speed, falling **dead vertical**. No second canvas, no second loop.
+  `clear` shares rain's row outright.
+- `map/Storm.tsx` is new: a **veil** (flat `--storm-veil` tint, CSS
+  transition) and a **flash** (radial `--storm-flash` gradient on
+  `mix-blend-mode: screen`, driven by WAAPI). Strikes are scheduled on a
+  randomised 1.6-4.8s gap, each one an envelope of 1-3 pops with an instant
+  attack and a long ease-out decay, at a randomised horizontal origin and
+  peak brightness. No drawn bolt: city-scale lightning is sheet lightning,
+  and a zigzag polyline is what makes this read as a screensaver.
+
+**The storm is windless by direction (2026-08-24), and the two settings
+above are a pair.** Storm's row sets both `wind` and `gust` to zero, opting
+out of the slant the rest of that file argues for, because this storm is a
+downpour rather than a squall. Lightning was made correspondingly frequent
+in the same change: with the rain no longer conveying direction, the
+strikes carry it instead, each one landing somewhere different across the
+sky. Do not restore storm's slant without revisiting the strike rate, or
+two things end up saying the same thing.
+
+### The cloud deck, removed, 2026-08-24
+
+`map/Clouds.tsx` and `map/clouds.glsl.ts` are **deleted**, along with the
+`--cloud` / `--haze` tokens (no other consumer) and the `.clouds` CSS.
+
+It was reported as feeling wrong when zooming, and the root cause was real:
+the shader sampled the deck from pixel coordinates only, with nothing from
+the camera in it, so the city panned and zoomed underneath a cloud pattern
+that never moved. That was fixed first, by feeding `uPan` / `uScale` in and
+sampling `uPan + deck / uScale`. The fix worked and was verified
+numerically, and the deck still did not look good enough to keep, so the
+user called it: remove it rather than keep tuning.
+
+**Do not rebuild this as "the fallback".** `style.ts`'s note on the native
+`sky` used to point here as Plan B; that pointer is now a warning instead.
+The native `sky` is the only atmosphere, and its ceiling (a slow haze
+breath, no shapes) is accepted rather than worked around. If some future
+pass does want a deck, the two things that made this one hard are: it has
+to be anchored to the camera or it reads as dirt on the lens, and a
+photoreal cloud over a flat-shaded vector city reads as two different
+pictures.
+
+Kept from that work: the `sky` breathing animation, and the storm veil,
+which took over `--dur-plate` as its transition.
+
+**`GAP_MS`'s 1.6s floor is a WCAG 2.3.1 constraint, not taste.** A strike
+is up to three pops inside its first ~200ms, and the rule allows no more
+than three flashes per second for something covering this much screen. At
+a 1.6s floor the envelopes cannot overlap, so any one-second window holds
+at most one strike. Dropping below ~1.2s requires cutting the pop ceiling
+to match.
+
+**Three decisions worth not re-litigating:**
+
+- **The veil is why one blend mode works in both themes.** Screening onto
+  light's near-white ground has no headroom, so the flash would have been
+  invisible in the *default* theme. Grading the map down first is what
+  gives it somewhere to go, exactly as a night exterior is graded in film.
+- **The veil sits at z-index 1 *before* `<MapLabels>`, and that ordering is
+  an AA constraint, not a preference.** Street labels are `--ink-soft` on
+  `--paper` = 4.67:1 in light, barely past the floor the palette was tuned
+  to; veiling them takes the composite to 2.32:1. A mock weather toggle
+  must not push real text under AA. The ground and markers dim, the guide
+  does not. The flash is a rung higher (above the labels, below the rain)
+  because a strike lights what is in front of it.
+- **Reduced motion disables the flash entirely** rather than softening it.
+  Photosensitivity overlaps heavily with that preference, so this is the
+  one place the usual "reduce, don't remove" rule is wrong. The veil is
+  CSS and stays, and Rain already freezes its field under the same query,
+  so a reduced-motion storm is a dark map under a still diagonal hatch.
+
+`strikeKeyframes()` is exported with no in-app consumer, deliberately: its
+offsets are assembled from four random ranges and WAAPI throws if they are
+not strictly increasing. Verified outside the browser over 200k strikes
+(esbuild transform + assertions on offsets, envelope endpoints, opacity
+range, flicker front-loading, and first-pop-brightest). There is no test
+runner to hang it on, so re-run it that way if the numbers are retuned.
+
+**Still open:** overcast, which is now the cheapest of the three: one more
+union member, one more `FALL` row (rain's), and the veil with no strikes
+scheduled. No new code.
+
+---
+
+## Phase 9, rev 6: the map material pass, 2026-08-18
+
+Built on branch `rev6-map-material-and-sheet`. `npx tsc -b` and `npm run build` both
 pass. **Not yet visually reviewed**; three gates are open and each needs a
 screenshot from the user (the agent cannot self-launch a browser, see gate
 3's decision below).
@@ -1644,14 +1747,12 @@ Decisions already made, with the reasoning, so they are not silently reopened.
   the mechanism `style.ts` already uses for canopy/buildings) was
   considered and set aside: extrusion sweeps a footprint straight up, so it
   reads as a small tower/turret rather than a recognisable pin silhouette.
-- **Clouds** — nice to have, backlog. MapLibre's native sky/fog (`sky` in
-  the style spec) is an atmosphere-scattering gradient tied to camera pitch
-  and horizon distance, not discrete drifting cloud shapes, and this map's
-  default view is flat (3D pitch is opt-in via the toggle), so it would be
-  invisible until the user tilts the camera. Plan: preview it live first
-  (wire `sky` into `style.ts` behind the existing 3D toggle, tokens-only
-  colours, no dependency) so the user can judge it against the alternative
-  before either is built for real. **Plan A — native sky/fog**, if it reads
-  right pitched. **Plan B — hand-drawn ink clouds** on a slow canvas
-  overlay, same technique as the existing paper grain (`Grain.tsx`) and
-  territory hatch, if the native haze doesn't look right. Small either way.
+- **Clouds** (CLOSED 2026-08-24, do not reopen from here). Both plans were
+  built. Plan A, MapLibre's native `sky`, shipped and stays: it is an
+  atmosphere-scattering gradient tied to camera pitch, so it is invisible
+  until the 3D toggle is on, and its ceiling is a slow haze breath with no
+  shapes. Plan B, a drifting cloud deck on a canvas overlay, shipped as a
+  WebGL fragment shader and was **deleted on 2026-08-24** for not looking
+  good enough, after its one real bug (screen-space sampling, no camera
+  input) had already been found and fixed. See the removal entry near the
+  top of this file before considering a third attempt.

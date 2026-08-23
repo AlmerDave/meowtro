@@ -69,35 +69,12 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink);
 }
 
-/* --- Clouds, rev 6, map/Clouds.tsx --------------------------------------
-   A WebGL canvas, not the SVG strips this replaced. Fades with the 3D
-   toggle rather than the map's own pitch easing (500ms, MapControls.tsx) so
-   the deck is never visible sliding in edge-on while flat; --dur-plate is
-   already the token for "a HUD surface appearing", which is what this is.
-
-   Sits at z-index 1, above the map canvas and below the panels: cloud
-   passes over the city, never over the UI reading on top of it. */
-.clouds {
-  position: fixed;
-  inset: 0;
-  z-index: 1;
-  display: block;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity var(--dur-plate) var(--ease);
-}
-.clouds[data-visible='true'] {
-  opacity: 1;
-}
-
 /* --- Rain, map/Rain.tsx --------------------------------------------------
    A 2D canvas, not WebGL: see the file's own header for why. Sits at
-   z-index 2, above the clouds/labels group and below every UI panel,
-   which is also why its visibility is left entirely to the component:
-   unlike the clouds fade, rain has no transition to sit through, it is
-   either drawn or the canvas is empty, so there is no CSS state to hold
+   z-index 2, above the labels and below every UI panel, which is also why
+   its visibility is left entirely to the component: rain has no transition
+   to sit through, it is either drawn or the canvas is empty, so there is
+   no CSS state to hold
    here beyond position and stacking. */
 .rain {
   position: fixed;
@@ -107,6 +84,71 @@ body:has(.map)::-webkit-scrollbar {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/* --- Storm, map/Storm.tsx ------------------------------------------------
+   Two independent layers on two different rungs, and the split is not
+   cosmetic. Both live inside .map's stacking context, which is what lets
+   the flash blend against the map at all.
+
+   The VEIL is at z-index 1 and is rendered BEFORE <MapLabels> so the
+   labels, which share that rung, paint over it. That ordering is an
+   accessibility constraint, not a preference: street labels are
+   --ink-soft on --paper, which is 4.67:1 in the light theme, barely past
+   the AA floor the palette was tuned to (see tokens.css on --rust). Veiling
+   them takes the composite to 2.32:1, so a mock weather toggle would push
+   real text under AA. The ground and the markers dim; the guide does not.
+
+   The FLASH is at z-index 2, above the labels, because a strike lights
+   everything in front of it, and below the rain at that same rung, because
+   rain falls between the viewer and the lit city. The
+   controls at z-index 3 sit above both and pick the flash up through their
+   own backdrop-filter, which is the right read: the storm is out there,
+   the glass is in your hand.
+
+   Contrast under the flash is not the same hazard: it is under 500ms, it
+   brightens rather than dims, and screen blending moves near-black ink
+   very little. */
+.storm-veil,
+.storm-flash {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.storm-veil {
+  z-index: 1;
+  background: var(--storm-veil);
+  opacity: 0;
+  /* Named, never `all`: this element also carries a custom property that
+     has no business being interpolated. --dur-plate's 700ms rather than a
+     UI duration, which is the right order of magnitude for weather
+     arriving rather than for a control answering a tap. */
+  transition: opacity var(--dur-plate) var(--ease);
+}
+.storm-veil[data-active='true'] {
+  opacity: 1;
+}
+
+/* Opacity is owned entirely by the WAAPI animation in Storm.tsx and is 0
+   at rest, so this layer costs nothing between strikes and needs no
+   active/inactive state of its own.
+
+   --flash-x is set per strike so the light has a direction. It falls back
+   to centre for the first frame before any strike has fired, though at
+   opacity 0 nothing is painted from it either way. */
+.storm-flash {
+  z-index: 2;
+  background: radial-gradient(
+    62% 48% at var(--flash-x, 50%) -12%,
+    var(--storm-flash) 0%,
+    transparent 72%
+  );
+  /* Brightens the city underneath instead of laying a sheet over it. A
+     plain opacity fade here would wash the map toward flat grey and read
+     as fog, not as light. */
+  mix-blend-mode: screen;
+  opacity: 0;
 }
 
 /* --- Map controls, EXPERIMENTAL mockup ---------------------------------

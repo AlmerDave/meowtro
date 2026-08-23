@@ -115,15 +115,16 @@
        --ease-glass the drawer curve. Long tail, almost no overshoot; used
                     where a large translucent surface travels.
 
-     --ease stays as it was and stays in use (the cloud deck, the search
+     --ease stays as it was and stays in use (the storm veil, the search
      field) so nothing already tuned against it shifts. */
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-move: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-glass: cubic-bezier(0.32, 0.72, 0, 1);
 
   /* UI durations, distinct from the map's. Everything a person triggers and
-     watches finish sits under 300ms; --dur-plate (700ms) is the cloud deck's
-     and is not a UI number. */
+     watches finish sits under 300ms; --dur-plate (700ms) is deliberately
+     not a UI number. It is the "something in the world changes" duration,
+     and the storm veil (map/Storm.tsx) is what uses it now. */
   --dur-press: 140ms;
   --dur-ui: 200ms;
   --dur-panel: 280ms;
@@ -136,6 +137,16 @@
      A light source, so it is white on both glass themes and transparent on
      paper, a printed card does not catch the light. */
   --specular: transparent;
+
+  /* Storm, map/Storm.tsx, overridden per glass theme below. Stated here
+     rather than only in light/dark because an undefined --storm-flash
+     makes the whole radial-gradient declaration invalid and the flash
+     silently never paints: paper would have shown rain and no storm at
+     all, which is exactly the kind of unreachable-theme rot CLAUDE.md
+     asks not to accumulate. Warm rather than cool, matching the cream
+     stock: a storm on paper is an ink wash, not a blue one. */
+  --storm-veil: rgba(58, 48, 38, 0.26);
+  --storm-flash: #fff8ec;
 }
 
 /* --- Glass, shared by both HUD themes, rev 4 --------------------------
@@ -168,15 +179,21 @@
   --rust: #c2410c;
   --sage: #5b9a4c;
 
-  /* Cloud deck and distance haze, rev 6, map/Clouds.tsx. Real values, not
-     mixes off --paper: the ground IS --paper (the background and earth
-     layers both paint it), so anything derived from it paints the deck in
-     the exact colour of what it is supposed to be floating over. buildSky
-     has the same warning written on it; this is that lesson applied.
-     Daylight haze is a cool grey, darker than the near-white ground, which
-     is what makes it read at all in this theme. */
-  --cloud: #ccd3e0;
-  --haze: #dde3ee;
+  /* Storm, map/Storm.tsx. The alpha is baked into the token rather than
+     set as an opacity in shell.css, so the element's own opacity stays
+     free for the roll-in transition and the strength of the gloom stays a
+     per-theme decision here.
+
+     This one has to do real work: against a near-white ground a pale veil
+     would have nothing for the flash to brighten into, so light's storm
+     grades the city DOWN to a slate before the flash screens over it.
+     0.32 is picked to be the deepest grade that still leaves the basemap
+     readable; the map labels are not affected at any value, since they
+     paint above the veil rather than under it (shell.css says why).
+     --storm-flash is a cool near-white, which is what the eye expects a
+     discharge behind cloud to look like at midday. */
+  --storm-veil: rgba(20, 24, 38, 0.32);
+  --storm-flash: #eef3ff;
 
   --shadow-glass: 0 8px 24px rgba(0, 0, 0, 0.12);
   --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.8);
@@ -195,10 +212,13 @@
   --rust: #ff7a45;
   --sage: #6fbf5c;
 
-  /* Cloud deck and distance haze. Inverted against light: here the deck has
-     to be LIGHTER than the near-black ground to be seen at all. */
-  --cloud: #828ba3;
-  --haze: #272d3d;
+  /* Storm. Lighter-handed than light's on purpose: this ground is already
+     near-black, so the same 0.32 would take the map past legible and there
+     is no brightness left to remove anyway. The flash is a cool blue-white
+     rather than light's near-white, because at night the discharge itself
+     is the only light source and it reads colder. */
+  --storm-veil: rgba(4, 6, 14, 0.4);
+  --storm-flash: #9fb0d8;
 
   /* Heavier shadow, subtler highlight than light glass above — tuned for
      dark panels sitting on an already-dark page. */
