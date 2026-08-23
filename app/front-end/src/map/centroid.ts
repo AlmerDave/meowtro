@@ -9,7 +9,11 @@ import type { FeatureCollection, Polygon } from 'geojson'
    Territories.tsx), so the mean already lands within a metre or two of the
    real center. A real centroid algorithm (shoelace-weighted) is unjustified
    complexity for a shape this close to regular. */
-function ringCentroid(ring: [number, number][]): [number, number] {
+/* Exported as well as used below: data/sightings.ts moves a territory by
+   putting its centroid on a reported point, and it has to agree with this
+   file about where that centroid is, or a moved shape would not sit under
+   its own pin. */
+export function ringCentroid(ring: [number, number][]): [number, number] {
   let lng = 0
   let lat = 0
   for (const [x, y] of ring) {

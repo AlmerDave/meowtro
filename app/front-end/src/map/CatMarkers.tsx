@@ -1,50 +1,45 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Marker } from 'maplibre-gl'
 import type { FeatureCollection, Point, Polygon } from 'geojson'
 import { motion } from 'motion/react'
+import { Cat as CatGlyph } from 'lucide-react'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
 import type { Cat } from '@/data/catsRepo'
-import territories from '@/data/territories.geo.json'
 
-/* Cat markers, backlog item ("3D cat markers on the map"). Two
-   representations of the same centroid, swapped on the existing flat/3D
-   toggle (MapContext.isFlat) rather than built as one shape that tries to
-   serve both:
+/* Cat markers. One representation in both modes now, not two.
 
-     flat mode     a hand-authored DOM pin (this file's <CatPin>), placed
-                   with maplibregl.Marker so MapLibre owns the position
-                   tracking — the same job MapLabels.tsx hand-rolls for
-                   text, but Marker already does it, so no reprojection
-                   loop is written here.
-     pitched mode  a native MapLibre `circle` layer at each centroid,
-                   `circle-pitch-alignment: 'map'`. That single paint
-                   property is what gives the reference image's
-                   ground-tilt/foreshortening look — no three.js.
+     the pin     a hand-authored DOM marker (this file's <CatPin>): the cat's
+                 photo in an ink-ringed disc on a stake. Placed with
+                 maplibregl.Marker so MapLibre owns position tracking, the
+                 same job MapLabels.tsx hand-rolls for text but which Marker
+                 already does, so no reprojection loop is written here. It
+                 needs no theme handling at all: it paints from --ink,
+                 --paper and the cat's own colour token, so it repaints when
+                 :root's data-theme flips, for free.
+     the disc    a native MapLibre `circle` layer at each centroid,
+                 `circle-pitch-alignment: 'map'`, pitched mode only. It is
+                 the ground the stake lands on, and it carries the
+                 selected/hovered/dimmed state. Canvas, not DOM, so it does
+                 NOT repaint on a theme flip: see `theme` in the layer
+                 effect's deps below.
 
-   The DOM pin needs no theme handling at all — its SVG paints from
-   `var(--ink)`/`var(--paper)`/the cat's own colour token, so it repaints
-   when :root's data-theme flips, for free. The circle layer is canvas, not
-   DOM, so it does not: see `theme` in the layer effect's deps below.
+   Flat mode used to hide the pin and show only the disc, and for a while a
+   3D impostor baked from cat.glb stood on that disc instead. Both are gone.
+   See CatPin's note for why a rendered cat lost to a photograph.
 
-   Neither representation adds its own click listener to the map: in
-   pitched mode the ground-plane circle sits over the same FILL geometry a
-   centroid lives inside, so Territories.tsx's existing FILL click/hover
-   handlers already fire correctly for it. In flat mode the DOM pin has its
-   own onClick (below) instead — a maplibregl.Marker's element is appended
-   into map.getCanvasContainer(), the same node Territories.tsx's handlers
-   are bound to, so without an explicit stopPropagation() a pin click would
-   *also* reach those FILL handlers and re-toggle the selection they just
-   set (see the stopPropagation() call below). CatMarkers' own effects only
-   keep the two visuals in sync with selection state, via feature-state for
-   the circle and plain props for the DOM pin. */
+   Neither the pin nor the disc adds a click listener to the map. The disc
+   sits inside the same FILL geometry its centroid lives in, so Territories'
+   handlers already fire for it. The pin has its own onClick instead: a
+   maplibregl.Marker's element is appended into map.getCanvasContainer(), the
+   same node Territories binds to, so without an explicit stopPropagation a
+   pin click would also reach those FILL handlers and re-toggle the selection
+   it had just set. Stopped at the pin, before it reaches that container,
+   because MapLibre's listener sits closer to the target and fires first. */
 
 const SOURCE = 'territory-centroids'
 const CIRCLE = 'territory-dot'
-
-// Static input, computed once at module scope rather than per-render.
-const CENTROIDS = centroidsById(territories as FeatureCollection<Polygon>)
 
 const token = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim()
@@ -65,6 +60,8 @@ const byState = <T,>(selected: T, hovered: T, dimmed: T, resting: T) => [
 
 type Props = {
   cats: Cat[]
+  /* Passed in rather than imported. See the note by `centroids` below. */
+  territories: FeatureCollection<Polygon>
   selectedId: string | null
   onSelect: (id: string | null) => void
   hoveredId: string | null
@@ -74,30 +71,85 @@ type Props = {
 type PinProps = {
   cat: Cat
   active: boolean
+  /** Pitched mode: the stake grows so the pin clears low buildings. */
+  lifted: boolean
   onClick: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
 }
 
-/** The flat-mode glyph: an ink-outlined teardrop pin in the cat's own
-    territory colour, spec-consistent with Territories.tsx's per-cat fill.
-    A real <button> for free keyboard focus/activation, not a styled div.
+/* The marker: the cat's own photo in an ink-ringed disc, on a stake, over
+   the ground point.
 
-    The scale/lift animation lives on the inner <motion.svg>, not this
-    <button> — a button that transforms itself (scale 1.15, y -3 on hover,
-    0.95 on tap) moves its own hit-box out from under a stationary cursor
-    mid-gesture. On a target this small that made mouseup land on whatever
-    was newly underneath (the bare map, most often) instead of the button,
-    so the native click fired on that ancestor instead of here and this
-    onClick never ran. The button's own box now never moves, only the glyph
-    inside it does, so the hit-box the browser is tracking stays put for
-    the whole click. */
-function CatPin({ cat, active, onClick, onMouseEnter, onMouseLeave }: PinProps) {
+   ## Why a photo and not a rendered cat
+
+   This replaced a 3D impostor of cat.glb, baked from three.js and drawn as
+   a turning sprite. That failed for a reason no amount of tuning its size or
+   height was going to fix: the basemap is an abstract grey drawing, flat
+   extrusions and hairline roads, and a toon-shaded model with a light source
+   and a cast shadow is a rendered object. A rendered object inside a diagram
+   makes both of them look like mistakes.
+
+   A photo disc is a diagram element. It reads unambiguously as UI sitting
+   over the map rather than as a thing standing in it, which is also what
+   makes overlapping a tower correct here instead of looking embedded. And it
+   answers a question the model never could: not "a cat lives here" but
+   "MILO lives here", legible from across the map.
+
+   It also completes a rhyme the app was already halfway through. The same
+   photo is the rail row's thumbnail, the map pin, and the plate's hero.
+   One object, three places.
+
+   ## The stake
+
+   A hairline down to the ground point, because a disc floating with nothing
+   under it has no stated location. The stake is the connector, and it is why
+   the pin can be lifted at all. Deliberately a fixed pixel height rather
+   than something that tracks building height with zoom: a DOM marker holds
+   its screen size anyway, and the impostor's attempt to track the skyline
+   was what dragged in MapLibre's integer-zoom layout stepping. Overlapping
+   a building is now a non-problem, so there is nothing left to chase.
+
+   ## Fallback
+
+   No photo, or a photo that failed, falls back to lucide's cat glyph in
+   linework. That is the offline story the rest of the app already tells:
+   with no network this degrades to the drawing it would have been before
+   photos existed, not to a broken image.
+
+   A real <button> for free keyboard focus and activation, not a styled div.
+
+   The scale animation lives on the inner head, never on this <button>, and
+   that is load-bearing rather than tidy. A button that transforms itself
+   moves its own hit-box out from under a stationary cursor mid-gesture; on a
+   target this small that made mouseup land on the bare map instead, so the
+   native click fired on an ancestor and onClick never ran. The button box
+   never moves. Only what is inside it does. */
+function CatPin({ cat, active, lifted, onClick, onMouseEnter, onMouseLeave }: PinProps) {
+  /* null while the photo is still in flight, so the glyph is not flashed up
+     and then replaced a moment later on every marker at once. */
+  const [hasPhoto, setHasPhoto] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let live = true
+    const img = new Image()
+    img.onload = () => live && setHasPhoto(true)
+    img.onerror = () => live && setHasPhoto(false)
+    img.src = cat.photo
+    return () => {
+      live = false
+    }
+  }, [cat.photo])
+
   return (
     <button
       type="button"
-      className="cat-pin-glyph"
-      style={{ color: `var(${cat.colour})` }}
+      className="cat-pin"
+      data-active={String(active)}
+      data-lifted={String(lifted)}
+      /* The cat's own territory token themes the whole marker, straight out
+         of the data, exactly as the rail row and the plate do. */
+      style={{ '--accent': `var(${cat.colour})` } as React.CSSProperties}
       aria-label={cat.name}
       onClick={onClick}
       /* Pointer events with a type check, not onMouseEnter/onMouseLeave. A
@@ -109,33 +161,49 @@ function CatPin({ cat, active, onClick, onMouseEnter, onMouseLeave }: PinProps) 
       onPointerEnter={(e) => e.pointerType === 'mouse' && onMouseEnter()}
       onPointerLeave={(e) => e.pointerType === 'mouse' && onMouseLeave()}
     >
-      <motion.svg
-        width="22"
-        height="28"
-        viewBox="0 0 22 28"
-        fill="none"
-        aria-hidden="true"
-        initial={{ scale: 0, opacity: 0 }}
-        animate={{ scale: active ? 1.15 : 1, opacity: 1 }}
-        whileHover={{ scale: 1.15, y: -3 }}
-        whileTap={{ scale: 0.95 }}
+      <motion.span
+        className="cat-pin-head"
+        initial={{ scale: 0.4, opacity: 0 }}
+        animate={{ scale: active ? 1.16 : 1, opacity: 1 }}
+        whileHover={{ scale: 1.16 }}
+        whileTap={{ scale: 0.94 }}
         transition={{ type: 'spring', stiffness: 420, damping: 24 }}
       >
-        <path
-          d="M11 27C11 27 20 16.8 20 10.5C20 5.25 16.02 1 11 1C5.98 1 2 5.25 2 10.5C2 16.8 11 27 11 27Z"
-          fill="currentColor"
-          stroke="var(--ink)"
-          strokeWidth="1.2"
-        />
-        <circle cx="11" cy="10.5" r="3.6" fill="var(--paper)" />
-      </motion.svg>
+        {hasPhoto === false ? (
+          <CatGlyph className="cat-pin-fallback" strokeWidth={1.8} aria-hidden />
+        ) : (
+          <img className="cat-pin-photo" src={cat.photo} alt="" data-ready={String(!!hasPhoto)} />
+        )}
+      </motion.span>
+
+      <span className="cat-pin-stake" aria-hidden />
+      {/* Only while it is the one you are looking at: fifty plate numbers
+          permanently on the map is a legend, not a map. */}
+      <span className="cat-pin-plate" aria-hidden>
+        {cat.plate.replace('PLATE ', '')}
+      </span>
     </button>
   )
 }
 
 type DomMarker = { cat: Cat; el: HTMLDivElement }
 
-export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: Props) {
+export function CatMarkers({
+  cats,
+  territories,
+  selectedId,
+  onSelect,
+  hoveredId,
+  onHover,
+}: Props) {
+  /* Was a module-level const off a static JSON import, which was right
+     while the only cats were the seeded three. A recorded cat (data/
+     localCats.ts) arrives after this module has evaluated, so the map has
+     to be recomputed from whatever the repo hands down rather than from
+     what was on disk at build time. Memoised on identity: the repo returns
+     a new object only when the data actually changed. */
+  const centroids = useMemo(() => centroidsById(territories), [territories])
+
   const { map, isLoaded, isFlat, theme } = useMap()
   const [domMarkers, setDomMarkers] = useState<DomMarker[]>([])
 
@@ -160,11 +228,11 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
     const points: FeatureCollection<Point> = {
       type: 'FeatureCollection',
       features: cats
-        .filter((cat) => CENTROIDS.has(cat.id))
+        .filter((cat) => centroids.has(cat.id))
         .map((cat) => ({
           type: 'Feature',
           properties: { id: cat.id },
-          geometry: { type: 'Point', coordinates: CENTROIDS.get(cat.id) as [number, number] },
+          geometry: { type: 'Point', coordinates: centroids.get(cat.id) as [number, number] },
         })),
     }
 
@@ -198,7 +266,7 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
       if (map.getLayer(CIRCLE)) map.removeLayer(CIRCLE)
       if (map.getSource(SOURCE)) map.removeSource(SOURCE)
     }
-  }, [map, isLoaded, cats, isFlat, theme])
+  }, [map, isLoaded, cats, territories, centroids, isFlat, theme])
 
   // Mirror selection onto the centroid source's own feature-state: it is a
   // different (source, id) pair from Territories.tsx's polygon sources, so
@@ -219,13 +287,19 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
     }
   }, [map, isLoaded, cats, selectedId, hoveredId, isFlat, theme])
 
-  // The flat-mode DOM pins. One maplibregl.Marker per cat; React only owns
-  // what's portaled into each Marker's element, never its position.
+  /* The DOM pins, in both modes. Note the deps: isFlat is deliberately NOT
+     among them, because the toggle no longer changes which marker exists,
+     only how tall its stake is, and that is a prop CatPin reads. Rebuilding
+     every Marker on a camera toggle would tear down and re-portal the whole
+     set for a CSS height change.
+
+     One maplibregl.Marker per cat; React only owns what is portalled into
+     each Marker's element, never its position. */
   useEffect(() => {
     if (!map || !isLoaded || cats.length === 0) return
 
     const instances = cats
-      .filter((cat) => CENTROIDS.has(cat.id))
+      .filter((cat) => centroids.has(cat.id))
       .map((cat) => {
         const el = document.createElement('div')
         // maplibregl.Marker appends el into map.getCanvasContainer() — the
@@ -238,7 +312,7 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
         // fires first.
         el.addEventListener('click', (e) => e.stopPropagation())
         const marker = new Marker({ element: el, anchor: 'bottom' })
-          .setLngLat(CENTROIDS.get(cat.id) as [number, number])
+          .setLngLat(centroids.get(cat.id) as [number, number])
           .addTo(map)
         return { cat, el, marker }
       })
@@ -249,12 +323,15 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
       for (const { marker } of instances) marker.remove()
       setDomMarkers([])
     }
-  }, [map, isLoaded, cats])
+  }, [map, isLoaded, cats, centroids])
 
-  // Same swap as the circle layer, the other direction.
-  useEffect(() => {
-    for (const { el } of domMarkers) el.style.display = isFlat ? '' : 'none'
-  }, [domMarkers, isFlat])
+  /* No swap any more. The pin is the marker in both modes, and the flat/3D
+     toggle only changes how tall its stake is, which CatPin reads from its
+     `lifted` prop. The circle layer above stays pitched-only, where it is
+     the ground the stake lands on.
+
+     This used to hide every pin whenever the camera was pitched, which is
+     what the whole two-representation design rested on. */
 
   return (
     <>
@@ -264,6 +341,7 @@ export function CatMarkers({ cats, selectedId, onSelect, hoveredId, onHover }: P
             key={cat.id}
             cat={cat}
             active={cat.id === selectedId || cat.id === hoveredId}
+            lifted={!isFlat}
             onClick={() => onSelect(cat.id === selectedId ? null : cat.id)}
             onMouseEnter={() => onHover(cat.id)}
             onMouseLeave={() => onHover(null)}
