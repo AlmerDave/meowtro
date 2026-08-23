@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useDragControls } from 'motion/react'
 import { X } from 'lucide-react'
 import type { Cat } from '@/data/catsRepo'
+import type { Request } from '@/App'
 import { CatRow } from '@/ui/CatRow'
 import { Plate } from '@/plate/Plate'
 import { spring, springSoft } from '@/motion/springs'
@@ -50,9 +51,16 @@ type Props = {
   selectedId: string | null
   onSelect: (id: string | null) => void
   onHover: (id: string | null) => void
+  /** "Open this cat's record." The one thing that has to reach past the
+      local state below, because on this layout a selection scrolls the deck
+      and nothing more, so the scanner saying "here is MILO" would otherwise
+      do nothing visible at all on the device the scanner exists for. */
+  record?: Request | null
+  /** Report a sighting for a cat, from its plate. */
+  onReport?: (id: string) => void
 }
 
-export function CatDeck({ cats, selectedId, onSelect, onHover }: Props) {
+export function CatDeck({ cats, selectedId, onSelect, onHover, record, onReport }: Props) {
   /* Local, not lifted to App. Selection is shared with the map and belongs
      upstairs; "is the plate open" is this presentation's own business and
      the desktop rail has no equivalent of it, there, selection and open are
@@ -112,6 +120,15 @@ export function CatDeck({ cats, selectedId, onSelect, onHover }: Props) {
     setExpandedId(null)
     if (id) requestAnimationFrame(() => document.getElementById(`cat-row-${id}`)?.focus())
   }
+
+  /* The one door into `expandedId` from outside this component. Everything
+     else about opening a plate here stays local, deliberately (see above):
+     tapping a territory still only scrolls the deck, because that is a
+     selection and not a request to read. Keyed on the request object, so
+     asking for the same cat twice opens it twice. */
+  useEffect(() => {
+    if (record) setExpandedId(record.id)
+  }, [record])
 
   const deckRef = useRef<HTMLDivElement>(null)
 
@@ -336,7 +353,22 @@ export function CatDeck({ cats, selectedId, onSelect, onHover }: Props) {
               </div>
 
               <div className="cat-panel-body" data-lenis-prevent>
-                <Plate cat={expanded} onClose={collapse} />
+                <Plate
+                  cat={expanded}
+                  onClose={collapse}
+                  onReport={
+                    onReport &&
+                    ((id) => {
+                      /* Collapsed first, and that ordering matters. The
+                         sighting panel lives on the map, underneath this
+                         panel's scrim; opening it without standing down
+                         would put the thing you asked for behind a sheet
+                         you would then have to dismiss. */
+                      collapse()
+                      onReport(id)
+                    })
+                  }
+                />
               </div>
             </motion.div>
           </>

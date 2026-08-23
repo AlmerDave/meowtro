@@ -11,6 +11,20 @@ export type Cat = {
   firstRecorded: string
   range: string
   disposition: string
+  /** One observation that is not a measurement. Every other field here
+      answers "what is this cat"; this one answers "what is this cat like",
+      which is the only reason anyone reads a field guide twice.
+
+      Optional, and the plate skips the row rather than printing an empty
+      one. A cat recorded five minutes ago legitimately has nothing written
+      under it yet, and that is a real state once cats can be added rather
+      than seeded. */
+  note?: string
+  /** Derived at read time from the sighting log (data/sightings.ts), never
+      stored on a cat and never written to this file. It is a fact about
+      when somebody last reported seeing this cat, so it belongs to the
+      observations, not to the animal. Absent means nobody has. */
+  lastSeen?: string
   coordinates: string
   /** A URL, not a bundled asset, so v2 can point this at real hosted photos
       without touching anything but this file.
@@ -37,6 +51,7 @@ export const CATS: Cat[] = [
     firstRecorded: 'Mar 2024',
     range: 'Track 30th → Net Park loading dock',
     disposition: 'Approaches for food, not for touch',
+    note: 'Holds the warm vent behind the loading dock every morning until the sun clears the tower opposite, then gives it up without argument.',
     coordinates: '14.5512° N, 121.0500° E',
     photo: 'https://placecats.com/millie/640/480',
   },
@@ -50,6 +65,7 @@ export const CATS: Cat[] = [
     firstRecorded: 'Aug 2023',
     range: 'Net Park lawn → 5th Avenue service road',
     disposition: 'Sleeps through everything',
+    note: 'Has slept through two fun runs, a fire drill and one wedding photoshoot. Moves for the lawn sprinklers, and for nothing else.',
     coordinates: '14.5487° N, 121.0463° E',
     photo: 'https://placecats.com/neo/640/480',
   },
@@ -63,6 +79,7 @@ export const CATS: Cat[] = [
     firstRecorded: 'Jan 2025',
     range: '32nd Street underpass → the mid-block gardens',
     disposition: 'Watches from distance, never closes',
+    note: 'Uses the underpass rather than the crossing above it, at the same two times each day, which is how the range was mapped at all.',
     coordinates: '14.5501° N, 121.0489° E',
     photo: 'https://placecats.com/bella/640/480',
   },

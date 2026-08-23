@@ -1,20 +1,10 @@
-import { Suspense, lazy, useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import { Check, Copy, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { motion } from 'motion/react'
+import { Check, Copy, MapPin, X } from 'lucide-react'
 import type { Cat } from '@/data/catsRepo'
-import { FigureBoundary } from '@/plate/FigureBoundary'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
 import { spring, springSoft } from '@/motion/springs'
-
-/* three.js is ~1.4 MB and nothing needs it until someone asks for the 3D
-   view. Lazy import keeps it out of the initial load of a page whose first
-   screen is a map. The Photo/3D toggle pushes that one step further: the
-   plate opens on the photo, so the chunk is not even requested until the 3D
-   tab is pressed. */
-const CatFigure = lazy(() =>
-  import('@/plate/CatFigure').then((m) => ({ default: m.CatFigure })),
-)
 
 /* The specimen plate. Motion owns the enter *and the exit* — the exit
    is the whole reason this library is here (React unmounts a component before
@@ -29,13 +19,31 @@ const CatFigure = lazy(() =>
    card visibly comes from the row you pressed instead of sliding in from
    off-screen with no stated origin.
 
-   It stays mounted (opacity 0) behind the 3D view rather than unmounting,
-   because a layoutId with no live element to hand back to has nothing to
-   morph into on close. */
+   ## The 3D view was removed, and its code was not
+
+   The Photo/3D toggle is gone (user direction, 2026-08-23) and with it the
+   only route to plate/CatFigure.tsx, plate/FigureBoundary.tsx and cat.glb.
+   Those files are all still here and still work; nothing imports them. Do
+   not delete them on the grounds that nothing does, and do not delete the
+   .plate-views rules in shell.css either, which are parked for the same
+   reason and carry the same note.
+
+   It is also the largest single performance change this file has had: the
+   toggle lazy-loaded roughly a megabyte of three.js on first press, and
+   with no toggle that chunk is never requested at all.
+
+   The hero photo is now unconditional, which is a simplification rather
+   than a loss: it used to stay mounted at opacity 0 underneath the model so
+   that its layoutId always had a live element to morph back into on close,
+   and with nothing to hide behind, that whole dance goes. */
 
 type Props = {
   cat: Cat
   onClose: () => void
+  /** Report having seen this cat. Optional because the plate is a record
+      first: it renders perfectly well somewhere that cannot accept a
+      sighting, and the button simply is not drawn. */
+  onReport?: (catId: string) => void
 }
 
 const body = {
@@ -47,8 +55,7 @@ const line = {
   shown: { opacity: 1, y: 0, transition: spring },
 }
 
-export function Plate({ cat, onClose }: Props) {
-  const [view, setView] = useState<'photo' | 'model'>('photo')
+export function Plate({ cat, onClose, onReport }: Props) {
   /* Three states, not a boolean. Copying can genuinely fail, see the
      handler, and a button that silently does nothing is worse than one
      that says so. */
@@ -92,84 +99,12 @@ export function Plate({ cat, onClose }: Props) {
           className="plate-hero-photo"
           src={cat.photo}
           alt={`${cat.name}, recorded on ${cat.line}`}
-          animate={{ opacity: view === 'photo' ? 1 : 0 }}
-          /* Stays mounted at opacity 0 behind the 3D view (see the header
-             note on why it may not unmount), so it has to be hidden from a
-             screen reader explicitly, otherwise the plate announces a photo
-             that is not on screen. */
-          aria-hidden={view !== 'photo'}
           onError={(e) => {
             e.currentTarget.style.visibility = 'hidden'
           }}
         />
 
-        {/* Mounted only while asked for, so an unopened 3D tab costs nothing.
-            Absolutely positioned over the photo rather than replacing it: see
-            the header note on why the photo may not unmount. */}
-        <AnimatePresence>
-          {view === 'model' && (
-            <motion.div
-              className="plate-hero-model"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* three.js is a megabyte, so this fallback is on screen for a
-                  real second or two on a first press, not a frame. It says
-                  what is happening and shows that something still is,
-                  the same sweep the rail's photo slots use, because it is the
-                  same fact being reported. */}
-              <FigureBoundary
-                fallback={
-                  <span className="plate-hero-loading">
-                    <span>The 3D view could not load.</span>
-                    <button type="button" onClick={() => setView('photo')}>
-                      Show the photo
-                    </button>
-                  </span>
-                }
-              >
-                {/* role="status" so the wait is announced. A visual-only
-                    loading state is silence to a screen reader, and this one
-                    can run for a second or two. */}
-                <Suspense
-                  fallback={
-                    <span className="plate-hero-loading" role="status">
-                      <span className="plate-hero-loading-bar" aria-hidden />
-                      <span>Rendering specimen</span>
-                    </span>
-                  }
-                >
-                  <CatFigure colour={cat.colour} />
-                </Suspense>
-              </FigureBoundary>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
         <span className="plate-number">{cat.plate}</span>
-
-        <div className="plate-views" role="group" aria-label="Specimen view">
-          {(['photo', 'model'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              className="plate-view"
-              data-on={String(view === v)}
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-            >
-              {/* One pill that slides between the two, rather than two pills
-                  crossfading. Safe to share an id: mode="wait" upstream means
-                  only one plate is ever mounted. */}
-              {view === v && (
-                <motion.span layoutId="plate-view-pill" className="plate-view-pill" transition={spring} />
-              )}
-              <span>{v === 'photo' ? 'Photo' : '3D'}</span>
-            </button>
-          ))}
-        </div>
 
         <motion.button
           type="button"
@@ -209,6 +144,17 @@ export function Plate({ cat, onClose }: Props) {
           </div>
         </motion.div>
 
+        {/* First among the fields when there is one, because it is the only
+            fact on this card that changes. A visitor reported it (see
+            ui/ReportSighting.tsx); everything below is the survey's own
+            record and does not move. */}
+        {cat.lastSeen && (
+          <motion.div className="plate-field" variants={line}>
+            <span className="plate-label">Last seen</span>
+            <span className="plate-value">{cat.lastSeen}</span>
+          </motion.div>
+        )}
+
         <motion.div className="plate-field" variants={line}>
           <span className="plate-label">First recorded</span>
           <span className="plate-value">{cat.firstRecorded}</span>
@@ -217,6 +163,43 @@ export function Plate({ cat, onClose }: Props) {
           <span className="plate-label">Disposition</span>
           <span className="plate-value">{cat.disposition}</span>
         </motion.div>
+
+        {/* Last, and only when there is one. It is the one field that is a
+            sentence rather than a value, so it reads as the observation the
+            other fields were the measurements for, and it needs no styling
+            of its own: .plate-value already wraps at a readable line height.
+
+            Rendered conditionally rather than as an empty row, see the note
+            on Cat.note. An orphaned label with nothing under it reads as
+            data that failed to load rather than data that does not exist. */}
+        {cat.note && (
+          <motion.div className="plate-field" variants={line}>
+            <span className="plate-label">Field note</span>
+            <span className="plate-value">{cat.note}</span>
+          </motion.div>
+        )}
+
+        {/* The one thing a visitor can contribute, offered wherever a cat is
+            being read about rather than only inside the "I saw a cat" flow.
+            That is the point of putting it here: the rail, a map pin, the
+            deck and the scanner all end at this card, so one button covers
+            every route instead of each route growing its own.
+
+            Last in the body, after the record rather than inside it: the
+            fields above are what the survey knows, and this is a thing to
+            do about them. Outlined rather than filled, because the plate is
+            a record first and an invitation second. */}
+        {onReport && (
+          <motion.button
+            type="button"
+            className="plate-report"
+            variants={line}
+            onClick={() => onReport(cat.id)}
+          >
+            <MapPin size={13} />
+            I saw {cat.name} here
+          </motion.button>
+        )}
       </motion.div>
 
       <div className="plate-foot">
