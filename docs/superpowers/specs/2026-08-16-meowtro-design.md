@@ -121,9 +121,11 @@ specifically — those were rev 1's chosen tells for that era's default
 failure mode. The actual constraint, restated: *could this have been
 produced by prompting for a nice website, with nobody making a deliberate
 choice at any step?* Rev 4's checklist (§4) targets 2026's actual tells
-instead: Inter/Roboto/Space Grotesk as body/display type, the default
-indigo-to-purple gradient, and flat semi-opaque rectangles standing in for
-real glass. Doing glassmorphism *well* — real blur, one deliberate accent
+instead: Inter/Roboto/Space Grotesk as body/display type and flat
+semi-opaque rectangles standing in for real glass. (The gradient clause was
+struck on 2026-08-23, user direction: the loading screen's cube is a
+deliberate, held choice, which is the only test this checklist has
+ever actually been applying.) Doing glassmorphism *well* — real blur, one deliberate accent
 colour, a material that holds up next to a real Apple HIG surface — is a
 harder, more specific commitment than avoiding the aesthetic altogether,
 which is the same logic rev 1 used to justify committing to cream and ink.
@@ -254,9 +256,8 @@ no route graph.
 
 The brief, restated for rev 4: **could this have been produced by prompting
 for a nice website, with nobody making a deliberate choice at any step?**
-The 2026 default failure mode is Inter/Roboto/Space Grotesk type, a default
-indigo-to-purple gradient, and flat semi-opaque rectangles standing in for
-real glass. The defence is the same as rev 1's: commit to a specific
+The 2026 default failure mode is Inter/Roboto/Space Grotesk type and flat
+semi-opaque rectangles standing in for real glass. The defence is the same as rev 1's: commit to a specific
 referent and hold every value to it, rather than avoid a whole aesthetic
 wholesale.
 
@@ -327,8 +328,6 @@ checklist enforcing against it has to.
 
 - No Inter, Roboto, Space Grotesk, or Geist. The native system-ui stack or
   nothing.
-- No default indigo-to-purple gradient. The only accent is the one warm
-  colour; the only other hue is the park green.
 - No flat semi-opaque rectangle standing in for glass. Every translucent
   surface needs real `backdrop-filter` blur, a crisp inner highlight edge,
   and a shadow tuned to the theme.
