@@ -146,10 +146,28 @@ export function Clouds() {
        phone screen the honest resolution costs about five times the work
        for detail that soft cloud edges cannot show anyway. */
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
+    /* Tracks whether THIS invocation's resize() has ever run its real
+       branch, alongside the pixel-dimension check below rather than
+       instead of it. Found and fixed as the same bug already caught in
+       map/Rain.tsx: under StrictMode this effect mounts, is cleaned up,
+       and mounts again on the same persistent <canvas> DOM node. Cleanup
+       cancels the animation frame but leaves canvas.width/height exactly
+       as the first mount set them. The second (surviving) mount links its
+       OWN fresh WebGL program with its OWN independent uRes uniform, and
+       without this flag its resize() saw a canvas that already matched
+       the target size and returned before ever calling
+       gl.uniform2f(u.res, w, h) for that program, leaving uRes at its
+       zero-initialised default forever. The shader divides by it on its
+       very first line (`uv.x *= uRes.x / uRes.y`), so a never-set uRes is
+       0/0: NaN silently poisons every pixel, no console error, the clouds
+       just never appear. Reproduced outside the browser before this fix
+       was written; see the scratch reproduction from that investigation. */
+    let sized = false
     const resize = () => {
       const w = Math.floor(canvas.clientWidth * dpr)
       const h = Math.floor(canvas.clientHeight * dpr)
-      if (canvas.width === w && canvas.height === h) return
+      if (sized && canvas.width === w && canvas.height === h) return
+      sized = true
       canvas.width = w
       canvas.height = h
       gl.viewport(0, 0, w, h)
