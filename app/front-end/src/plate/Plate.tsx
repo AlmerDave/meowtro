@@ -4,6 +4,7 @@ import { Check, Copy, MapPin, X } from 'lucide-react'
 import type { Cat } from '@/data/catsRepo'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
+import { useEscape } from '@/ui/escape'
 import { spring, springSoft } from '@/motion/springs'
 
 /* The specimen plate. Motion owns the enter *and the exit* — the exit
@@ -61,13 +62,15 @@ export function Plate({ cat, onClose, onReport }: Props) {
      that says so. */
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
 
-  // Escape closes. A panel this size that can only be dismissed by finding
-  // one small button is the single most common complaint about card UIs.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onClose])
+  /* Escape closes. A panel this size that can only be dismissed by finding
+     one small button is the single most common complaint about card UIs.
+
+     Through the shared stack rather than a window listener of its own. The
+     sighting panel this card's own button opens sits on top of it and has
+     its own Escape behaviour, and two window listeners meant one press did
+     both: the report stepped back out of aiming AND the record it was
+     started from closed behind it. See ui/escape.ts. */
+  useEscape(true, onClose)
 
   useEffect(() => {
     if (copyState === 'idle') return

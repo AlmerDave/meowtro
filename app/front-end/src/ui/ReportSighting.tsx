@@ -9,6 +9,7 @@ import { addSighting, distanceM, removeSighting, ringRadiusM, translateToward } 
 import type { Cat } from '@/data/catsRepo'
 import type { Request } from '@/App'
 import { ScanCat } from '@/ui/ScanCat'
+import { useEscape } from '@/ui/escape'
 import { spring, springSoft } from '@/motion/springs'
 
 /* "I saw a cat": the one thing a visitor can contribute to the survey.
@@ -200,18 +201,17 @@ export function ReportSighting({
     setOrigin([lng, lat])
   }, [step, map])
 
-  useEffect(() => {
-    if (step === 'closed') return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      // Aiming is the innermost state, so Escape leaves that first rather
-      // than throwing away the whole report.
-      if (placing) setPlacing(false)
-      else close()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [step, placing, setPlacing])
+  /* Aiming is the innermost state, so Escape leaves that first rather than
+     throwing away the whole report.
+
+     On the shared stack (ui/escape.ts) rather than a window listener,
+     because a plate is usually still open underneath this panel: it was
+     started from one. Two window listeners on the same key meant Escape
+     stepped this panel back and closed that record in the same press. */
+  useEscape(step !== 'closed', () => {
+    if (placing) setPlacing(false)
+    else close()
+  })
 
   // The map takes one click while placing. Territories stands down for it
   // (MapCanvas' `placing`), so the tap cannot also select a cat.

@@ -475,42 +475,138 @@ body:has(.map)::-webkit-scrollbar {
 /* One focus ring for everything interactive. Drawn in the active cat's
    accent where there is one and rust where there is not, so it is never the
    browser's blue on a page with no blue in it. :focus-visible, not :focus —
-   a mouse press on a row should not leave a ring behind it. */
-.cat-row:focus-visible,
+   a mouse press on a row should not leave a ring behind it.
+
+   By container, not by class. This was thirty-two hand-listed class names,
+   which is a list that is correct on the day it is written and wrong on the
+   day the next button is added: every control the sighting flow grew after
+   that list was compiled (.sight-go, .sight-when's segments, .scan-manual)
+   had to be remembered into it by hand, and the same list had to be
+   remembered a second time for the press states below. Naming the six
+   panels instead means a button is reachable by keyboard the moment it is
+   inside one, which is the only condition that was ever actually meant.
+
+   The four trailing selectors are the controls that live outside a panel:
+   the map pin (MapLibre appends its own marker container), the mobile
+   scrim, and the two panels' own opener buttons, which sit beside the panel
+   rather than in it. */
+.rail :is(button, input):focus-visible,
+.plate :is(button, input):focus-visible,
+.cat-deck :is(button, input):focus-visible,
+.cat-panel :is(button, input):focus-visible,
+.sight :is(button, input):focus-visible,
+.record :is(button, input, textarea):focus-visible,
+.map-controls button:focus-visible,
 .cat-pin:focus-visible,
-.rail-collapse:focus-visible,
-.rail-clear:focus-visible,
-.rail-empty button:focus-visible,
-.plate-close:focus-visible,
-.plate-hero-loading button:focus-visible,
-.plate-view:focus-visible,
-.plate-copy:focus-visible,
-.plate-report:focus-visible,
-.cat-panel-close:focus-visible,
 .cat-scrim:focus-visible,
 .sight-open:focus-visible,
-.sight-card:focus-visible,
-.sight-scan:focus-visible,
-.scan-retake:focus-visible,
-.scan-report:focus-visible,
-.scan-manual:focus-visible,
-.sight-search input:focus-visible,
-.sight-go:focus-visible,
-.sight-place:focus-visible,
-.sight-when button:focus-visible,
-.sight-undo:focus-visible,
-.sight-back:focus-visible,
-.sight-close:focus-visible,
-.record-open:focus-visible,
-.record-save:focus-visible,
-.record-place:focus-visible,
-.record-swatch:focus-visible,
-.record-close:focus-visible,
-.record-clear:focus-visible,
-.record-input:focus-visible,
-.map-control:focus-visible {
+.record-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* --- Press ------------------------------------------------------------
+   A control has to answer the finger before the thing it does arrives.
+   Every button in the app that Motion drives already had this as a
+   `whileTap`; the ones written in plain CSS had nothing at all, so the
+   whole sighting flow — including .sight-go, the one filled button in the
+   panel and the primary action of every step — acknowledged a press only
+   by the panel changing afterwards. On a phone, where there is no hover to
+   fall back on, that is the entire feedback budget spent on nothing.
+
+   Listed by class rather than by container, unlike the ring above, and
+   that asymmetry is deliberate: an outline cannot collide with anything,
+   but a transform can. Motion writes `transform` as an inline style, so a
+   CSS :active on an element that also has a `whileTap` would be a second
+   owner of one animation — silently dead here (inline wins), and the exact
+   class of bug this codebase has spent a session on before. Only the
+   buttons Motion does not touch are in this list.
+
+   0.97, and no more. The scale has to be felt rather than seen; anything
+   deeper reads as the button being pushed away rather than pressed.
+
+   :not(:disabled) because .sight-go is disabled until a point is placed,
+   and a dead button that still flinches claims it did something. */
+.rail-empty button,
+.plate-view,
+.sight-back,
+.sight-close,
+.sight-card,
+.sight-scan,
+.sight-go,
+.sight-place,
+.sight-when button,
+.sight-undo,
+.scan-retake,
+.scan-manual,
+.record-close,
+.record-save,
+.record-place,
+.record-swatch,
+.record-clear {
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.rail-empty button:active,
+.plate-view:active,
+.sight-back:active,
+.sight-close:active,
+.sight-card:active,
+.sight-scan:active,
+.sight-place:active,
+.sight-when button:active,
+.sight-undo:active,
+.scan-retake:active,
+.scan-manual:active,
+.record-close:active,
+.record-place:active,
+.record-swatch:active,
+.record-clear:active,
+.sight-go:not(:disabled):active,
+.record-save:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* --- Hover, for the same set --------------------------------------------
+   The sighting and scanner panels had one hover state between them (the
+   photo card's 3% zoom) across eleven controls, so on a desktop the whole
+   flow read as flat text until something was clicked. Each of these is the
+   quietest thing that answers "is this a control": a wash for the icon
+   buttons, a firmer edge for the outlined ones, a shade for the filled one.
+
+   Gated, because :hover sticks on after a touch tap and these are the
+   controls most likely to be tapped. Same guard the rest of the file uses. */
+@media (hover: hover) and (pointer: fine) {
+  .sight-back:hover,
+  .sight-close:hover,
+  .record-close:hover {
+    background: var(--well);
+    color: var(--ink);
+  }
+  /* The outlined ones state themselves with an edge, so the edge is what
+     firms up. --rule-strong rather than --accent: none of these is the
+     step's primary action, and colouring them would say they were. */
+  .sight-place:hover,
+  .sight-when button:hover,
+  .sight-undo:hover,
+  .scan-retake:hover {
+    border-color: var(--rule-strong);
+    color: var(--ink);
+  }
+  /* The filled one. color-mix toward --ink rather than a second rust:
+     --ink is near-black on light and near-white on dark, so one expression
+     darkens the button on one theme and lifts it on the other, which is
+     what "one step more prominent" means in each. */
+  .sight-go:not(:disabled):hover {
+    background: color-mix(in srgb, var(--rust) 86%, var(--ink));
+  }
+  /* The two text links. Underline offset rather than a colour change: they
+     are already the only rust text in their panels. */
+  .sight-scan:hover,
+  .scan-manual:hover,
+  .rail-empty button:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
 }
 
 /* --- Index rail, ui/Rail.tsx ------------------------------------------- */
@@ -607,9 +703,11 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink-soft);
   cursor: pointer;
 }
-.rail-collapse:hover {
-  background: var(--surface-hover);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .rail-collapse:hover {
+    background: var(--surface-hover);
+    color: var(--ink);
+  }
 }
 /* The chevron is wrapped in a motion.span that rotates; without this the
    span is inline and the glyph rotates about the text baseline. */
@@ -644,9 +742,13 @@ body:has(.map)::-webkit-scrollbar {
     background var(--dur-micro) var(--ease),
     box-shadow var(--dur-micro) var(--ease);
 }
+/* --accent, not --rust. tokens.css names this field specifically as what
+   the accent's default exists for: chrome with no cat behind it. Written as
+   the literal token it would have stayed rust inside a panel that had been
+   themed to a cat. */
 .rail-search:focus-within {
   background: var(--surface-hover);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--rust) 45%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .rail-search input {
   flex: 1;
@@ -692,9 +794,11 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink-soft);
   cursor: pointer;
 }
-.rail-clear:hover {
-  background: var(--rule);
-  color: var(--ink);
+@media (hover: hover) and (pointer: fine) {
+  .rail-clear:hover {
+    background: var(--rule);
+    color: var(--ink);
+  }
 }
 
 /* The readout. Set as an instrument label, not a sentence: mono, tracked
@@ -1363,7 +1467,12 @@ body:has(.map)::-webkit-scrollbar {
   color: var(--ink-soft);
   transition:
     background var(--dur-ui) var(--ease-out),
-    color var(--dur-ui) var(--ease-out);
+    color var(--dur-ui) var(--ease-out),
+    /* transform was missing here while :active below set one, so the press
+       eased in from nothing and the release snapped back in a single frame.
+       Asymmetric on purpose is a real pattern; asymmetric by omission is a
+       thing you feel and cannot name. */
+    transform var(--dur-press) var(--ease-out);
 }
 @media (hover: hover) and (pointer: fine) {
   .plate-copy:hover {
@@ -1418,7 +1527,7 @@ body:has(.map)::-webkit-scrollbar {
 }
 
 /* --- Loading screen, ui/Loading.tsx -------------------------------------
-   Above everything. The documented stack is map 0, grain/labels/clouds 1,
+   Above everything. The documented stack is map 0, grain/labels/veil 1,
    rain 2, panels 3, deck 4, scrim 5, raised panel 6; this sits clear of all of it
    rather than one above the top, so inserting anything later cannot slip
    underneath it by accident.
@@ -1993,7 +2102,10 @@ body:has(.map)::-webkit-scrollbar {
   z-index: 3;
   left: var(--s-6);
   /* Clear of the trigger, which stays put underneath: the panel grows up
-     out of the button rather than replacing it. */
+     out of the button rather than replacing it. The origin is what makes
+     that literally true of the entrance scale, not just of the position;
+     see the same pair on .sight. */
+  transform-origin: bottom left;
   bottom: calc(var(--s-6) + 3rem);
   display: flex;
   flex-direction: column;
@@ -2226,6 +2338,7 @@ body[data-placing='true'] .maplibregl-canvas {
     left: var(--s-4);
   }
   .record {
+    transform-origin: top left;
     top: calc(var(--s-4) + 3rem);
     bottom: auto;
     left: var(--s-4);
@@ -2294,7 +2407,14 @@ body[data-placing='true'] .maplibregl-canvas {
   position: fixed;
   z-index: 3;
   left: var(--s-6);
-  /* Grows up out of the button, which stays put underneath it. */
+  /* Grows up out of the button, which stays put underneath it. The origin
+     is what makes that true rather than only stated: the panel enters on a
+     scale (ReportSighting's `initial`), and a scale about the default
+     centre pulls the panel in from all four edges at once, which reads as
+     a card fading in at the corner rather than as something opening out of
+     the control that was pressed. Its trigger is below its bottom-left, so
+     that is the corner that stays still. */
+  transform-origin: bottom left;
   bottom: calc(var(--s-6) + 3rem);
   display: flex;
   flex-direction: column;
@@ -2446,8 +2566,20 @@ body[data-placing='true'] .maplibregl-canvas {
   font-size: var(--t-sm);
   color: var(--ink);
 }
+/* The wrapper carries the focus indicator for both search fields, so the
+   input inside does not draw a second ring on top of it. This one used to
+   be the sighting panel's only focus rule, which meant it suppressed the
+   outline and put nothing in its place: it ties on specificity with the
+   ring rule at the top of this file and comes later, so tabbing into the
+   picker's search field showed no focus at all. .rail-search has always had
+   the wrapper glow; this field now has the same one. */
+.rail-search input:focus,
 .sight-search input:focus {
   outline: none;
+}
+.sight-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
 }
 .sight-count {
   font-family: var(--font-mono);
@@ -2629,6 +2761,9 @@ body[data-placing='true'] .maplibregl-canvas {
     left: var(--s-4);
   }
   .sight {
+    /* The trigger moves to the top-left below the breakpoint, so the corner
+       the panel grows out of moves with it. */
+    transform-origin: top left;
     top: calc(var(--s-4) + 3rem);
     bottom: auto;
     left: var(--s-4);
