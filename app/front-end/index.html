@@ -1,14 +1,45 @@
 <!doctype html>
 <!-- data-theme is set here, not in React: a bare :root IS the paper theme
      (tokens.css), so without it the page would paint cream for one frame
-     before the app mounted and corrected it. Light is the shipped default;
-     the map's toggle moves between light and dark from there. Set this to
-     "paper" to bring rev 1-3's field-guide identity back — it is still
-     fully built, just off the toggle (see TOGGLE_THEMES in map/style.ts). -->
+     before the app mounted and corrected it. "light" on the tag itself is
+     only the fallback for the instant before the script below runs; the
+     real starting value is decided there. Set this to "paper" by hand to
+     bring rev 1-3's field-guide identity back — it is still fully built,
+     just off the toggle (see TOGGLE_THEMES in map/style.ts), and the script
+     below never chooses it, only light or dark. -->
 <html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Day/night, decided by the clock in Bonifacio Global City, not the
+         visitor's own device. First and synchronous in <head>, before the
+         stylesheet link below has any chance to resolve, so the correct
+         theme is what actually paints first rather than a flash of light
+         corrected a frame later — the same reason the attribute above
+         exists at all.
+
+         Manila's UTC offset is fixed at +8 year-round (no daylight saving),
+         so reading the hour there is exact, not an estimate. 6am-6pm is a
+         constant day window rather than a real sunrise/sunset calculation:
+         actual sunrise in Manila drifts by about half an hour across the
+         year, which is not worth the added complexity here.
+
+         Only ever picks from TOGGLE_THEMES (map/style.ts): light or dark.
+         Never "paper" — that stays a hand-set choice, exactly as the
+         comment above states. If MapControls' cycle button is pressed
+         afterward, that choice simply overrides this one for the rest of
+         the visit, the same as it already overrides any other starting
+         theme. -->
+    <script>
+      var bgcHour = Number(
+        new Intl.DateTimeFormat('en-US', {
+          hour: 'numeric',
+          hourCycle: 'h23',
+          timeZone: 'Asia/Manila',
+        }).format(new Date())
+      )
+      document.documentElement.dataset.theme = bgcHour >= 6 && bgcHour < 18 ? 'light' : 'dark'
+    </script>
     <title>Meowtro · Community cats of Bonifacio Global City</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
