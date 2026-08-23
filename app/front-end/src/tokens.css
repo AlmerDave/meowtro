@@ -208,6 +208,30 @@
   --specular: rgba(255, 255, 255, 0.14);
 }
 
+/* --- Loading screen, ui/Loading.tsx -------------------------------------
+   The one place in the app that is deliberately off-palette, and it is
+   written here rather than inline so the exception is visible instead of
+   smuggled into a component.
+
+   Everything else in the app resolves to five colours. The loading screen
+   does not: it is a black card shown before the app exists, on screen for
+   two seconds, that never shares the viewport with the map or the panels,
+   so nothing downstream inherits from it. The palette rule that used to
+   forbid this was struck from spec §4 on 2026-08-23 (user direction).
+
+   If it ever stops being a full-screen takeover, this block is the first
+   thing to reconsider. */
+:root {
+  --loading-bg: #05060a;
+  --loading-ink: #e8eaf0;
+  --loading-ink-soft: #7b8299;
+  /* The cube's three face pairs: Tailwind's cyan-400, purple-400, indigo-400,
+     kept at their exact values because how it looked was the whole point. */
+  --cube-a: #22d3ee;
+  --cube-b: #c084fc;
+  --cube-c: #818cf8;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --dur-micro: 1ms;
