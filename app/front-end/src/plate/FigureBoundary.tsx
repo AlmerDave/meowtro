@@ -1,3 +1,6 @@
+/* PARKED, 2026-08-23. Nothing imports this file. It catches CatFigure
+   failing to load, and CatFigure is parked too; see the note there. */
+
 import { Component, type ReactNode } from 'react'
 
 /* An error boundary around the lazily-loaded 3D figure, and the only class

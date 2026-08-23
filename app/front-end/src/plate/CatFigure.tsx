@@ -1,3 +1,14 @@
+/* PARKED, 2026-08-23. Nothing imports this file.
+
+   The plate's Photo/3D toggle was removed on user direction, and it was the
+   only route here. The component still works and is kept deliberately, so
+   restoring the view is a matter of putting the toggle back rather than
+   rewriting the renderer. Do not delete it for being unreferenced: that is
+   the state it is meant to be in. See the note at the top of Plate.tsx.
+
+   Practical consequence worth knowing: with nothing importing it, the
+   three.js chunk is no longer built or shipped at all. */
+
 import { Suspense, useMemo, useRef } from 'react'
 import { Canvas, useFrame } from '@react-three/fiber'
 import { Bounds, OrbitControls, Outlines, useGLTF } from '@react-three/drei'
