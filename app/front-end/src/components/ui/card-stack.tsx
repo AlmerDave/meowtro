@@ -202,10 +202,24 @@ export function CardStack({
   const [minDistance, setMinDistance] = useState(Infinity)
 
   /* Measured from the element rather than the window. The stack is a panel
-     component and its width has nothing to do with the viewport's. */
+     component and its width has nothing to do with the viewport's.
+
+     Observed rather than read once, because this panel genuinely resizes
+     under a running app: the plate is a fixed-width card above 900px and a
+     full-width sheet below it, and App.tsx subscribes to that breakpoint
+     specifically so rotating a tablet moves between the two. A threshold
+     measured once at mount would be calibrated to the layout the plate was
+     opened in, not the one it is being dragged in. ResizeObserver is the
+     platform's own answer to this and costs no polling. */
   useEffect(() => {
-    const width = stackRef.current?.offsetWidth
-    if (width) setMinDistance(width * DRAG_FRACTION)
+    const element = stackRef.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentRect.width
+      if (width) setMinDistance(width * DRAG_FRACTION)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
   }, [])
 
   if (!cards.length) return null
