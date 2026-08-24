@@ -2,7 +2,7 @@ import type { FeatureCollection, Polygon } from 'geojson'
 import { CATS, type Cat } from './cats.seed'
 import baseTerritories from './territories.geo.json'
 import { circleFeature, readStored, slugify, writeStored, type CatDraft } from './localCats'
-import { describeWhen, latestByCat, translateToward } from './sightings'
+import { allSightings, describeWhen, latestByCat, translateToward, type Sighting } from './sightings'
 
 /* The v1/v2 seam, spec §9. The entire abstraction is that these functions are
    async over local data, so every consumer already handles loading and
@@ -30,6 +30,19 @@ export async function listCats(): Promise<Cat[]> {
 
 export async function getCat(id: string): Promise<Cat | null> {
   return (await listCats()).find((cat) => cat.id === id) ?? null
+}
+
+/** One cat's observations, newest first.
+
+    Per cat rather than all of them, because that is the request a server
+    will actually be asked to serve: the plate is the only thing that reads
+    these, and it is only ever open on one cat. Behind the same seam as the
+    rest, so phase 3 replaces the body of this function with a fetch and
+    changes nothing above it. */
+export async function listSightings(catId: string): Promise<Sighting[]> {
+  return allSightings()
+    .filter((sighting) => sighting.catId === catId)
+    .sort((a, b) => b.at - a.at)
 }
 
 /* The territory shapes, on the same seam and for the same reason. This used
@@ -119,4 +132,4 @@ export function clearRecorded(): boolean {
   return writeStored([])
 }
 
-export type { Cat, CatDraft }
+export type { Cat, CatDraft, Sighting }

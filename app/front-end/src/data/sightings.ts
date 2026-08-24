@@ -1,5 +1,11 @@
-import type { Feature, Polygon } from 'geojson'
-import { ringCentroid } from '@/map/centroid'
+import type { Feature, FeatureCollection, Polygon } from 'geojson'
+/* Relative rather than through the "@/" alias, which is what the rest of
+   the app uses. TypeScript's paths are resolved at compile time and left
+   untouched in the emitted JavaScript, so an aliased import here would make
+   this module unloadable by node, and sightings.check.ts has to load it.
+   Same reason map/liveWeather.ts imports the way it does. */
+import { centroidsById, ringCentroid } from '../map/centroid'
+import baseTerritories from './territories.geo.json'
 
 /* Sightings: "I saw this cat here", the one thing a visitor can contribute.
 
@@ -40,11 +46,25 @@ export type Sighting = {
   /** Epoch ms. When the cat was seen, which is not the same as when it was
       reported: the panel offers "earlier today" and "yesterday". */
   at: number
+  /** A photograph of the cat as it was seen, if there is one.
+
+      A URL, and always a URL, which is the whole reason this field is one
+      line rather than a subsystem. Today it is filled from the seeds below;
+      when there is a server it is filled from the server. Nothing that
+      renders a sighting can tell the difference, so the change is confined
+      to wherever the sightings come from.
+
+      Optional, and genuinely so rather than as a hedge. The panel a visitor
+      reports through (ui/ReportSighting.tsx) has nowhere to upload a
+      photograph to and does not ask for one, so every sighting anybody
+      actually makes today arrives without this field. A consumer that
+      assumed it was there would be broken by the first real report. */
+  photo?: string
 }
 
 function isSighting(value: unknown): value is Sighting {
   if (!value || typeof value !== 'object') return false
-  const { id, catId, point, at } = value as Partial<Sighting>
+  const { id, catId, point, at, photo } = value as Partial<Sighting>
   return (
     typeof id === 'string' &&
     typeof catId === 'string' &&
@@ -52,7 +72,9 @@ function isSighting(value: unknown): value is Sighting {
     point.length === 2 &&
     point.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
     typeof at === 'number' &&
-    Number.isFinite(at)
+    Number.isFinite(at) &&
+    // Absent is valid; present and not a string is not.
+    (photo === undefined || typeof photo === 'string')
   )
 }
 
@@ -67,6 +89,87 @@ export function readSightings(): Sighting[] {
   } catch {
     return []
   }
+}
+
+/* --- The seeded observations ------------------------------------------
+
+   A survey that has only ever recorded three animals and never observed
+   one is not a survey, so the log starts with a history in it. These are
+   the same fiction the three cats are (cats.seed.ts, and spec §9 before
+   that changes), and they exist so the record has something to show.
+
+   ## Why the points are centroids
+
+   catsRepo.listTerritories applies the newest sighting by translating a
+   cat's territory onto the reported point. A seeded sighting at any other
+   position would therefore silently move the hand-drawn outlines away from
+   where territories.geo.json puts them, on first load, before anybody has
+   done anything. Putting each seed on its own territory's centroid makes
+   that translation a no-op: translateToward computes its offset with the
+   same ringCentroid on the same ring, so the offset is exactly zero.
+
+   Derived rather than written out for the same reason. Three hardcoded
+   coordinate pairs would be three chances to be a metre off, and they would
+   rot the first time a polygon is redrawn. */
+const CENTRES = centroidsById(baseTerritories as FeatureCollection<Polygon>)
+
+const DAY = 24 * 60 * 60 * 1000
+
+/* Named cats on placecats, one per cat, matching what cats.seed.ts already
+   uses for each animal's portrait. Different sizes of the same named cat
+   are different crops of one photograph, which is what a run of sightings
+   of a single animal has to look like. Three different names would be
+   three different cats wearing one name. */
+const SEEDS: { catId: string; daysAgo: number; photo?: string }[] = [
+  { catId: 'milo', daysAgo: 0.3, photo: 'https://placecats.com/millie/640/480' },
+  { catId: 'milo', daysAgo: 2, photo: 'https://placecats.com/millie/600/450' },
+  { catId: 'milo', daysAgo: 9, photo: 'https://placecats.com/millie/560/420' },
+  { catId: 'milo', daysAgo: 26, photo: 'https://placecats.com/millie/520/390' },
+  { catId: 'biscuit', daysAgo: 1.5, photo: 'https://placecats.com/neo/640/480' },
+  /* Deliberately without one. Every sighting a visitor can actually make
+     today has no photograph attached, so the log has to contain one and
+     the plate has to render correctly around it. */
+  { catId: 'biscuit', daysAgo: 6 },
+  { catId: 'biscuit', daysAgo: 20, photo: 'https://placecats.com/neo/560/420' },
+  { catId: 'tala', daysAgo: 0.8, photo: 'https://placecats.com/bella/640/480' },
+  { catId: 'tala', daysAgo: 4, photo: 'https://placecats.com/bella/600/450' },
+  { catId: 'tala', daysAgo: 15, photo: 'https://placecats.com/bella/520/390' },
+]
+
+/* Relative to load, not absolute dates. describeWhen says "Today" and
+   "Yesterday" for the two days anyone thinks in, and a demo whose most
+   recent observation is a fixed date in 2026 reads as abandoned the week
+   after it is written.
+
+   A cat with no territory is skipped rather than defaulted: without a
+   polygon there is no centroid, and a sighting at [0, 0] would drag the
+   whole survey into the Gulf of Guinea. */
+const SEEDED: Sighting[] = SEEDS.flatMap((seed, index) => {
+  const point = CENTRES.get(seed.catId)
+  if (!point) return []
+  return [
+    {
+      id: `seed-${seed.catId}-${index}`,
+      catId: seed.catId,
+      point,
+      at: Date.now() - seed.daysAgo * DAY,
+      photo: seed.photo,
+    },
+  ]
+})
+
+/* Everything the survey has observed: the seeded history plus whatever this
+   browser has reported.
+
+   Kept separate from readSightings, and that separation is the point rather
+   than tidiness. The two write paths below both work by filtering what
+   readSightings returned and writing the result back, so if readSightings
+   included the seeds, the first undo anybody pressed would persist all ten
+   of them into that visitor's localStorage, where they would then survive
+   any future change to this file. Reads that want the whole picture call
+   this; writes call readSightings and only ever touch what was stored. */
+export function allSightings(): Sighting[] {
+  return [...SEEDED, ...readSightings()]
 }
 
 function write(list: Sighting[]): boolean {
@@ -93,7 +196,7 @@ export function removeSighting(id: string): boolean {
 /** The newest sighting per cat. Older ones are kept rather than overwritten,
     because a list of observations over time is the thing this data actually
     is, and a review queue will need all of them. */
-export function latestByCat(list: Sighting[] = readSightings()): Map<string, Sighting> {
+export function latestByCat(list: Sighting[] = allSightings()): Map<string, Sighting> {
   const byCat = new Map<string, Sighting>()
   for (const sighting of list) {
     const current = byCat.get(sighting.catId)

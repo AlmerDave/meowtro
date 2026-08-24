@@ -491,7 +491,9 @@ body:has(.map)::-webkit-scrollbar {
    scrim, and the two panels' own opener buttons, which sit beside the panel
    rather than in it. */
 .rail :is(button, input):focus-visible,
-.plate :is(button, input):focus-visible,
+/* .card-stack joins the list because it is a focusable <ul> rather than a
+   control: the pile is operated as one thing, so it takes one tab stop. */
+.plate :is(button, input, .card-stack):focus-visible,
 .cat-deck :is(button, input):focus-visible,
 .cat-panel :is(button, input):focus-visible,
 .sight :is(button, input):focus-visible,
@@ -1384,6 +1386,92 @@ body:has(.map)::-webkit-scrollbar {
 .plate-value {
   font-size: var(--t-sm);
   line-height: 1.45;
+}
+
+/* --- Sighting photographs, components/ui/card-stack.tsx ----------------
+   The stylesheet the registry component expected did not ship with it (see
+   the note at the top of that file), so this is ours, and being ours is
+   what lets the pile theme: every value here is a token, so the same cards
+   are glass, dark or cream without the component knowing there is such a
+   thing as a theme.
+
+   Everything is proportional, no card is sized in pixels. The plate is
+   24rem on the desktop and whatever the deck gives it on a phone, and a
+   pile measured in pixels would be a pile that overflows one of them. The
+   ratios are what matter: the frame is 78% of the stack's height, which
+   leaves a fifth of the width free on either side, which is the room the
+   top card has to be dragged into without ever reaching the panel edge.
+   .plate-body scrolls, so a card that left the box would put a horizontal
+   scrollbar on the record. */
+.plate-sightings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--rule);
+}
+.card-stack {
+  position: relative;
+  /* The box the pile lives in. Landscape and wider than the frame it holds,
+     because the slack on either side IS the drag distance. */
+  aspect-ratio: 16 / 9;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Mounted photographs rather than bare images: a border, a mat and an
+   opaque backing, so a pile of them reads as prints in a folder and each
+   card's edge is legible against the one behind it. The hero's radius and
+   the hero's empty-frame colour, because it is the same kind of object. */
+.card-stack-item {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  height: 78%;
+  aspect-ratio: 4 / 3;
+  padding: var(--s-1);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-media);
+  /* Opaque, not the hero's translucent --well: these overlap each other,
+     and a stack you can see through is not a stack. */
+  background: var(--paper);
+  box-shadow: var(--shadow-glass);
+}
+/* Only the top card is draggable, so only the top card claims the cursor
+   that says so. */
+.card-stack-item[data-top='true'] {
+  cursor: grab;
+}
+.card-stack-item[data-top='true']:active {
+  cursor: grabbing;
+}
+.card-stack-item img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: calc(var(--radius-media) * 0.5);
+  user-select: none;
+}
+/* When it was taken on the left, where in the pile you are on the right.
+   Same mono-and-tracked treatment as .plate-label: this is a caption on a
+   record, not body copy. */
+.card-stack-caption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.card-stack-count {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
 /* The offer at the end of the record. Full width so it reads as the row

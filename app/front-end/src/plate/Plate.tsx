@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { Check, Copy, MapPin, X } from 'lucide-react'
-import type { Cat } from '@/data/catsRepo'
+import { listSightings, type Cat } from '@/data/catsRepo'
+import { describeWhen } from '@/data/sightings'
+import { CardStack, type StackCard } from '@/components/ui/card-stack'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
 import { useEscape } from '@/ui/escape'
@@ -61,6 +63,50 @@ export function Plate({ cat, onClose, onReport }: Props) {
      handler, and a button that silently does nothing is worse than one
      that says so. */
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
+
+  /* The photographs on file for this cat.
+
+     Fetched here rather than handed down from App, and that is a choice
+     about which request a server will get rather than about convenience.
+     A plate is only ever open on one cat, so "the observations of this
+     cat" is the query, and loading every sighting of every cat up front to
+     then throw nearly all of them away would be an odd shape to hand a
+     backend. It also keeps this out of CatDeck, which renders the same
+     Plate on mobile and would otherwise have to thread a prop through for
+     a component it knows nothing about.
+
+     Empty until it resolves, and empty is a real state rather than a
+     loading one: a cat with no photographs renders exactly the same as a
+     cat whose photographs have not arrived yet, which is the record minus
+     one block. There is nothing to put a spinner on. */
+  const [photos, setPhotos] = useState<StackCard[]>([])
+
+  useEffect(() => {
+    let live = true
+    listSightings(cat.id).then((sightings) => {
+      if (!live) return
+      setPhotos(
+        /* flatMap rather than filter-then-map, so the absent case is
+           removed and the type narrows in one pass instead of needing an
+           assertion to promise the compiler what the filter already did. */
+        sightings.flatMap((sighting) =>
+          sighting.photo
+            ? [
+                {
+                  id: sighting.id,
+                  src: sighting.photo,
+                  alt: `${cat.name}, photographed ${describeWhen(sighting.at)}`,
+                  caption: describeWhen(sighting.at),
+                },
+              ]
+            : []
+        )
+      )
+    })
+    return () => {
+      live = false
+    }
+  }, [cat.id, cat.name])
 
   /* Escape closes. A panel this size that can only be dismissed by finding
      one small button is the single most common complaint about card UIs.
@@ -179,6 +225,24 @@ export function Plate({ cat, onClose, onReport }: Props) {
           <motion.div className="plate-field" variants={line}>
             <span className="plate-label">Field note</span>
             <span className="plate-value">{cat.note}</span>
+          </motion.div>
+        )}
+
+        {/* What the survey has actually seen, as opposed to what it wrote
+            down about the animal. It sits below the fields and directly
+            above the button that adds to it, so the two read as one
+            exchange: here is the record of observations, here is how you
+            add yours.
+
+            Only when there are photographs. A sighting with no photograph
+            is a perfectly good sighting and already shows up in the "Last
+            seen" field above; it just has nothing to put in a pile. An
+            empty frame under a "Sightings" heading would claim a picture
+            failed to load rather than that none was taken. */}
+        {photos.length > 0 && (
+          <motion.div className="plate-sightings" variants={line}>
+            <span className="plate-label">Sightings</span>
+            <CardStack cards={photos} label={`Photographs of ${cat.name}`} />
           </motion.div>
         )}
 
