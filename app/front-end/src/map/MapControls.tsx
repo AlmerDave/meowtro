@@ -8,13 +8,14 @@ import { BGC_CENTER, DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
    out to the whole map. Styled to the token system instead of MapLibre's
    default white/shadowed buttons.
 
-   Weather is a mock (map/MapCanvas.tsx's own note on the Weather type):
-   there is no live feed behind this button, it is a switch for seeing and
-   checking the effect, the same honest framing the record panel gives its
-   own local-only storage. It lives in this capsule rather than getting a
-   button of its own because it answers the same question the other two do
-   -- what does the world look like right now -- and the capsule's whole
-   job is being the one place that question gets asked.
+   Weather is now a real reading (map/liveWeather.ts): the map lands on
+   whatever is actually falling on BGC, and this button steps off that
+   reading rather than out of nowhere. Clicking it is an override, and the
+   override sticks -- MapCanvas stops applying the live sky the moment
+   someone picks one. It lives in this capsule rather than getting a button
+   of its own because it answers the same question the other two do -- what
+   does the world look like right now -- and the capsule's whole job is
+   being the one place that question gets asked.
 
    The 3D toggle is EXPERIMENTAL — a mockup control for the tilted-camera
    spike. It is also the only orientation control: every drag/touch/keyboard

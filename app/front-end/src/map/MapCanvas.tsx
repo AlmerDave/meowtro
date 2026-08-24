@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { Map as MapLibreMap, addProtocol, prewarm, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Protocol } from 'pmtiles'
@@ -21,6 +21,7 @@ import {
 import { Territories } from './Territories'
 import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
+import { fetchWeather } from './liveWeather'
 import { Rain } from './Rain'
 import { Storm } from './Storm'
 import { MapControls } from './MapControls'
@@ -69,12 +70,17 @@ type MapContextValue = {
      thrown over the map they are trying to aim at. */
   placing: boolean
   setPlacing: (placing: boolean) => void
-  /* A mock, not a live feed (spec: no backend yet). Lives beside isFlat and
-     theme rather than in its own file, for the same reason isFlat does: one
-     boolean-shaped piece of view state, one consumer that sets it
-     (MapControls) and one that reads it (Rain), context buys nothing that
-     prop-drilling wouldn't, except not having to thread it through a
-     component that has no other reason to know about it. */
+  /* Seeded from the real sky over BGC (map/liveWeather.ts) and steppable by
+     hand from there. Lives beside isFlat and theme rather than in its own
+     file, for the same reason isFlat does: one small piece of view state,
+     one consumer that sets it (MapControls) and two that read it (Rain,
+     Storm), context buys nothing that prop-drilling wouldn't, except not
+     having to thread it through a component that has no other reason to
+     know about it.
+
+     setWeather is the *person's* setter, not a generic one: calling it
+     marks the sky as hand-picked and stops the live reading from landing on
+     top of a choice someone just made. Nothing else may set the weather. */
   weather: Weather
   setWeather: (weather: Weather) => void
 }
@@ -146,9 +152,20 @@ export function MapCanvas({
   const [placing, setPlacing] = useState(false)
   // Map lands flat (spec: 3D is opt-in, not the default view).
   const [isFlat, setIsFlat] = useState(true)
-  // And clear, for the same reason: an effect this visible should be
-  // something a person reaches for, not something they land in.
-  const [weather, setWeather] = useState<Weather>('clear')
+  // Lands clear and is corrected a moment later by the live reading below.
+  // Clear rather than a spinner-ish "unknown": an empty sky is the honest
+  // thing to show while we do not know, and the only one that costs nothing
+  // to undo.
+  const [weather, setWeatherState] = useState<Weather>('clear')
+  // Flipped the first time a person touches the weather button. The live
+  // reading arrives one network round-trip after mount, which is easily
+  // long enough to click something in, and having it snap back would make
+  // the control look broken. First human choice wins for the session.
+  const weatherIsChosen = useRef(false)
+  const setWeather = useCallback((next: Weather) => {
+    weatherIsChosen.current = true
+    setWeatherState(next)
+  }, [])
   // Seeded from the attribute rather than hardcoded, so anything that sets
   // data-theme before React mounts (index.html's own `data-theme="light"`,
   // a hand-set "paper", a future persisted preference) is picked up instead
@@ -240,6 +257,18 @@ export function MapCanvas({
   // app can reach, so the loop would be calling setSky every frame to paint
   // nothing. Derived from the pitch rather than hardcoded, so raising
   // DEFAULT_PITCH past the threshold switches this back on by itself.
+  // The actual sky over BGC, once, on mount. Not polled: a second reading
+  // would have to either overwrite a hand-picked sky or quietly do nothing,
+  // and neither is worth a timer. Failure is silent by design -- the map
+  // stays clear, which is where it already was.
+  useEffect(() => {
+    const abort = new AbortController()
+    fetchWeather(abort.signal).then((live) => {
+      if (live && !weatherIsChosen.current) setWeatherState(live)
+    })
+    return () => abort.abort()
+  }, [])
+
   useEffect(() => {
     if (!map || !isLoaded || isFlat || !SKY_RENDERS_AT_DEFAULT) return
     return animateSky(map)
