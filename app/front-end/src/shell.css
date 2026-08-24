@@ -396,7 +396,9 @@ body:has(.map)::-webkit-scrollbar {
 .record,
 .record-open,
 .sight,
-.sight-open {
+.sight-open,
+.sight-menu,
+.about {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
@@ -494,6 +496,7 @@ body:has(.map)::-webkit-scrollbar {
 /* .card-stack joins the list because it is a focusable <ul> rather than a
    control: the pile is operated as one thing, so it takes one tab stop. */
 .plate :is(button, input, .card-stack):focus-visible,
+.about :is(button, a):focus-visible,
 .cat-deck :is(button, input):focus-visible,
 .cat-panel :is(button, input):focus-visible,
 .sight :is(button, input):focus-visible,
@@ -534,7 +537,7 @@ body:has(.map)::-webkit-scrollbar {
 .sight-back,
 .sight-close,
 .sight-card,
-.sight-scan,
+.sight-menu-item,
 .sight-go,
 .sight-place,
 .sight-when button,
@@ -553,7 +556,7 @@ body:has(.map)::-webkit-scrollbar {
 .sight-back:active,
 .sight-close:active,
 .sight-card:active,
-.sight-scan:active,
+.sight-menu-item:active,
 .sight-place:active,
 .sight-when button:active,
 .sight-undo:active,
@@ -601,9 +604,8 @@ body:has(.map)::-webkit-scrollbar {
   .sight-go:not(:disabled):hover {
     background: color-mix(in srgb, var(--rust) 86%, var(--ink));
   }
-  /* The two text links. Underline offset rather than a colour change: they
-     are already the only rust text in their panels. */
-  .sight-scan:hover,
+  /* The remaining text link. Underline offset rather than a colour change:
+     it is already the only rust text in its panel. */
   .scan-manual:hover,
   .rail-empty button:hover {
     text-decoration: underline;
@@ -2041,10 +2043,17 @@ body:has(.map)::-webkit-scrollbar {
   height: 0.25rem;
   border-radius: 999px;
   background: var(--rule-strong);
-  transition: width var(--dur-ui) var(--ease-out);
+  /* scaleX, not width. Width is a layout property: animating it reflows the
+     grabber's flex parent on every frame, and this particular animation
+     fires at the exact moment a drag begins on a phone, which is when the
+     main thread is busiest and jank is most visible. A transform stays on
+     the compositor. The stretched end-caps are the trade, and on a 4px-tall
+     pill at 1.33x they are not resolvable. */
+  transform-origin: center;
+  transition: transform var(--dur-ui) var(--ease-out);
 }
 .cat-panel-grab:active span {
-  width: 3rem;
+  transform: scaleX(1.333);
 }
 
 /* The only close on this panel, the plate's own 1.75rem one is hidden
@@ -2458,20 +2467,20 @@ body[data-placing='true'] .maplibregl-canvas {
 
    Everything below is layout and type. The glass comes from the panel
    recipe near the top of this file, which .sight and .sight-open join. */
+/* Icon-only, at the same 2.25rem square .map-control uses for its own
+   floating glyph buttons opposite this corner -- the two are a matched
+   pair now, one on each side of the map. */
 .sight-open {
   position: fixed;
   z-index: 3;
   left: var(--s-6);
   bottom: var(--s-6);
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  padding: var(--s-2) var(--s-3);
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
   border-radius: var(--radius);
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--ink);
   cursor: pointer;
   transition: background var(--dur-ui) var(--ease-out);
@@ -2483,6 +2492,59 @@ body[data-placing='true'] .maplibregl-canvas {
 }
 .sight-open[data-open='true'] {
   color: var(--ink-soft);
+}
+/* One cell for both glyphs (Menu, X), same reason .map-control-glyph does
+   it: whichever is crossfading out must not push the button's own size
+   around while it goes. */
+.sight-open-icon {
+  position: relative;
+  width: 15px;
+  height: 15px;
+}
+.sight-open-icon-frame {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+}
+
+/* The choice, ui/ReportSighting.tsx's menuOpen popover. Same corner and the
+   same "grows out of the button that stays put underneath it" reasoning as
+   .sight below, at a fraction of its size: this holds two lines, not a
+   report. */
+.sight-menu {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  bottom: calc(var(--s-6) + 3rem);
+  transform-origin: bottom left;
+  display: flex;
+  flex-direction: column;
+  width: 11rem;
+  padding: var(--s-1);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.sight-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-2);
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .sight-menu-item:hover {
+    background: var(--surface-hover);
+  }
 }
 
 /* Focused by script when a plate asks to start a sighting, so it must not
@@ -2848,13 +2910,18 @@ body[data-placing='true'] .maplibregl-canvas {
     bottom: auto;
     left: var(--s-4);
   }
-  .sight {
+  .sight,
+  .sight-menu {
     /* The trigger moves to the top-left below the breakpoint, so the corner
-       the panel grows out of moves with it. */
+       the panel grows out of moves with it -- the menu is the same trigger,
+       so it needs the same correction or it tries to open upward off the
+       top of the screen. */
     transform-origin: top left;
     top: calc(var(--s-4) + 3rem);
     bottom: auto;
     left: var(--s-4);
+  }
+  .sight {
     right: var(--s-4);
     width: auto;
     max-height: calc(100dvh - 14rem);
@@ -3135,8 +3202,10 @@ body[data-placing='true'] .maplibregl-canvas {
   text-underline-offset: 3px;
 }
 
-/* The way out of the grid, for somebody who has scrolled it and still does
-   not know. Sits under the grid because that is where they end up. */
+/* Under the grid because that is where the search leaves off. The scan
+   escape hatch that used to live here moved up to the trigger's own menu
+   (ui/ReportSighting.tsx, .sight-menu above) -- this is only the sort-order
+   hint now. */
 .sight-foot {
   flex-shrink: 0;
   display: flex;
@@ -3145,18 +3214,220 @@ body[data-placing='true'] .maplibregl-canvas {
   padding-top: var(--s-2);
   border-top: 1px solid var(--rule);
 }
-.sight-scan {
+
+/* --- About, ui/About.tsx ------------------------------------------------
+   The capsule's fourth button opens this, so it grows out of the capsule's
+   own corner the way the sighting panel grows out of its trigger: same
+   material (the panel recipe near the top of this file), same reasoning
+   about transform-origin, opposite side of the screen.
+
+   Everything here is layout and type. Not one value in this block is a
+   colour or a size that tokens.css does not already own, which is the only
+   reason a panel added this late still looks like it was always here. */
+.about {
+  position: fixed;
+  z-index: 4;
+  right: var(--s-8);
+  bottom: calc(var(--s-8) + 3rem);
+  transform-origin: bottom right;
+  display: flex;
+  flex-direction: column;
+  width: 21rem;
+  max-height: calc(100dvh - 10rem);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.about:focus {
+  outline: none;
+}
+.about-head {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--s-2);
-  margin: 0 var(--s-4);
-  padding: var(--s-2) 0;
-  border: 0;
-  background: none;
+  padding: var(--s-3) var(--s-3) var(--s-2) var(--s-4);
+}
+.about-eyebrow {
+  margin: 0;
   font-family: var(--font-mono);
   font-size: 0.625rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--rust);
+}
+.about-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
   cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .about-close:hover {
+    background: var(--well);
+    color: var(--ink);
+  }
+}
+.about-body {
+  overflow-y: auto;
+  padding: 0 var(--s-4) var(--s-4);
+}
+.about-body h2 {
+  margin: 0;
+  font-size: var(--t-2xl);
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 72, 'WONK' 1;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+}
+.about-lede {
+  margin: var(--s-2) 0 var(--s-4);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+.about-body h3 {
+  margin: var(--s-4) 0 var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.about-body p {
+  margin: 0 0 var(--s-2);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+}
+
+/* The readout. Three figures across, tabular so they sit on a grid rather
+   than jostling as the counts change, and rules between them so it reads as
+   an instrument panel rather than three floating numbers. */
+.about-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--s-2);
+  margin: 0;
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--rule);
+}
+.about-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.about-stats div + div {
+  padding-left: var(--s-3);
+  border-left: 1px solid var(--rule);
+}
+.about-stats dt {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.about-stats dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--ink);
+}
+/* The one figure that belongs to the reader gets the accent, so the panel
+   answers "and what have I done here" without a sentence saying so. */
+.about-stats div:last-child dd {
+  color: var(--rust);
+}
+.about-readout {
+  margin: var(--s-2) 0 0 !important;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.about-readout span {
+  color: var(--ink);
+}
+/* The safety rule, set apart. It is the one paragraph here that is a
+   position rather than a description, so it is given the same accent rule
+   the plate gives a field. */
+.about-rule {
+  padding-left: var(--s-3);
+  border-left: 2px solid color-mix(in srgb, var(--rust) 45%, transparent);
+  color: var(--ink-soft);
+}
+
+/* Sources. Three columns that collapse to what each row actually has: the
+   thing, who made it, and a licence tag only where one is required. */
+.about-credits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.about-credits li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-2);
+  padding: var(--s-2) 0;
+}
+.about-credits li + li {
+  border-top: 1px solid var(--rule);
+}
+.about-credit-what {
+  flex: 0 0 5.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.about-credits a {
+  flex: 1;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .about-credits a:hover {
+    text-decoration: underline;
+    color: var(--rust);
+  }
+}
+.about-licence {
+  flex-shrink: 0;
+  padding: 2px var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+}
+
+/* Below the breakpoint the capsule moves and the deck owns the bottom of
+   the screen, so this becomes a near-full-width sheet anchored to the same
+   corner its trigger moved to. */
+@media (max-width: 900px) {
+  .about {
+    right: var(--s-4);
+    left: var(--s-4);
+    bottom: calc(var(--s-4) + 3rem);
+    width: auto;
+    max-height: calc(100dvh - 8rem);
+  }
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
-import { ArrowLeft, Binoculars, Camera, Cat as CatGlyph, Check, MapPin, Search, X } from 'lucide-react'
+import { ArrowLeft, Camera, Cat as CatGlyph, Check, MapPin, Menu, Search, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { ringCentroid } from '@/map/centroid'
 import { addSighting, distanceM, removeSighting, ringRadiusM, translateToward } from '@/data/sightings'
@@ -136,6 +136,18 @@ export function ReportSighting({
   const [undoId, setUndoId] = useState<string | null>(null)
   const panelRef = useRef<HTMLElement>(null)
 
+  /* The front door. Pressing the trigger no longer commits to a step; it
+     asks how, and the two answers are the two ways somebody actually knows
+     which cat they are looking at. A boolean rather than folding this into
+     `step` because it is a decision about a decision -- neither of its
+     options is itself a stage of the report, and giving it its own state
+     keeps `step`'s machinery (the effects keyed on 'pick'/'scan'/'place'/
+     'confirm') exactly as it was: choosing an item here only ever calls
+     setStep with a value that machinery already understands. */
+  const [menuOpen, setMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+
   const cat = cats.find((c) => c.id === catId) ?? null
 
   /* Every cat, with how far its territory sits from where the map was
@@ -184,12 +196,25 @@ export function ReportSighting({
   }, [feature, point])
 
   const close = () => {
+    /* Read before the state changes that unmount the panel, because after
+       them there is no panel left to ask.
+
+       Conditional, and that condition is the whole point rather than
+       caution: close() is also what the 'done' step's nine-second timer
+       calls, and a panel that grabs focus nine seconds after somebody
+       finished with it would be pulling the caret out of whatever they had
+       moved on to. Focus only goes home when this panel is about to
+       destroy the element that currently holds it. */
+    const holdsFocus = !!panelRef.current?.contains(document.activeElement)
+
     setStep('closed')
     setCatId(null)
     setPoint(null)
     setWhen('now')
     setQuery('')
     setPlacing(false)
+
+    if (holdsFocus) requestAnimationFrame(() => menuButtonRef.current?.focus())
   }
 
   /* Taken on entering the picker, including on the way back from a later
@@ -212,6 +237,83 @@ export function ReportSighting({
     if (placing) setPlacing(false)
     else close()
   })
+
+  /* The menu closes on its own Escape entry, never the panel's. The two
+     are mutually exclusive -- the menu only ever shows while `step` is
+     'closed' -- so there is no ordering question between them, only two
+     independent registrations on the same stack.
+
+     Focus goes home with it. Without this the menu unmounts out from under
+     whichever item was focused, focus falls to <body>, and the next Tab
+     starts again from the top of the document -- the exact thing the
+     plate's own close() already guards against. */
+  useEscape(menuOpen, () => {
+    setMenuOpen(false)
+    menuButtonRef.current?.focus()
+  })
+
+  /* Roving focus, because role="menu" is a promise.
+
+     Declaring a menu tells a screen reader to enter menu mode, where the
+     arrow keys are how you move and Tab is how you leave. Announcing that
+     and then handling neither is worse than not declaring it at all: the
+     keys a user is told to press do nothing. The items carry tabIndex={-1}
+     for the same reason -- in a menu, Tab exits rather than walking the
+     items one at a time. */
+  const focusItem = (to: number | 'first' | 'last') => {
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []
+    )
+    if (!items.length) return
+    const current = items.indexOf(document.activeElement as HTMLButtonElement)
+    const next =
+      to === 'first'
+        ? 0
+        : to === 'last'
+          ? items.length - 1
+          : current < 0
+            ? 0
+            : (current + to + items.length) % items.length
+    items[next]?.focus()
+  }
+
+  /* Into the menu when it opens. A frame later because AnimatePresence has
+     not put it in the DOM until this render commits. */
+  useEffect(() => {
+    if (!menuOpen) return
+    const frame = requestAnimationFrame(() => focusItem('first'))
+    return () => cancelAnimationFrame(frame)
+  }, [menuOpen])
+
+  /* Picking an entry hands focus to the panel that just opened, so it does
+     not fall to <body> in the gap between the menu unmounting and the panel
+     appearing. Guarded, because the picker's search field autofocuses
+     itself on a precise pointer: if something inside the panel has already
+     claimed focus, taking it back would undo that. */
+  const openStep = (next: Step) => {
+    setMenuOpen(false)
+    setStep(next)
+    requestAnimationFrame(() => {
+      if (panelRef.current && !panelRef.current.contains(document.activeElement)) {
+        panelRef.current.focus({ preventScroll: true })
+      }
+    })
+  }
+
+  // A press anywhere that is not the menu or the button that opened it.
+  // Not on the panel's own AnimatePresence exit, because the menu is not
+  // that panel -- it is a separate, much smaller popover with nothing else
+  // above it to catch this for it.
+  useEffect(() => {
+    if (!menuOpen) return
+    const onPointerDown = (e: PointerEvent) => {
+      const target = e.target as Node
+      if (menuRef.current?.contains(target) || menuButtonRef.current?.contains(target)) return
+      setMenuOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    return () => document.removeEventListener('pointerdown', onPointerDown)
+  }, [menuOpen])
 
   // The map takes one click while placing. Territories stands down for it
   // (MapCanvas' `placing`), so the tap cannot also select a cat.
@@ -335,23 +437,144 @@ export function ReportSighting({
   return (
     <>
       <motion.button
+        ref={menuButtonRef}
         type="button"
         className="sight-open"
-        data-open={String(open)}
-        onClick={() => (open ? close() : setStep('pick'))}
+        data-open={String(open || menuOpen)}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        /* The only accessible name this control has ever had. It used to
+           be visible text too; now the icon alone carries it on screen,
+           but the name itself does not change with the icon (Menu vs X) or
+           with state, which is the standard menu-button pattern: what the
+           control IS stays constant, aria-expanded says what it is doing. */
+        aria-label="I saw a cat"
+        onClick={() => (open ? close() : setMenuOpen((v) => !v))}
         whileTap={{ scale: 0.94 }}
         transition={spring}
       >
-        {/* Binoculars, not an eye. An eye is the visibility toggle in
-            every design system there is: it means show/hide, or preview,
-            and it is the glyph you reach for when you have not decided what
-            the button means. Binoculars belong to the vocabulary this app
-            is actually written in, the one with survey lines, plate numbers
-            and field notes in it: they are what somebody recording animals
-            is carrying. */}
-        <Binoculars size={15} />
-        <span>I saw a cat</span>
+        {/* Hamburger crossfades to a close glyph and back, so opening the
+            choice below is a thing that visibly happens to this button
+            rather than a panel that silently appears near it. Both icons
+            occupy the same cell (.sight-open-icon is sized to the icon,
+            not to either child) so the button never resizes as they cross,
+            the same trick .map-control uses for its own two-state glyph. */}
+        <span className="sight-open-icon">
+          <AnimatePresence mode="wait" initial={false}>
+            {open || menuOpen ? (
+              <motion.span
+                key="close"
+                className="sight-open-icon-frame"
+                initial={{ rotate: -90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: 90, opacity: 0 }}
+                transition={spring}
+              >
+                <X size={15} />
+              </motion.span>
+            ) : (
+              <motion.span
+                key="menu"
+                className="sight-open-icon-frame"
+                initial={{ rotate: 90, opacity: 0 }}
+                animate={{ rotate: 0, opacity: 1 }}
+                exit={{ rotate: -90, opacity: 0 }}
+                transition={spring}
+              >
+                <Menu size={15} />
+              </motion.span>
+            )}
+          </AnimatePresence>
+        </span>
       </motion.button>
+
+      {/* The two ways anyone actually knows which cat they are looking at.
+          Not a step of its own (see the state comment above): picking
+          either just calls setStep with a value the rest of this component
+          already handles as the entry into 'scan' or 'pick'. */}
+      <AnimatePresence>
+        {menuOpen && (
+          <motion.div
+            ref={menuRef}
+            className="sight-menu"
+            role="menu"
+            aria-label="How do you know which cat?"
+            /* Scale and opacity only, no y.
+
+               A y offset has a direction, and this popover's direction is
+               not constant: above 900px it sits above a trigger in the
+               bottom-left corner, below 900px it sits below a trigger in
+               the top-left one. A single y that reads as "growing out of
+               the button" on the desktop reads as "sliding toward the
+               button" on a phone, which is backwards.
+
+               transform-origin already carries that information, and
+               shell.css flips it at the same breakpoint that moves the
+               trigger. Scaling from the corner nearest the button says
+               "this came from there" in both layouts without this file
+               needing to know which layout it is in. */
+            initial={{ opacity: 0, scale: 0.94 }}
+            animate={{ opacity: 1, scale: 1 }}
+            /* Out faster than in, and without the spring: an exit is the
+               system responding to a decision already made, so it should
+               get out of the way rather than settle. */
+            exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.12 } }}
+            transition={springSoft}
+            onKeyDown={(e) => {
+              /* Tab leaves the menu rather than walking it, which is what
+                 menu mode means. Not prevented: the browser's own focus
+                 move is the correct one, this only closes the thing being
+                 left behind. */
+              if (e.key === 'Tab') {
+                setMenuOpen(false)
+                return
+              }
+              if (e.key === 'ArrowDown') focusItem(1)
+              else if (e.key === 'ArrowUp') focusItem(-1)
+              else if (e.key === 'Home') focusItem('first')
+              else if (e.key === 'End') focusItem('last')
+              else return
+              // Only for the keys actually handled, so Escape still reaches
+              // the shared stack and typing is never swallowed.
+              e.preventDefault()
+            }}
+          >
+            <button
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="sight-menu-item"
+              onClick={() => openStep('scan')}
+            >
+              <Camera size={14} />
+              {/* Catdex: the file's own name for this move (see the header
+                  note above) is "the whole Pokedex moment", and this is
+                  where that becomes a proper noun rather than a comment.
+                  The panel's own heading picks it back up below when this
+                  step is actually open (step === 'scan'). */}
+              <span>Catdex Scan</span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              /* Same visible words as the trigger above it, on purpose: this
+                 is the literal answer to "how do you know which cat" when
+                 the answer is "I already saw it, I know which one" -- the
+                 trigger's label restated as the specific choice it names.
+                 aria-label carries the distinction a sighted person gets
+                 from the different role and position, so the two do not
+                 read as one dead control to a screen reader. */
+              aria-label="I saw a cat — pick it from the list"
+              tabIndex={-1}
+              className="sight-menu-item"
+              onClick={() => openStep('pick')}
+            >
+              <CatGlyph size={14} />
+              <span>I saw a cat</span>
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {open && (
@@ -387,10 +610,12 @@ export function ReportSighting({
 
               <h2>
                 {step === 'pick' && 'Which cat did you see?'}
-                {/* Neutral across all four of the scanner's states, since
-                    a title saying "point it at the cat" is stale the
-                    moment there is a photo on screen. */}
-                {step === 'scan' && 'Identify a cat'}
+                {/* A name rather than a task description, which is what
+                    lets it stay put across all four of the scanner's
+                    states -- "point it at the cat" goes stale the moment
+                    there is a photo on screen, but a name never has to
+                    describe what is currently happening under it. */}
+                {step === 'scan' && 'Catdex'}
                 {step === 'place' && 'Where did you see it?'}
                 {step === 'confirm' && 'Check this over'}
                 {step === 'done' && 'Thank you'}
@@ -469,11 +694,13 @@ export function ReportSighting({
                   </p>
                 )}
 
+                {/* The scan escape hatch that used to live here moved up
+                    to the menu that opens this step (see the trigger
+                    button): "which one" is now asked before the grid
+                    renders, not partway through it, so a second way to ask
+                    it from inside the grid was a leftover, not a safety
+                    net. */}
                 <div className="sight-foot">
-                  <button type="button" className="sight-scan" onClick={() => setStep('scan')}>
-                    <Camera size={13} />
-                    I do not know which one
-                  </button>
                   <p className="sight-hint">Nearest to the middle of the map first.</p>
                 </div>
               </>

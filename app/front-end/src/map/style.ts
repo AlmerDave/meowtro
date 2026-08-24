@@ -164,11 +164,18 @@ export function buildStyle(): StyleSpecification {
         url: 'pmtiles:///bgc.pmtiles',
         // Planet builds stop at z15; MapLibre overzooms past it.
         maxzoom: 15,
-        /* The map's attribution control is also the page's only credits
-           surface, so the cat model rides along here. That credit is a
-           licence condition, not a courtesy: the model is CC-BY. */
+        /* Licence conditions, not courtesies. The cat model is CC-BY and
+           Open-Meteo's free tier is CC-BY 4.0, so both have to be named
+           wherever their work is shown, and this control is on screen
+           whenever the map is.
+
+           It is no longer the *only* credits surface -- ui/About.tsx now
+           carries the full list, including the things that are owed thanks
+           rather than attribution. This stays the short version, kept to
+           what the licences actually require plus the basemap, because an
+           attribution control that grows past one line stops being read. */
         attribution:
-          '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a> · cat by <a href="https://poly.pizza/m/6dM1J6f6pm9">Poly by Google</a> (CC-BY)',
+          '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a> · <a href="https://protomaps.com">Protomaps</a> · cat by <a href="https://poly.pizza/m/6dM1J6f6pm9">Poly by Google</a> (CC-BY) · weather by <a href="https://open-meteo.com/">Open-Meteo</a> (CC-BY 4.0)',
       },
     },
     layers: [

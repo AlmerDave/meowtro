@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { CloudLightning, CloudRain, CloudSun, Maximize, Moon, Sun } from 'lucide-react'
+import { CloudLightning, CloudRain, CloudSun, Info, Maximize, Moon, Sun } from 'lucide-react'
+import { About } from '@/ui/About'
 import { spring } from '@/motion/springs'
 import { DEFAULT_ZOOM, useMap, WEATHERS, type Weather } from './MapCanvas'
 import { BGC_CENTER, DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
@@ -63,6 +65,10 @@ type Props = {
 
 export function MapControls({ onSelect }: Props) {
   const { map, isFlat, setIsFlat, theme, setTheme, weather, setWeather } = useMap()
+  /* Held here rather than in About itself, because the button that opens it
+     lives in this capsule and a panel cannot own the control that mounts
+     it. Same arrangement the sighting panel has with its own trigger. */
+  const [aboutOpen, setAboutOpen] = useState(false)
 
   if (!map) return null
 
@@ -92,6 +98,7 @@ export function MapControls({ onSelect }: Props) {
      popped in, which on a screen where everything else settles reads as
      having been forgotten. It rises from below, the edge it lives on. */
   return (
+    <>
     <motion.div
       className="map-controls"
       initial={{ opacity: 0, y: 12, scale: 0.96 }}
@@ -226,6 +233,29 @@ export function MapControls({ onSelect }: Props) {
             toggle and has no second state to cross to. */}
         <Maximize size={16} />
       </motion.button>
+
+      <span className="map-control-rule" aria-hidden />
+
+      {/* Last in the capsule, and deliberately the quietest thing in it. The
+          three above change what you are looking at; this one explains it,
+          which is a question people ask after the looking, not before. */}
+      <motion.button
+        type="button"
+        className="map-control"
+        data-tip="About"
+        aria-label="About this survey"
+        aria-expanded={aboutOpen}
+        whileTap={{ scale: 0.92 }}
+        transition={spring}
+        onClick={() => setAboutOpen((open) => !open)}
+      >
+        <Info size={16} />
+      </motion.button>
     </motion.div>
+
+    <AnimatePresence>
+      {aboutOpen && <About onClose={() => setAboutOpen(false)} />}
+    </AnimatePresence>
+    </>
   )
 }
