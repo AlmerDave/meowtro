@@ -3520,3 +3520,324 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--ink-soft);
   text-align: center;
 }
+
+/* --- Admin surfaces, phase 8 --------------------------------------------
+   The record panel and the review queue, both behind ?role=admin.
+
+   Top left, and the whole point is that it is not the bottom left. That
+   corner belongs to .sight-open, the visitor's one contribution, and until
+   phase 8 the two could not collide because ui/RecordCat.tsx was written
+   and mounted nowhere. Mounting it put two triggers on the same 24px of
+   screen. Rather than nudge one of them a few rem and call it fixed, the
+   admin tools moved to their own corner: what a visitor can do and what a
+   reviewer can do are different jobs, and a person holding both roles
+   should be able to tell which one they are reaching for.
+
+   The record panel re-anchors with its trigger. Its mobile rule already
+   proved the top-anchored variant works (see the breakpoint below); this
+   makes that the only variant. */
+.record-open,
+.review-trigger {
+  top: var(--s-6);
+  bottom: auto;
+}
+
+.record-open {
+  left: calc(var(--s-6) + 6.5rem);
+}
+
+.record {
+  top: calc(var(--s-6) + 3rem);
+  bottom: auto;
+  transform-origin: top left;
+}
+
+.review-trigger {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .review-trigger:hover {
+    background: var(--surface-hover);
+  }
+}
+.review-trigger:active {
+  transform: scale(0.97);
+}
+
+/* How many are waiting. --rust rather than the usual --ink-soft: this is
+   the one number in the app that is a request for somebody's attention. */
+.review-count {
+  display: grid;
+  place-items: center;
+  min-width: 1.15rem;
+  height: 1.15rem;
+  padding: 0 0.25rem;
+  border-radius: 999px;
+  background: var(--rust);
+  color: var(--paper);
+}
+
+.review {
+  position: fixed;
+  z-index: 3;
+  left: var(--s-6);
+  top: calc(var(--s-6) + 3rem);
+  transform-origin: top left;
+  display: flex;
+  flex-direction: column;
+  width: 23rem;
+  max-height: calc(100dvh - 10rem);
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+.review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--s-4) var(--s-4) var(--s-2);
+}
+
+.review-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.review-close {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.review-body {
+  overflow-y: auto;
+  padding: 0 var(--s-4) var(--s-2);
+}
+
+.review-empty {
+  margin: var(--s-2) 0 var(--s-4);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.review-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border-radius: calc(var(--radius) * 0.7);
+  background: var(--well);
+  /* The cat's own colour, the same signal the rail and the plate use, so a
+     row in the queue is identifiably about the same animal. */
+  border-left: 2px solid color-mix(in srgb, var(--accent, var(--ink-soft)) 60%, transparent);
+}
+
+.review-what {
+  min-width: 0;
+}
+
+.review-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.review-when {
+  margin: 2px 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
+.review-actions {
+  display: flex;
+  gap: var(--s-2);
+  flex: none;
+}
+
+.review-yes,
+.review-no {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  border: 0;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.review-yes {
+  background: var(--ink);
+  color: var(--paper);
+}
+.review-no {
+  background: transparent;
+  color: var(--ink-soft);
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.review-yes:active,
+.review-no:active {
+  transform: scale(0.97);
+}
+
+.review-past {
+  margin-top: var(--s-5);
+}
+
+/* The audit trail. Three columns and no controls: it is a record of
+   decisions, and a decision you can undo from the log is not a record. */
+.review-log {
+  list-style: none;
+  margin: var(--s-2) 0 var(--s-2);
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
+.review-log li {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: var(--s-3);
+  padding: var(--s-2) 0;
+  border-top: 1px solid var(--rule);
+}
+
+.review-log li[data-verdict='surveyed'] span:last-child {
+  color: var(--sage);
+}
+
+.review-log li[data-verdict='discarded'] span:last-child {
+  color: var(--ink-soft);
+}
+
+.review-foot {
+  margin: 0;
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-top: 1px solid var(--rule);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+@media (max-width: 720px) {
+  .review {
+    left: var(--s-4);
+    right: var(--s-4);
+    width: auto;
+  }
+
+  .review-trigger {
+    left: var(--s-4);
+  }
+
+  .record-open {
+    left: calc(var(--s-4) + 6.5rem);
+  }
+}
+
+/* --- Your unreviewed reports, on the plate -------------------------------
+   The only place in the app where a non-admin sees pending data, and only
+   ever their own (data/catsRepo.ts's listSightings has the reasoning).
+
+   Deliberately plain: a row of text and a text button, no card, no badge
+   colour. It is a receipt, not a status dashboard, and the plate around it
+   is a specimen record that should not start competing with itself. */
+.plate-pending {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  margin-top: var(--s-4);
+}
+
+.plate-pending-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
+.plate-pending-row button {
+  flex: none;
+  padding: var(--s-1) var(--s-2);
+  border: 0;
+  border-radius: 999px;
+  background: var(--well);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+
+.plate-pending-row button:active {
+  transform: scale(0.97);
+}
+
+/* The About panel's count of what is still waiting. Same mono voice as the
+   figure above it, half a step quieter: it qualifies that number rather
+   than being one of its own. */
+.about-waiting {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}

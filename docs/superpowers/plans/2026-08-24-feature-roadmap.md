@@ -133,32 +133,107 @@ problem.
 
 ---
 
-## Phase 8 — Roles and review, still with no server
+## Phase 8 — Roles and review, still with no server ✅ DONE 2026-08-25
 
-The most interesting phase to build, and the last large feature that needs
-no backend. It proves the entire moderation experience in localStorage,
-which is the same honesty the rest of the mock already practises.
+Built in one session after a brainstorm that changed the shape of the phase
+before any code was written. Recorded here rather than in a separate spec,
+because this is where phase 8 already lived.
 
-The real design question in here is not the queue. It is: **what does an
-unreviewed cat look like on a public map?** Answer that and the rest is
-mechanical.
+### The four decisions
 
-- [ ] **`?role=admin` switch** — same one-shot pattern `?cat=` already uses
-      (`App.tsx`'s `useUrlSelection`). Unparks `RecordCat`. Roughly 20 lines,
-      because the panel it reveals is already finished.
-- [ ] **`status` on submissions** — `'pending' | 'surveyed'` on `Sighting`
-      and on `StoredCat`. The single field that makes everything below
-      possible. Add it to both type guards.
-- [ ] **Review queue** — a dashboard of pending submissions with approve and
-      discard. Approving is what `listTerritories` already does on apply
-      today; the change is that it stops being automatic.
-- [ ] **Pending renders differently on the map** — dashed territory, muted
-      marker, and the plate saying so. This is the design question above.
-- [ ] **Sightings stop applying instantly** — today a sighting moves a
-      territory the moment it is made, and the panel says so out loud
-      (`data/sightings.ts`). Under review, that becomes a proposal.
-- [ ] **Audit trail** — who, what, where, when are all already stored. This
-      is a display problem, not a data one.
+**Review is safety-first, accuracy second.** Spec §9 is the hard rule: a
+submission may capture a precise point and the public layer must never serve
+it. That single choice killed the option this phase was originally built
+around, a pending territory drawn dashed and muted for everybody, because a
+dashed territory is still a published claim about where an animal was.
+
+**Only admins propose cats, so only sightings need review.** `RecordCat`
+stays behind the role gate, which makes an admin-recorded cat reviewed by
+definition. `StoredCat` therefore needs no `status` at all and the original
+question, "what does an unreviewed cat look like on a public map", stops
+being a question. The phase got considerably smaller and sounder at the same
+time.
+
+**A pending sighting holds the map and shows in its own cat's plate**,
+marked as awaiting review. The territory does not move. The contributor
+still sees their observation, which is what makes the difference between
+"recorded" and "applied" legible, and that difference is the whole concept
+review introduces.
+
+**A pending sighting can be withdrawn for as long as it is pending.** The
+nine-second undo toast becomes the fast path rather than the only path,
+which closes the "undo expires with the toast" gap that was sitting in the
+cross-cutting list below.
+
+### How it is enforced
+
+`catsRepo` is where "published" is decided, because that is what a real
+server does: a public endpoint never serves pending rows, so nothing
+downstream can forget to filter and phase 9 replaces the bodies with fetches
+without touching the guarantee.
+
+The two predicates themselves live in `data/sightings.ts` (`isSurveyed`,
+`isOwnPending`) because `map/Territories.tsx` applies the same policy
+synchronously from inside a MapLibre effect and cannot await the repo. One
+definition of published, two callers. `npm run check:review` covers both,
+and the clause it guards hardest is that owning one pending sighting grants
+no visibility of anybody else's.
+
+**One deliberate exception:** `listSightings` returns surveyed rows plus
+*this browser's own* pending ones. It is the only place unreviewed data
+reaches a non-admin surface, and it is safe for a specific reason, that the
+data came from that browser and tells its reader nothing they did not type
+in. In phase 9 it becomes "pending rows belonging to the caller's token".
+
+**Two consequences worth knowing**, both of which follow from safety-first
+and neither of which was in the original task list. `lastSeen` is derived
+from surveyed sightings only, or an unreviewed report would print "Last
+seen: Today" on the public record. And `Territories`' "seen elsewhere" zones
+draw sighting POINTS onto the map, so they take the same filter, which was
+the real reason the three components bypassing the repo had to be routed
+through it first.
+
+### What shipped
+
+- [x] **`?role=admin` switch** — `App.tsx`'s `useAdmin`. Read once and held
+      for the session rather than consumed like `?cat=`, because here the URL
+      is the credential and clearing it would sign an admin out on their own
+      refresh. Honest about being a stand-in: phase 10 replaces the one
+      function.
+- [x] **`status` on `Sighting`** — `'pending' | 'surveyed' | 'discarded'`.
+      Not on `StoredCat`, per the decision above. A missing status reads as
+      `surveyed`, grandfathering rows written before review existed: they
+      are already on that visitor's map and un-publishing them retroactively
+      would rewrite what somebody has already seen.
+- [x] **Review queue** — `ui/ReviewQueue.tsx`, behind the gate. Oldest
+      first, unlike every other list in the app, because a queue is worked
+      from the front. Approving is what moves the territory now.
+- [x] **Sightings stop applying instantly** — and the panel's copy, which
+      used to say out loud that yours was applied straight away because
+      nobody reviewed sightings yet, now says the opposite.
+- [x] **Withdraw** — from the cat's own plate, for as long as it is pending.
+      Deletes rather than marking: nothing was published and no decision was
+      made, so there is nothing to audit. An admin's discard does mark, for
+      exactly the opposite reason.
+- [x] **Audit trail** — under the queue rather than in a panel of its own,
+      since what was decided is the context for what is waiting.
+- [x] **The landing's sign-in slot opens onto something** for the first
+      time. It shipped as a link in phase 7, spent one revision as an inert
+      "Soon", and is a link again. The slot never moved.
+- [x] **Admin surfaces moved to the top-left corner.** Mounting `RecordCat`
+      exposed a collision that could not happen while it was unmounted: its
+      trigger and the visitor's sighting trigger were both at
+      `left: var(--s-6); bottom: var(--s-6)`. Rather than nudge one, the
+      admin tools took their own corner, which also separates the two roles
+      spatially.
+
+**Not built, deliberately:** nothing renders differently on the map for
+pending data, because under safety-first nothing pending renders on the map
+at all. That item is not deferred, it is answered.
+
+**Still to look at with actual eyes:** the queue panel and the admin corner
+at `/app.html?role=admin`, and whether the record panel's re-anchor to the
+top reads correctly at desktop width.
 
 ---
 
@@ -247,9 +322,10 @@ Independent of the phases. Any of these can be picked up at any time.
 - [ ] **Plate refetches sightings while open** — reporting a sighting from
       an open plate does not refresh its stack. Cannot matter yet, since
       visitor sightings carry no photo. Becomes real in phase 9.
-- [ ] **Undo a sighting after the toast** — undo exists but expires with the
-      nine-second confirmation. It is the one destructive visitor action
-      with no recovery after that window.
+- [x] **Undo a sighting after the toast** — done 2026-08-25, as a
+      consequence of phase 8 rather than as its own piece of work. A pending
+      sighting can be withdrawn from its cat's plate for as long as it is
+      pending, and "pending" gives the window a natural end: approval.
 - [ ] **Bounded rendering, the rest of it.** Scoped 2026-08-25 after the
       sighting picker was capped to the nearest twelve. The remaining
       per-cat renders, and what each one actually wants, so nobody caps the

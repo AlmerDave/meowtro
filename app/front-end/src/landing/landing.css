@@ -208,16 +208,14 @@ body:has(.landing) {
   text-decoration: none;
 }
 
-/* The sign-in seam. Not a control yet: phase 8's ?role=admin is what goes
-   behind it, and until then Landing.tsx renders a <span>, so there is no
-   hover lift, no press scale and no focus ring here. Those were written
-   for the anchor it used to be and pointed at the app, which is where
-   Explore already goes, a second button doing the same thing while
-   wearing a different name.
+/* The sign-in seam. A real link again as of phase 8: it opens the app with
+   ?role=admin, which mounts the record panel and the review queue.
 
-   Kept in the layout rather than removed and re-added later: the slot is
-   the design decision (spec: the sign-in door ships from day one), and
-   what sits behind it is the part that changes. */
+   It spent one revision as an inert span reading "Soon", which was the
+   right thing while the parameter had no handler: a link that navigates
+   somewhere indistinguishable from Explore is worse than a label admitting
+   it is not ready. The slot never moved, only what sits behind it, which
+   was the point of shipping the slot from day one. */
 .landing-signin {
   display: inline-flex;
   align-items: center;
@@ -228,7 +226,8 @@ body:has(.landing) {
   font-family: var(--font-display);
   font-size: var(--t-sm);
   font-weight: 500;
-  color: var(--ink-soft);
+  color: var(--ink);
+  text-decoration: none;
   white-space: nowrap;
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass));
@@ -236,21 +235,26 @@ body:has(.landing) {
   box-shadow: var(--shadow-glass), var(--edge-highlight);
 }
 
-/* Where the arrow used to be, and the same 24px rhythm. Says the thing
-   out loud instead of implying a destination with an arrow that does not
-   go anywhere. */
-.landing-signin-soon {
+.landing-signin-arrow {
   display: grid;
   place-items: center;
-  padding: 0 var(--s-2);
+  width: 24px;
   height: 24px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--ink) 10%, transparent);
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing-signin:hover {
+    background: var(--surface-hover);
+  }
+}
+
+/* Press feedback, shell.css's own convention: a phone has no hover, so
+   without this a tap on the one button that gets you signed in answers
+   with nothing until the page changes. */
+.landing-signin:active {
+  scale: 0.97;
 }
 
 /* --- the guide panel ---------------------------------------------------
@@ -680,11 +684,10 @@ body:has(.landing) {
     padding-bottom: min(260px, 32vh);
   }
 
-  /* The word used to be hidden here and the arrow kept, to hold the top
-     bar to one line at 390px. Both halves of that are gone: "Soon" alone
-     names nothing, and a pill this small is no longer a 44px touch target
-     question because it is not a target at all. Measured at 390px the
-     wordmark plus the full pill fits with room, so it stays whole. */
+  /* The word used to be hidden here, leaving the arrow alone, to hold the
+     top bar to one line at 390px. It stays whole now: measured at that
+     width the wordmark and the full pill fit with room, and an arrow with
+     no word beside it is a button whose only label is a direction. */
 
   .landing-guide {
     left: var(--s-3);

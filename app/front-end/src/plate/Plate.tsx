@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { motion } from 'motion/react'
 import { Check, Copy, MapPin, X } from 'lucide-react'
-import { listSightings, type Cat } from '@/data/catsRepo'
-import { describeWhen } from '@/data/sightings'
+import { listSightings, withdrawSighting, type Cat } from '@/data/catsRepo'
+import { describeWhen, type Sighting } from '@/data/sightings'
 import { CardStack, type StackCard } from '@/components/ui/card-stack'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
@@ -81,10 +81,21 @@ export function Plate({ cat, onClose, onReport }: Props) {
      one block. There is nothing to put a spinner on. */
   const [photos, setPhotos] = useState<StackCard[]>([])
 
+  /* This browser's own reports on this cat that nobody has reviewed yet.
+
+     They are here at all because of a deliberate exception in
+     catsRepo.listSightings: pending data reaches no public surface except
+     this one, and only ever the caller's own. The reasoning is written out
+     there. Anything pending in the result is therefore mine by
+     construction, which is why this filter needs no ownership check of its
+     own. */
+  const [mine, setMine] = useState<Sighting[]>([])
+
   useEffect(() => {
     let live = true
     listSightings(cat.id).then((sightings) => {
       if (!live) return
+      setMine(sightings.filter((sighting) => sighting.status === 'pending'))
       setPhotos(
         /* flatMap rather than filter-then-map, so the absent case is
            removed and the type narrows in one pass instead of needing an
@@ -243,6 +254,39 @@ export function Plate({ cat, onClose, onReport }: Props) {
           <motion.div className="plate-sightings" variants={line}>
             <span className="plate-label">Sightings</span>
             <CardStack cards={photos} label={`Photographs of ${cat.name}`} />
+          </motion.div>
+        )}
+
+        {/* What you reported and nobody has looked at yet.
+
+            Above the report button rather than below it, because "you have
+            already told us this" is context for whether to tell us again.
+
+            Withdrawing does not notify App: nothing published changed,
+            since a pending sighting was never applied to anything. Dropping
+            the row from local state is the whole update, and pretending
+            otherwise would make the map re-read the repo to arrive at
+            exactly what it is already showing. */}
+        {mine.length > 0 && (
+          <motion.div className="plate-pending" variants={line}>
+            <span className="plate-label">Your reports</span>
+            {mine.map((sighting) => (
+              <p key={sighting.id} className="plate-pending-row">
+                <span>
+                  {describeWhen(sighting.at)} · awaiting review
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void withdrawSighting(sighting.id).then((gone) => {
+                      if (gone) setMine((rest) => rest.filter((s) => s.id !== sighting.id))
+                    })
+                  }}
+                >
+                  Withdraw
+                </button>
+              </p>
+            ))}
           </motion.div>
         )}
 

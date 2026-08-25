@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, MouseEvent } from 'react'
-import { ArrowRight } from 'lucide-react'
+import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { MapCanvas } from '@/map/MapCanvas'
 import { listCats, type Cat } from '@/data/catsRepo'
@@ -210,14 +210,22 @@ export default function Landing() {
             right, one Explore. If this ever needs links again they should
             be real destinations, not three names for the same href. */}
 
-        {/* The seam. It stays in the layout and stays honest: phase 8's
-            ?role=admin is what goes behind it, and until then it is a span,
-            not an anchor. A link that navigates somewhere indistinguishable
-            from Explore is worse than a label that says it is not ready. */}
-        <span className="landing-signin">
+        {/* The seam, and as of phase 8 it opens onto something. It was a
+            span reading "Soon" for exactly as long as ?role=admin had no
+            handler; now it unlocks the record panel and the review queue,
+            so it is an anchor again.
+
+            Still not authentication and the label does not claim to be:
+            App.tsx's useAdmin reads a query parameter, which anybody can
+            type. That is honest for a mock whose entire store is the
+            reader's own localStorage, and phase 10 replaces the one
+            function without touching this link. */}
+        <a className="landing-signin" href={`${APP}?role=admin`}>
           Sign in
-          <span className="landing-signin-soon">Soon</span>
-        </span>
+          <span className="landing-signin-arrow" aria-hidden="true">
+            <ArrowUpRight size={14} />
+          </span>
+        </a>
       </header>
 
       <div className="landing-hero">

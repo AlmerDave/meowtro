@@ -56,10 +56,14 @@ import { spring, springSoft } from '@/motion/springs'
    ## What a visitor may and may not do
 
    Report a sighting. Not add a cat, not edit a record. Adding is an admin's
-   job (ui/RecordCat.tsx, currently unmounted, waiting for the version with
-   accounts in it): an open "add a cat" on a public map is unreviewed data
-   about real animals, which is the one thing this project has a written
-   rule against.
+   job (ui/RecordCat.tsx, mounted behind ?role=admin as of phase 8): an open
+   "add a cat" on a public map is unreviewed data about real animals, which
+   is the one thing this project has a written rule against.
+
+   And as of phase 8 a sighting is a PROPOSAL. It lands `pending`, it moves
+   nothing, and a reviewer approving it is what applies it (ui/ReviewQueue).
+   That is the sentence at the 'done' step below, and it used to say the
+   opposite.
 
    Why a sighting rather than "move the cat" is argued in data/sightings.ts,
    where the consequences live.
@@ -812,11 +816,17 @@ export function ReportSighting({
                       ))}
                     </fieldset>
 
+                    {/* Conditional, not "would move": if the reported point
+                        is already inside the cat's patch, approving it moves
+                        nothing much, and saying so is more useful than a
+                        number. Both halves are now about what a REVIEWER
+                        would cause, which is the whole change phase 8 makes
+                        to this panel. */}
                     <p className="sight-summary">
                       {cat.name} at {point[1].toFixed(4)}, {point[0].toFixed(4)}.{' '}
                       {reach && reach.outside > 0
-                        ? `Its territory moves ${Math.round(reach.distance)} m.`
-                        : 'Its territory shifts slightly.'}
+                        ? `If approved, its territory moves ${Math.round(reach.distance)} m.`
+                        : 'If approved, its territory shifts slightly.'}
                     </p>
 
                     <button type="button" className="sight-go" onClick={commit}>
@@ -831,9 +841,16 @@ export function ReportSighting({
             {step === 'done' && (
               <div className="sight-body sight-done">
                 <CatGlyph size={20} aria-hidden />
+                {/* The copy this panel has carried since phase 6 said the
+                    opposite: that the territory had moved, because nobody
+                    reviewed sightings yet. That was true and is not any
+                    more, and it is the sentence that most needed to change
+                    with review, because it is the only place the app tells
+                    somebody what their contribution just did. */}
                 <p>
-                  Recorded. {cat?.name}&apos;s territory has moved. Nobody reviews sightings yet,
-                  so yours was applied straight away.
+                  Recorded, and waiting for review. Nothing on the map has moved yet.{' '}
+                  {cat?.name}&apos;s territory shifts once a reviewer approves it, and you can take
+                  this back from {cat?.name}&apos;s record until then.
                 </p>
                 <button
                   type="button"

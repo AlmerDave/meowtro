@@ -3,7 +3,14 @@ import type { ExpressionSpecification, MapLayerMouseEvent, MapMouseEvent } from 
 import type { FeatureCollection, Polygon } from 'geojson'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
-import { distanceM, readSightings, ringRadiusM } from '@/data/sightings'
+import {
+  allSightings,
+  distanceM,
+  isOwnPending,
+  isSurveyed,
+  readSightings,
+  ringRadiusM,
+} from '@/data/sightings'
 import type { Cat } from '@/data/catsRepo'
 
 /* The territory layers, spec §6 (rev: circles, shaded rather than hatched).
@@ -488,8 +495,19 @@ export function Territories({
        threshold is a share of the cat's own reach rather than a fixed
        distance, so it means "outside its patch" for a cat with a small
        range and for one with a large one alike. */
-    const elsewhere = readSightings()
+    /* Published observations, plus this browser's own unreviewed ones, and
+       that filter is the safety line rather than a preference: these zones
+       draw the POINTS of sightings onto the public map, so an unreviewed
+       report rendered here would publish exactly the precise location that
+       review exists to hold back (spec §9).
+
+       Synchronous, which is why the predicates live in data/sightings.ts
+       and not in catsRepo: this runs inside a MapLibre effect that cannot
+       await. Same policy, same definition, applied from the other side. */
+    const own = readSightings()
+    const elsewhere = allSightings()
       .filter((sighting) => sighting.catId === selectedId)
+      .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, own))
       .map((sighting) => sighting.point)
       .filter((point) => distanceM(centre, point) > reach * 0.6)
 

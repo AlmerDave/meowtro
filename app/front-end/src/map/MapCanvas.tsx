@@ -28,6 +28,8 @@ import { isFatalMapError } from './mapError'
 import { Rain } from './Rain'
 import { Storm } from './Storm'
 import { MapControls } from './MapControls'
+import { RecordCat } from '@/ui/RecordCat'
+import { ReviewQueue } from '@/ui/ReviewQueue'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
    parse, the source never loads, and nothing throws: the map just spins.
@@ -149,6 +151,14 @@ type Props = {
       landing turns off at the same time. Defaults to true, so every
       existing caller is unchanged. */
   chrome?: boolean
+  /** Whether this visitor is holding the admin gate open (App.tsx's
+      useAdmin, phase 8's ?role=admin). Two things hang off it: the record
+      panel, which has been written and unmounted since phase 6 waiting for
+      somebody able to review what it produces, and the review queue itself.
+      A boolean rather than a role string, because there are two roles and
+      one of them is "everybody". Defaults to false, so the public app is
+      what you get by forgetting to pass it. */
+  admin?: boolean
   /** Whether the map responds to mouse, touch or keyboard input at all —
       MapLibre's own top-level `interactive` option, so this is one flag
       rather than disabling drag, scroll-zoom, box-zoom and touch
@@ -182,6 +192,7 @@ export function MapCanvas({
   report,
   chrome = true,
   interactive = true,
+  admin = false,
   children,
 }: Props) {
   const container = useRef<HTMLDivElement>(null)
@@ -413,11 +424,11 @@ export function MapCanvas({
                 for itself whether there is anything to draw. */}
             <Rain />
             {chrome && <MapControls onSelect={onSelect} />}
-            {/* The visitor's one contribution. The admin's counterpart,
-                ui/RecordCat.tsx, is deliberately NOT mounted: adding a cat
-                is a reviewed action and there is nobody to review yet. It
-                is written and working, and goes back on screen behind the
-                role check when accounts land. */}
+            {/* The visitor's one contribution, and as of phase 8 a proposal
+                rather than an edit: it lands `pending` and moves nothing
+                until an admin approves it. The admin's counterpart,
+                ui/RecordCat.tsx, is mounted above behind `admin` now that
+                there is somebody to do the reviewing. */}
             {/* The basemap is gone and the app is still usable: the rail
                 still lists cats, a plate still opens, the panel just says
                 what happened and offers the one thing that can fix it.
@@ -440,6 +451,14 @@ export function MapCanvas({
                 </button>
               </div>
             )}
+
+            {/* Back on screen. Its own header comment has said since phase
+                6 that mounting it again behind the role check is all it
+                needs, and that turned out to be true: the panel writes a
+                cat, the queue reviews sightings, and neither knows about
+                the other. */}
+            {chrome && admin && <RecordCat onRecorded={onRecorded} />}
+            {chrome && admin && <ReviewQueue onReviewed={onRecorded} />}
 
             {chrome && (
               <ReportSighting

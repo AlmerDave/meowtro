@@ -63,6 +63,28 @@ function useIsMobile() {
    page you asked for, which is what this is, and it needs no server config
    to work on static hosting because the query never reaches the router
    there is none of. */
+/* The admin gate, phase 8. A stand-in for auth, and honest about it.
+
+   ?role=admin, matching the ?cat= convention directly above for the same
+   reason: a query is metadata about which page you asked for, and it needs
+   no server config on static hosting. It is not a credential and does not
+   pretend to be one. Anybody who reads this file knows the password, which
+   is fine while the only thing behind the gate is a panel that writes to
+   the reader's own localStorage. Phase 10 replaces this function and
+   nothing else has to change, because everything downstream takes a
+   boolean.
+
+   Read once and held for the session, unlike ?cat= which is consumed and
+   cleared. Clearing this one would log an admin out on their own refresh,
+   and here the URL IS the credential: taking it out of the address bar
+   would take the role with it. */
+function useAdmin(): boolean {
+  const [admin] = useState(
+    () => new URLSearchParams(window.location.search).get('role') === 'admin'
+  )
+  return admin
+}
+
 function useUrlSelection() {
   /* The ?cat= this page was opened with, read once. A ref because it is a
      starting condition that gets consumed, not a source of truth: once the
@@ -168,6 +190,7 @@ export default function App() {
      Collapsing them would start the panels' entrance animations while the
      sheet was still covering them, and the whole point of the reveal is that
      it reveals something arriving. */
+  const admin = useAdmin()
   const [mapReady, setMapReady] = useState(false)
   const [opened, setOpened] = useState(false)
   const isMobile = useIsMobile()
@@ -319,6 +342,7 @@ export default function App() {
         onRecorded={onRecorded}
         onOpenRecord={openRecord}
         report={report}
+        admin={admin}
       />
       <Grain />
 

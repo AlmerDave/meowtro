@@ -13,7 +13,16 @@
 
 ## RESUME HERE
 
-**Last completed:** the pmtiles failure state and twelve cats, 2026-08-25.
+**Last completed:** phase 8, roles and review, 2026-08-25. The full
+write-up including the four design decisions is in the feature roadmap.
+Two things to know before touching data: `catsRepo` is now the review
+boundary (its public reads return surveyed rows only, and the predicates
+behind that live in `data/sightings.ts` so `map/Territories.tsx` can apply
+the same policy synchronously), and `?role=admin` mounts `RecordCat` plus
+the new `ui/ReviewQueue.tsx`. `npm run check:review` guards the boundary.
+**Not yet looked at:** the queue panel and the admin corner.
+
+Before that: the pmtiles failure state and twelve cats, 2026-08-25.
 Both are written up in the feature roadmap's cross-cutting section. Two
 things from them are worth knowing here. The survey is twelve cats on an
 eight-colour palette (`--cat-*` in `tokens.css`, the single list is

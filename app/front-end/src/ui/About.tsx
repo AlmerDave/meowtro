@@ -3,7 +3,7 @@ import { motion } from 'motion/react'
 import { X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { countRecorded, listCats } from '@/data/catsRepo'
-import { allSightings, readSightings } from '@/data/sightings'
+import { allSightings, isSurveyed, readSightings } from '@/data/sightings'
 import { useEscape } from '@/ui/escape'
 import { springSoft } from '@/motion/springs'
 
@@ -82,7 +82,7 @@ const CREDITS: Credit[] = [
 /** What the survey knows right now. Read on open rather than subscribed:
     this panel is a snapshot somebody asked for, and a counter ticking under
     a paragraph they are reading would be motion with no message. */
-type Survey = { cats: number; observations: number; yours: number }
+type Survey = { cats: number; observations: number; yours: number; waiting: number }
 
 type Props = { onClose: () => void }
 
@@ -97,13 +97,19 @@ export function About({ onClose }: Props) {
     let live = true
     listCats().then((cats) => {
       if (!live) return
+      const mine = readSightings()
       setSurvey({
         cats: cats.length,
-        observations: allSightings().length,
+        /* Surveyed only, matching what the map is drawn from. The count
+           under "Observations" is a statement about the survey, and an
+           unreviewed report is not part of it yet. */
+        observations: allSightings().filter(isSurveyed).length,
         // The visitor's own additions, both kinds counted together: from
         // their side these are one thing, "what I put in", regardless of
-        // which store it landed in.
-        yours: countRecorded() + readSightings().length,
+        // which store it landed in. Unreviewed ones included, because they
+        // are still theirs; the line below says how many are still waiting.
+        yours: countRecorded() + mine.length,
+        waiting: mine.filter((sighting) => sighting.status === 'pending').length,
       })
     })
     return () => {
@@ -162,6 +168,12 @@ export function About({ onClose }: Props) {
           <div>
             <dt>Yours</dt>
             <dd>{survey ? survey.yours : '—'}</dd>
+            {/* Only when there is something waiting. A permanent "0 awaiting
+                review" would be a status line about nothing, on a panel
+                whose whole job is to say what the survey currently is. */}
+            {survey && survey.waiting > 0 && (
+              <dd className="about-waiting">{survey.waiting} awaiting review</dd>
+            )}
           </div>
         </dl>
 
@@ -171,9 +183,10 @@ export function About({ onClose }: Props) {
 
         <h3>What is real</h3>
         <p>
-          The map, the streets and the weather are. The cats are not: all three are invented, and
-          their territories are drawn, not recorded. Anything you add stays in this browser and
-          reaches no server.
+          The map, the streets and the weather are. The cats are not: every one of them is
+          invented, and their territories are drawn, not recorded. Anything you add stays in this
+          browser and reaches no server, and anything you report waits for review before it
+          changes the map.
         </p>
         <p className="about-rule">
           A real cat would be mapped the same way, and that is the point. A survey of live animals

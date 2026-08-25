@@ -10,6 +10,7 @@
     "check:weather": "tsc src/map/liveWeather.check.ts --outDir node_modules/.tmp/wcheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node node_modules/.tmp/wcheck/liveWeather.check.js",
     "check:maperror": "tsc src/map/mapError.check.ts --outDir node_modules/.tmp/mcheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node node_modules/.tmp/mcheck/mapError.check.js",
     "check:palette": "tsc src/data/palette.check.ts --outDir node_modules/.tmp/pcheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck && node node_modules/.tmp/pcheck/palette.check.js",
+    "check:review": "tsc src/data/review.check.ts --outDir node_modules/.tmp/rcheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.tmp/rcheck/data/review.check.js",
     "check:sightings": "tsc src/data/sightings.check.ts --outDir node_modules/.tmp/scheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck --resolveJsonModule && node node_modules/.tmp/scheck/data/sightings.check.js"
   },
   "dependencies": {

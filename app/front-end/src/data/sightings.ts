@@ -39,10 +39,29 @@ import baseTerritories from './territories.geo.json'
 
 const KEY = 'meowtro.sightings.v1'
 
+/* Where a submission is in review, phase 8.
+
+   `discarded` rather than deleting the row, because an admin's decision
+   about somebody else's submission is exactly the kind of thing the audit
+   trail exists to hold. A withdrawal is different and does delete: nothing
+   was ever published and no decision was ever made, so there is nothing to
+   audit and "take it back" should mean gone. */
+export type SightingStatus = 'pending' | 'surveyed' | 'discarded'
+
 export type Sighting = {
   id: string
   catId: string
   point: [number, number]
+  /** Reviewed, waiting, or turned down. See SightingStatus.
+
+      Required here and tolerant on the way in: sightings written before
+      review existed have no status at all, and readSightings reads a
+      missing one as `surveyed`. They were made under a regime where
+      reporting meant applying and they are already on that visitor's map,
+      so un-publishing them retroactively would rewrite what somebody has
+      already seen. That is a worse outcome than one grandfathered row in a
+      survey of fictional cats. */
+  status: SightingStatus
   /** Epoch ms. When the cat was seen, which is not the same as when it was
       reported: the panel offers "earlier today" and "yesterday". */
   at: number
@@ -62,9 +81,13 @@ export type Sighting = {
   photo?: string
 }
 
-function isSighting(value: unknown): value is Sighting {
+const STATUSES: SightingStatus[] = ['pending', 'surveyed', 'discarded']
+
+function isSighting(value: unknown): value is Omit<Sighting, 'status'> & {
+  status?: SightingStatus
+} {
   if (!value || typeof value !== 'object') return false
-  const { id, catId, point, at, photo } = value as Partial<Sighting>
+  const { id, catId, point, at, photo, status } = value as Partial<Sighting>
   return (
     typeof id === 'string' &&
     typeof catId === 'string' &&
@@ -74,8 +97,41 @@ function isSighting(value: unknown): value is Sighting {
     typeof at === 'number' &&
     Number.isFinite(at) &&
     // Absent is valid; present and not a string is not.
-    (photo === undefined || typeof photo === 'string')
+    (photo === undefined || typeof photo === 'string') &&
+    // Absent is valid and means `surveyed`; see the field's own note. An
+    // unrecognised value is not: a typo'd status must not be able to make a
+    // record invisible to review by matching none of the filters.
+    (status === undefined || STATUSES.includes(status))
   )
+}
+
+/* --- The review policy -------------------------------------------------
+
+   Two predicates, and every filter in the app is one of them. They live
+   here rather than in catsRepo because the policy has to be applied from
+   both an async context (the repo, which is where the app reads data) and
+   a synchronous one (map/Territories.tsx draws its "seen elsewhere" zones
+   inside a MapLibre effect and cannot await). One definition, two callers,
+   so there is exactly one place to change the meaning of "published".
+
+   Safety-first, which is the whole reason review exists here: a pending
+   observation is a claim about where a real animal was, and until somebody
+   has looked at it, it is not the survey's claim to publish. */
+
+/** Published: what everybody is allowed to see. */
+export function isSurveyed(sighting: Sighting): boolean {
+  return sighting.status === 'surveyed'
+}
+
+/** This browser's own unreviewed submission.
+
+    The single exception to the rule above, and it is safe for one specific
+    reason: the data came from this browser, so showing it back tells its
+    reader nothing they did not type in themselves. In phase 9 this becomes
+    "pending rows belonging to the caller's token", which is an ordinary
+    thing for a server to serve. It is NOT "any pending sighting". */
+export function isOwnPending(sighting: Sighting, own: Sighting[]): boolean {
+  return sighting.status === 'pending' && own.some((mine) => mine.id === sighting.id)
 }
 
 /* Same reasoning as localCats.ts: this is a string a person can edit and a
@@ -85,7 +141,13 @@ export function readSightings(): Sighting[] {
   try {
     const raw = window.localStorage.getItem(KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter(isSighting) : []
+    if (!Array.isArray(parsed)) return []
+    /* A missing status reads as `surveyed`, normalised here so nothing
+       downstream has to know that records older than review exist. See the
+       field's own note for why grandfathering rather than re-queueing. */
+    return parsed
+      .filter(isSighting)
+      .map((sighting) => ({ ...sighting, status: sighting.status ?? 'surveyed' }))
   } catch {
     return []
   }
@@ -194,6 +256,9 @@ const SEEDED: Sighting[] = SEEDS.flatMap((seed, index) => {
       point,
       at: Date.now() - seed.daysAgo * DAY,
       photo: seed.photo,
+      /* The survey's own recorded history, so it is reviewed by definition.
+         These never appear in the queue and never need a verdict. */
+      status: 'surveyed',
     },
   ]
 })
@@ -221,16 +286,45 @@ function write(list: Sighting[]): boolean {
   }
 }
 
+/** A visitor's report. Lands `pending`: it is a submission, not a fact, and
+    nothing on the public map moves until somebody has reviewed it. */
 export function addSighting(catId: string, point: [number, number], at: number): Sighting | null {
-  const sighting: Sighting = { id: `${catId}-${at}-${Math.random().toString(36).slice(2, 7)}`, catId, point, at }
+  const sighting: Sighting = {
+    id: `${catId}-${at}-${Math.random().toString(36).slice(2, 7)}`,
+    catId,
+    point,
+    at,
+    status: 'pending',
+  }
   return write([...readSightings(), sighting]) ? sighting : null
 }
 
-/** Undo. One sighting by id, not "the last one": by the time somebody
-    presses undo, another tab could have added a different one, and removing
-    whatever happens to be last would silently delete the wrong record. */
+/** Undo, and withdraw, which are the same operation at two speeds: the
+    nine-second toast and the plate's own log. One sighting by id, not "the
+    last one": by the time somebody presses undo, another tab could have
+    added a different one, and removing whatever happens to be last would
+    silently delete the wrong record.
+
+    Deletes rather than marking, unlike an admin's discard. Nothing was
+    published and no decision was made, so there is nothing to keep. */
 export function removeSighting(id: string): boolean {
   return write(readSightings().filter((sighting) => sighting.id !== id))
+}
+
+/** An admin's verdict. Writes the decision onto the record rather than
+    removing it either way, which is what makes the audit trail possible:
+    every sighting keeps who, what, where and when, and now also what was
+    decided about it.
+
+    Only ever touches stored sightings. The seeded history is the survey's
+    own and is not in the queue to begin with, so an id that names one is a
+    no-op rather than an error. */
+export function reviewSighting(id: string, verdict: 'surveyed' | 'discarded'): boolean {
+  const stored = readSightings()
+  if (!stored.some((sighting) => sighting.id === id)) return false
+  return write(
+    stored.map((sighting) => (sighting.id === id ? { ...sighting, status: verdict } : sighting))
+  )
 }
 
 /** The newest sighting per cat. Older ones are kept rather than overwritten,
