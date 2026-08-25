@@ -206,10 +206,22 @@ embedding. Worth doing only if the survey earns a real corpus first.
 
 Independent of the phases. Any of these can be picked up at any time.
 
-- [ ] **Twelve cats instead of three** — data entry, but it is the input to
-      several design calls: whether the rail scrolls well, whether the
-      labels collide, whether the sighting grid's search earns its place,
-      and whether "show all ranges" is even a good idea.
+- [x] **Twelve cats instead of three** — done 2026-08-25. It was called data
+      entry and it was mostly right, but four decisions came out of it.
+      The palette went from three colours to eight (`--cat-*` in
+      `tokens.css`, `CAT_COLOURS` in `cats.seed.ts`), because three is not
+      something you hand somebody a picker for; every entry is a mix of the
+      five base tokens, no new hex, and `npm run check:palette` asserts all
+      eight clear AA as text in all three themes. The photo host moved to
+      cataas.com, because placecats has six stable images and twelve named
+      individuals cannot share six faces. The landing's roster caps at five
+      chips with a count for the rest. And `--sage` turned out to have been
+      under the AA floor as text since it was seeded (3.79 on paper, 3.09
+      on light), which one cat in three wearing it made easy to miss;
+      `--cat-sage` is mixed toward ink and passes, while the raw token is
+      untouched because the map's parks are painted with it.
+      **Still to look at with actual eyes:** whether twelve markers collide
+      at this zoom, and whether the rail wants scrolling now.
 - [ ] **Windy weather** — scoped 2026-08-24. Plumbing is ~15 minutes because
       every table is keyed by `Weather`. Needs a second Open-Meteo field
       (`wind_speed_10m`) and a priority rule against storm. The real cost is
@@ -217,10 +229,17 @@ Independent of the phases. Any of these can be picked up at any time.
 - [ ] **`paper` on the theme toggle** — one word in `TOGGLE_THEMES`
       (`map/style.ts`). A whole third visual identity is built, tested by
       the styleguide, and currently unreachable.
-- [ ] **pmtiles failure state** — MapLibre fires `error` and nothing
-      listens. Everything else in the app degrades gracefully; a corrupt
-      tile cache is a blank screen with no explanation. The last ungraceful
-      failure in the app.
+- [x] **pmtiles failure state** — done 2026-08-25. `map/mapError.ts` holds
+      the rule (nothing is fatal once the map has painted; before that,
+      only the basemap source or a failure that names no source at all),
+      `npm run check:maperror` covers both directions of it, and
+      `MapCanvas` raises a card that explains it and offers a reload. The
+      card is not a full-screen overlay and has no backdrop: the rail still
+      lists cats and a plate still opens, since the only broken thing is the
+      picture underneath. `App.tsx` stops holding the loading curtain the
+      moment the failure is known, instead of running out its eight second
+      ceiling with nothing left to wait for. Deliberately silent on the
+      landing, where a wordmark and one button read fine over blank paper.
 - [ ] **"Show every range at once" toggle** — decide *after* twelve cats,
       not before. It gets noisy past a handful.
 - [ ] **First-visit hint at the 3D toggle** — the last unbuilt piece of
@@ -231,6 +250,33 @@ Independent of the phases. Any of these can be picked up at any time.
 - [ ] **Undo a sighting after the toast** — undo exists but expires with the
       nine-second confirmation. It is the one destructive visitor action
       with no recovery after that window.
+- [ ] **Bounded rendering, the rest of it.** Scoped 2026-08-25 after the
+      sighting picker was capped to the nearest twelve. The remaining
+      per-cat renders, and what each one actually wants, so nobody caps the
+      wrong one:
+      - **Rail index** — do NOT cap. An index that hides entries is not an
+        index, and it already has a search. What it wants is the
+        `overflow-y: auto` its own `ponytail:` comment in `shell.css`
+        predicted, plus portalling the specimen flight out of the panel so
+        the scroll container does not clip it. Check whether twelve rows
+        already overflow on a 768px-tall screen.
+      - **Flat-mode cat markers** — the only per-frame cost in here. One DOM
+        node per cat, repositioned by MapLibre on every frame of a pan. The
+        fix when it hurts is viewport culling (render only centroids in
+        view), which bounds by screen rather than by survey size. Capping
+        would hide cats from the map, which is the one thing the map is
+        for. The 3D path is already a single `circle` layer and scales to
+        thousands, so this is flat mode only.
+      - **Plate sighting stack** — bounded per cat today at two to four
+        records. Becomes real in phase 9, when a popular cat could have
+        hundreds; cap to the most recent handful then.
+      - **Nothing here wants virtualisation.** A windowed list is a scroll
+        container, a measurement pass and a dependency, to avoid drawing a
+        few dozen buttons.
+      Worth saying plainly: at these sizes the thing that makes the app feel
+      slow is twelve photographs from a third-party host, not twelve DOM
+      nodes. Those are already `loading="lazy"` in the rail and the picker,
+      and `Loading.tsx` only ever waits for six.
 - [ ] **The landing pays for `motion` and never animates with it.** 234kB
       of the front door's preload graph, because `MapCanvas` statically
       imports `CatMarkers` and `MapControls` and both import `motion/react`.

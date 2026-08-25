@@ -115,25 +115,65 @@ const CENTRES = centroidsById(baseTerritories as FeatureCollection<Polygon>)
 
 const DAY = 24 * 60 * 60 * 1000
 
-/* Named cats on placecats, one per cat, matching what cats.seed.ts already
-   uses for each animal's portrait. Different sizes of the same named cat
-   are different crops of one photograph, which is what a run of sightings
-   of a single animal has to look like. Three different names would be
-   three different cats wearing one name. */
+/* One cataas id per cat, the same id cats.seed.ts uses for that animal's
+   portrait. That is the whole rule: a run of sightings of one cat has to be
+   a run of photographs of one cat, and an id is what guarantees it. Sizes
+   vary between records, because a photograph taken on a phone in the street
+   is not the same crop every time; the id underneath does not.
+
+   Written out rather than imported from cats.seed.ts. This file is loaded
+   directly by node for its check (see the note at the top on relative
+   imports), and the duplication is nine strings against a second module in
+   that path. sightings.check.ts asserts every seeded cat is a real one and
+   that every cat has at least one record, so the two files cannot drift
+   apart quietly.
+
+   Every cat gets at least one, which is what makes "Last seen" render on
+   every plate. The counts are deliberately uneven: a survey where every
+   animal has been observed exactly the same number of times is a survey
+   nobody actually walked. */
+const CAT = (id: string, w: number, h: number) =>
+  `https://cataas.com/cat/${id}?width=${w}&height=${h}`
+
 const SEEDS: { catId: string; daysAgo: number; photo?: string }[] = [
-  { catId: 'milo', daysAgo: 0.3, photo: 'https://placecats.com/millie/640/480' },
-  { catId: 'milo', daysAgo: 2, photo: 'https://placecats.com/millie/600/450' },
-  { catId: 'milo', daysAgo: 9, photo: 'https://placecats.com/millie/560/420' },
-  { catId: 'milo', daysAgo: 26, photo: 'https://placecats.com/millie/520/390' },
-  { catId: 'biscuit', daysAgo: 1.5, photo: 'https://placecats.com/neo/640/480' },
+  { catId: 'milo', daysAgo: 0.3, photo: CAT('04eEQhDfAL8l5nt3', 640, 480) },
+  { catId: 'milo', daysAgo: 2, photo: CAT('04eEQhDfAL8l5nt3', 600, 450) },
+  { catId: 'milo', daysAgo: 9, photo: CAT('04eEQhDfAL8l5nt3', 560, 420) },
+  { catId: 'milo', daysAgo: 26, photo: CAT('04eEQhDfAL8l5nt3', 520, 390) },
+  { catId: 'biscuit', daysAgo: 1.5, photo: CAT('05Xd4JtN14983pns', 640, 480) },
   /* Deliberately without one. Every sighting a visitor can actually make
      today has no photograph attached, so the log has to contain one and
      the plate has to render correctly around it. */
   { catId: 'biscuit', daysAgo: 6 },
-  { catId: 'biscuit', daysAgo: 20, photo: 'https://placecats.com/neo/560/420' },
-  { catId: 'tala', daysAgo: 0.8, photo: 'https://placecats.com/bella/640/480' },
-  { catId: 'tala', daysAgo: 4, photo: 'https://placecats.com/bella/600/450' },
-  { catId: 'tala', daysAgo: 15, photo: 'https://placecats.com/bella/520/390' },
+  { catId: 'biscuit', daysAgo: 20, photo: CAT('05Xd4JtN14983pns', 560, 420) },
+  { catId: 'tala', daysAgo: 0.8, photo: CAT('09wFxpacQzvf9jfM', 640, 480) },
+  { catId: 'tala', daysAgo: 4, photo: CAT('09wFxpacQzvf9jfM', 600, 450) },
+  { catId: 'tala', daysAgo: 15, photo: CAT('09wFxpacQzvf9jfM', 520, 390) },
+
+  { catId: 'pandan', daysAgo: 1.1, photo: CAT('0B2g7aTANObiqPJJ', 640, 480) },
+  { catId: 'pandan', daysAgo: 12, photo: CAT('0B2g7aTANObiqPJJ', 560, 420) },
+  { catId: 'ube', daysAgo: 0.6, photo: CAT('0BTTVEVWXNyOgXYd', 640, 480) },
+  { catId: 'ube', daysAgo: 7, photo: CAT('0BTTVEVWXNyOgXYd', 600, 450) },
+  { catId: 'ube', daysAgo: 33, photo: CAT('0BTTVEVWXNyOgXYd', 520, 390) },
+  /* The newest cat on the survey, so one record and nothing behind it. */
+  { catId: 'kidlat', daysAgo: 2.4, photo: CAT('0C2bQ39x8kuhx31p', 640, 480) },
+  { catId: 'bagyo', daysAgo: 3.2, photo: CAT('0DVs2d6bIVIt3ehk', 640, 480) },
+  { catId: 'bagyo', daysAgo: 18, photo: CAT('0DVs2d6bIVIt3ehk', 560, 420) },
+  { catId: 'alon', daysAgo: 0.9, photo: CAT('0EsIYDG0at0TPpPD', 640, 480) },
+  { catId: 'alon', daysAgo: 11, photo: CAT('0EsIYDG0at0TPpPD', 600, 450) },
+  { catId: 'ligaya', daysAgo: 1.8, photo: CAT('0F0IKAPOdWiE755P', 640, 480) },
+  { catId: 'ligaya', daysAgo: 5, photo: CAT('0F0IKAPOdWiE755P', 560, 420) },
+  { catId: 'ligaya', daysAgo: 29, photo: CAT('0F0IKAPOdWiE755P', 520, 390) },
+  { catId: 'buko', daysAgo: 4.5, photo: CAT('0GC9MRUAqxhBzPyA', 640, 480) },
+  /* A second one without a photograph, for the same reason as biscuit's:
+     the state a real visitor's report lands in should not be rare in the
+     seeded data either. */
+  { catId: 'buko', daysAgo: 16 },
+  { catId: 'maya', daysAgo: 2.7, photo: CAT('0M0Lo3dsYft79xNd', 640, 480) },
+  { catId: 'maya', daysAgo: 22, photo: CAT('0M0Lo3dsYft79xNd', 600, 450) },
+  { catId: 'nilad', daysAgo: 6.3, photo: CAT('0mstmOIucwiN80jb', 640, 480) },
+  { catId: 'nilad', daysAgo: 14, photo: CAT('0mstmOIucwiN80jb', 560, 420) },
+  { catId: 'nilad', daysAgo: 41, photo: CAT('0mstmOIucwiN80jb', 520, 390) },
 ]
 
 /* Relative to load, not absolute dates. describeWhen says "Today" and

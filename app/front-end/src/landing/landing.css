@@ -392,6 +392,24 @@ body:has(.landing) {
   z-index: 1;
 }
 
+/* The count standing in for the chips that are not shown. Sized and
+   shaped like a chip so the row still reads as one row, but flat and
+   unpressable: it is a number, not a control. Mono, like every other
+   figure printed in this app. */
+.landing-chip-more {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-left: -12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 8%, var(--paper));
+  box-shadow: 0 0 0 2px var(--paper);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
 .landing-roster-copy {
   min-width: 0;
   display: flex;
@@ -687,6 +705,12 @@ body:has(.landing) {
 
   /* Over the 44px touch floor. 46px was passing on a technicality. */
   .landing-chip {
+    width: 52px;
+    height: 52px;
+  }
+
+  /* Follows the chips it is counting, or the row steps down at the end. */
+  .landing-chip-more {
     width: 52px;
     height: 52px;
   }

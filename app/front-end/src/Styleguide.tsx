@@ -4,7 +4,7 @@ import FadeContent from '@/components/FadeContent'
 import { Grain } from '@/Grain'
 import { Plate } from '@/plate/Plate'
 import { CatRow } from '@/ui/CatRow'
-import { CATS } from '@/data/cats.seed'
+import { CATS, CAT_COLOURS } from '@/data/cats.seed'
 import { THEMES, DEFAULT_THEME, TOGGLE_THEMES, type Theme } from '@/map/style'
 
 const PALETTE = [
@@ -56,11 +56,17 @@ const SCALE = [
   },
 ]
 
-// Twelve cats eventually; three is enough to show overlap reads correctly.
+/* Three, still, because three is what shows overlap reading correctly and
+   twelve overlapping washes shows nothing at all. The full palette is the
+   strip below this demo.
+
+   Tokens rather than the hexes that used to be typed here: this page exists
+   to prove the design system, so a swatch that cannot follow a theme is the
+   one thing on it that must not be hand-coloured. */
 const TERRITORIES = [
-  { id: 'milo', label: 'MILO', colour: '#9A3F2B' },
-  { id: 'biscuit', label: 'BISCUIT', colour: '#6B7F62' },
-  { id: 'tala', label: 'TALA', colour: '#57534E' },
+  { id: 'milo', label: 'MILO', colour: 'var(--cat-rust)' },
+  { id: 'biscuit', label: 'BISCUIT', colour: 'var(--cat-sage)' },
+  { id: 'tala', label: 'TALA', colour: 'var(--cat-grey)' },
 ]
 
 const ANTI_SLOP = [
@@ -218,6 +224,21 @@ export default function Styleguide() {
             <span className="num">03</span>
             <h2>Territory</h2>
             <span className="note">click one — selection uses feature-state, not rebuilds</span>
+          </div>
+
+          {/* The whole palette a cat can be. Eight, every one a mix of the
+              five base colours, all clearing AA as text on --paper in all
+              three themes (npm run check:palette does that arithmetic).
+              Rendered from CAT_COLOURS itself, so a colour added to the
+              picker appears here without anyone remembering to add it. */}
+          <div className="cat-palette">
+            {CAT_COLOURS.map((c) => (
+              <div key={c.token} className="cat-swatch">
+                <span className="chip" style={{ background: `var(${c.token})` }} />
+                <span className="label">{c.label}</span>
+                <span className="token">{c.token}</span>
+              </div>
+            ))}
           </div>
           <div className="territories">
             {TERRITORIES.map((t) => {

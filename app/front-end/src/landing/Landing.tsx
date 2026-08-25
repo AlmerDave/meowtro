@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { MapCanvas } from '@/map/MapCanvas'
 import { listCats, type Cat } from '@/data/catsRepo'
+import { photoAt } from '@/data/cats.seed'
 import { Reel } from './Reel'
 
 /* The front door.
@@ -48,6 +49,18 @@ const APP = '/app.html'
    screen it belongs under the wordmark where the thumb is, not welded into
    a corner. One button either way, so focus order and listeners stay put. */
 const NARROW = '(max-width: 620px)'
+
+/* How many roster chips the card shows, with a count standing in for the
+   rest. Not a scroll and not a wrap: at twelve cats the row is about 490px
+   of overlapping circles inside a 400px card, and both of the obvious fixes
+   turn a glance into an interaction. The row is a taste of the survey, not
+   an index of it, and the index is one button away.
+
+   Five is what fits at the narrow layout's 52px chip without crowding the
+   name and description beside it. The rotation still runs through all
+   twelve, so a chip outside the first five still gets its turn in the copy
+   below; it simply has no circle of its own to sit under. */
+const CHIPS = 5
 
 function useNarrow() {
   const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
@@ -233,7 +246,7 @@ export default function Landing() {
 
         <div className="landing-roster">
           <div className="landing-chips">
-            {cats.map((c, i) => (
+            {cats.slice(0, CHIPS).map((c, i) => (
               <button
                 key={c.id}
                 type="button"
@@ -258,21 +271,20 @@ export default function Landing() {
               >
                 {c.photo ? (
                   /* 640x480 was being downloaded to paint a 52px circle.
-                     The seeded URLs are placecats.com/<name>/<w>/<h>, so
-                     asking for the size actually used is a string swap; a
-                     real hosted photo later simply will not match and the
-                     URL passes through untouched. width/height are the
-                     rendered CSS size at 2x, which is what a retina phone
-                     needs and is still a twelfth of the pixels. */
-                  <img
-                    src={c.photo.replace('/640/480', '/104/104')}
-                    alt=""
-                    width={52}
-                    height={52}
-                  />
+                     photoAt knows the seeded URL shape and rewrites it;
+                     104 is the rendered size at 2x, which is what a retina
+                     phone wants and is still a twelfth of the pixels. */
+                  <img src={photoAt(c.photo, 104)} alt="" width={52} height={52} />
                 ) : null}
               </button>
             ))}
+
+            {/* Not a button. Pressing it would have to do something, and
+                the something is Explore, which is already the largest
+                thing on the page. It is a count, and it reads as one. */}
+            {cats.length > CHIPS && (
+              <span className="landing-chip-more">+{cats.length - CHIPS}</span>
+            )}
           </div>
 
           {cat && (

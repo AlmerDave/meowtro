@@ -13,7 +13,17 @@
 
 ## RESUME HERE
 
-**Last completed:** the front door and its review, 2026-08-25. Phase 7's
+**Last completed:** the pmtiles failure state and twelve cats, 2026-08-25.
+Both are written up in the feature roadmap's cross-cutting section. Two
+things from them are worth knowing here. The survey is twelve cats on an
+eight-colour palette (`--cat-*` in `tokens.css`, the single list is
+`CAT_COLOURS` in `data/cats.seed.ts`, and `npm run check:palette` holds it
+to AA in all three themes). And the map now has a failure state:
+`map/mapError.ts` decides what counts as fatal, `npm run check:maperror`
+covers it. **Neither has been looked at yet** — twelve markers at this zoom
+and the rail at twelve rows both want a pair of eyes.
+
+Before that: the front door and its review, 2026-08-25. Phase 7's
 landing page shipped and was then read back end to end; what that turned up
 is fixed and written up in the feature roadmap
 (`2026-08-24-feature-roadmap.md`, phase 7), which is where landing work is

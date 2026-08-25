@@ -202,3 +202,34 @@ section {
   position: static;
   width: 18rem;
 }
+
+/* The territory palette, section 03. Eight swatches read straight off
+   CAT_COLOURS, so this cannot drift from what the record panel offers. */
+.cat-palette {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: var(--s-4);
+  margin-top: var(--s-6);
+}
+
+.cat-swatch {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.cat-swatch .chip {
+  height: 2.5rem;
+  border-radius: calc(var(--radius) * 0.5);
+}
+
+.cat-swatch .label {
+  font-size: var(--t-sm);
+  color: var(--ink);
+}
+
+.cat-swatch .token {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}

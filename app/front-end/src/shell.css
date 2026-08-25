@@ -3440,3 +3440,83 @@ body[data-placing='true'] .maplibregl-canvas {
     max-height: calc(100dvh - 8rem);
   }
 }
+
+/* --- The map that did not load ------------------------------------------
+   MapLibre fires `error` and, until now, nothing listened: a corrupt or
+   missing bgc.pmtiles was a blank screen with no explanation, in an app
+   where everything else degrades gracefully. map/mapError.ts decides what
+   counts as fatal; this is what the fatal case looks like.
+
+   z-index 3, the panel rung. Above the map and the grain, under the plate,
+   because a plate opened from the rail is still a working part of the app
+   and should not be argued with by an error card behind it.
+
+   Centred but not full-screen and with no backdrop, on purpose: the rail
+   still lists cats, a plate still opens, and the only thing actually broken
+   is the picture underneath. Blocking the whole app over that would be a
+   bigger failure than the one being reported. */
+.map-dead {
+  position: fixed;
+  z-index: 3;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  width: min(24rem, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  padding: var(--s-6);
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+.map-dead-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.map-dead-note {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+/* Same recipe as .sight-go, the app's one filled button, because this is
+   the one action in the card and reads as the same kind of thing. */
+.map-dead-go {
+  align-self: flex-start;
+  padding: var(--s-3) var(--s-6);
+  border: 0;
+  border-radius: 999px;
+  background: var(--rust);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.map-dead-go:active {
+  transform: scale(0.97);
+}
+
+/* What the picker's nearest-twelve cap left out. Quiet, mono, sitting under
+   the grid the way a footnote sits under a table: it is an explanation of
+   the list above it, not an instruction. */
+.sight-more {
+  margin: var(--s-3) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  text-align: center;
+}

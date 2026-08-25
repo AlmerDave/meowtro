@@ -4,6 +4,7 @@ import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { MapPin, Plus, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { addCat, clearRecorded, countRecorded } from '@/data/catsRepo'
+import { CAT_COLOURS, type Colour } from '@/data/cats.seed'
 import { circleRing } from '@/data/localCats'
 import { spring, springSoft } from '@/motion/springs'
 
@@ -56,13 +57,10 @@ const PREVIEW_LINE = 'record-preview-line'
 const MIN_RADIUS = 30
 const MAX_RADIUS = 250
 
-const COLOURS = [
-  { token: '--rust', label: 'Rust' },
-  { token: '--sage', label: 'Sage' },
-  { token: '--ink-soft', label: 'Grey' },
-] as const
-
-type Colour = (typeof COLOURS)[number]['token']
+/* The swatches used to be declared here, three of them, duplicating the
+   union in data/cats.seed.ts. They are the same list now and it lives with
+   the type, so the picker cannot offer a colour the data model rejects. */
+const COLOURS = CAT_COLOURS
 
 const EMPTY = {
   name: '',
@@ -70,7 +68,7 @@ const EMPTY = {
   note: '',
   photo: '',
   line: '',
-  colour: '--rust' as Colour,
+  colour: CAT_COLOURS[0].token as Colour,
 }
 
 const token = (name: string) =>

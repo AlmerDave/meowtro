@@ -24,6 +24,7 @@ import { Territories } from './Territories'
 import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
 import { fetchWeather } from './liveWeather'
+import { isFatalMapError } from './mapError'
 import { Rain } from './Rain'
 import { Storm } from './Storm'
 import { MapControls } from './MapControls'
@@ -130,6 +131,12 @@ type Props = {
       the viewport is still blank. `idle` is the first moment there is a map
       on screen worth revealing. */
   onReady?: () => void
+  /** The basemap could not load at all, so there is no map and there is not
+      going to be one. Told to the caller rather than only handled here
+      because ui/Loading.tsx is otherwise still counting down its eight
+      second ceiling with nothing left to wait for: the app should stop
+      holding the curtain up the moment this is known. */
+  onFailed?: () => void
   /** The app's own furniture: the control capsule, the sighting flow, and
       the street/park/landmark labels. The landing page (landing/Landing.tsx)
       mounts the same map with the same theme, weather and pitch machinery
@@ -169,6 +176,7 @@ export function MapCanvas({
   hoveredId,
   onHover,
   onReady,
+  onFailed,
   onRecorded,
   onOpenRecord,
   report,
@@ -179,6 +187,7 @@ export function MapCanvas({
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MapLibreMap | null>(null)
   const [isLoaded, setIsLoaded] = useState(false)
+  const [failed, setFailed] = useState(false)
   const [placing, setPlacing] = useState(false)
   // Map lands flat (spec: 3D is opt-in, not the default view).
   const [isFlat, setIsFlat] = useState(true)
@@ -249,15 +258,50 @@ export function MapCanvas({
 
     const onLoad = () => setIsLoaded(true)
     instance.on('load', onLoad)
+
+    /* The failure nobody was listening for.
+
+       MapLibre reports a source that will not resolve exactly the way it
+       reports a tile that aborted on a pan, so map/mapError.ts is where the
+       difference is decided and this is only the plumbing. `painted` is a
+       ref rather than state because it is read inside a listener that must
+       not be torn down and rebuilt every time it changes: one write, on the
+       first idle, and every error after that is noise by definition.
+
+       Note the whole effect stays mounted for the life of the map, so the
+       listener is attached before the style has had any chance to resolve.
+       Attaching it later, from an effect that waits for `load`, would miss
+       the case this exists for entirely: the basemap that never loads never
+       fires load, so an effect gated on load never runs. */
+    const painted = { current: false }
+    const onIdleOnce = () => {
+      painted.current = true
+    }
+    const onError = (event: unknown) => {
+      if (isFatalMapError(event as { sourceId?: string }, painted.current)) setFailed(true)
+    }
+    instance.once('idle', onIdleOnce)
+    instance.on('error', onError)
+
     setMap(instance)
 
     return () => {
       instance.off('load', onLoad)
+      instance.off('idle', onIdleOnce)
+      instance.off('error', onError)
       instance.remove()
       setMap(null)
       setIsLoaded(false)
+      setFailed(false)
     }
   }, [])
+
+  /* Told once, and only after the caller has handed us somewhere to tell.
+     Separate from the listener above so `onFailed` changing identity does
+     not rebuild the map instance. */
+  useEffect(() => {
+    if (failed) onFailed?.()
+  }, [failed, onFailed])
 
   /* `idle` rather than `load`, and once. MapLibre fires idle every time it
      settles, so the listener is removed after the first one: the loading
@@ -374,6 +418,29 @@ export function MapCanvas({
                 is a reviewed action and there is nobody to review yet. It
                 is written and working, and goes back on screen behind the
                 role check when accounts land. */}
+            {/* The basemap is gone and the app is still usable: the rail
+                still lists cats, a plate still opens, the panel just says
+                what happened and offers the one thing that can fix it.
+                Deliberately a card and not a full-screen overlay, and with
+                no backdrop, so everything behind it stays reachable.
+
+                Not rendered on the landing (`chrome`), by design. That page
+                is a wordmark, a guide card and one button, all of which
+                read perfectly well over blank paper, and an error card is a
+                worse first impression than a plain background. */}
+            {chrome && failed && (
+              <div className="map-dead" role="alert">
+                <p className="map-dead-title">The map did not load</p>
+                <p className="map-dead-note">
+                  Bonifacio Global City is drawn from a single map file served with this page. It
+                  did not arrive, so there is nothing to draw. The cats are all still here.
+                </p>
+                <button type="button" className="map-dead-go" onClick={() => location.reload()}>
+                  Try again
+                </button>
+              </div>
+            )}
+
             {chrome && (
               <ReportSighting
                 cats={cats}

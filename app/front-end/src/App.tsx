@@ -175,6 +175,15 @@ export default function App() {
   /* Stable, so MapCanvas' one-shot `idle` listener is not torn down and
      re-subscribed on every render of this component. */
   const onMapReady = useCallback(() => setMapReady(true), [])
+
+  /* The basemap will not load at all (map/mapError.ts decides that). The
+     loading screen is waiting on a first paint that is never coming, and
+     its eight second ceiling would hold a curtain over an app that already
+     knows the answer, so this ends the wait early. MapCanvas draws the
+     panel that explains it; all this does is get out of the way so it can
+     be read. */
+  const [mapFailed, setMapFailed] = useState(false)
+  const onMapFailed = useCallback(() => setMapFailed(true), [])
   const onOpened = useCallback(() => setOpened(true), [])
 
   useLenis()
@@ -305,6 +314,7 @@ export default function App() {
         hoveredId={hoveredId}
         onHover={setHoveredId}
         onReady={onMapReady}
+        onFailed={onMapFailed}
         territories={territories}
         onRecorded={onRecorded}
         onOpenRecord={openRecord}
@@ -316,7 +326,11 @@ export default function App() {
           the map rather than a wrapper around it, deliberately: the map has
           to be mounted and rendering to ever become ready, so a loading
           screen that replaced it would be waiting on itself. */}
-      {!opened && <Loading cats={cats} mapReady={mapReady} onDone={onOpened} />}
+      {/* `|| mapFailed` reads as a lie and is not one: the prop is what the
+          curtain waits on, and a map that has failed is done being waited
+          for. Loading's own MIN_MS still applies, so this cuts the wait
+          short without turning the reveal into a flicker. */}
+      {!opened && <Loading cats={cats} mapReady={mapReady || mapFailed} onDone={onOpened} />}
 
       {/* A deck of cards on the map below the breakpoint, two floating
           panels above it. The same CatRow and the same Plate render in

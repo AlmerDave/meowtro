@@ -99,6 +99,25 @@ const token = (name: string) =>
     mid-report. */
 const PRECISE_POINTER = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 
+/** How many cards the picker draws at once.
+
+    This grid is already sorted nearest-first to where the map was pointed,
+    and reporting a sighting means reporting a cat you are looking at, which
+    is by definition one of the near ones. So the twelfth-nearest card is
+    doing almost nothing for almost everybody, and the fiftieth is drawing a
+    160px photograph from a third-party host to be scrolled past.
+
+    A cap rather than virtualisation, which is the usual reflex here and
+    would be the wrong tool: a windowed list is a scroll container, a
+    measurement pass and a dependency, to save drawing a few dozen buttons.
+    A cap is one `slice`, and it only has to be honest about what it hid.
+
+    Nothing is unreachable behind it. The search field above the grid reads
+    name and description together, so a cat outside the nearest twelve is
+    one word away, and the line under the grid says how many are waiting
+    there rather than letting the list quietly end. */
+const SHOW_NEAREST = 12
+
 /** Below this many cats the grid IS the interface and the search field is
     a courtesy, so stealing focus into it would be taking the interface
     away. Above it, typing is the fast path and the field earns the focus. */
@@ -665,7 +684,7 @@ export function ReportSighting({
                      fact that matters: that it can be pressed. A group of
                      buttons is already a comprehensible thing. */
                   <div className="sight-grid">
-                    {matches.map(({ cat: c, away }) => (
+                    {matches.slice(0, SHOW_NEAREST).map(({ cat: c, away }) => (
                       <button
                         key={c.id}
                         type="button"
@@ -687,7 +706,23 @@ export function ReportSighting({
                       </button>
                     ))}
                   </div>
-                ) : (
+                ) : null}
+
+                {/* What the cap hid, said out loud. A grid that just stops
+                    at twelve looks like the whole survey to somebody whose
+                    cat is the thirteenth; a line saying so points at the
+                    field that reaches it. Not a "show all" button on
+                    purpose: pressing it would draw exactly the cards this
+                    exists to not draw, and searching is faster than
+                    scrolling a wall of photographs anyway. */}
+                {matches.length > SHOW_NEAREST && (
+                  <p className="sight-more">
+                    Nearest {SHOW_NEAREST} shown · {matches.length - SHOW_NEAREST} more{' '}
+                    {query.trim() ? 'match above' : 'in the survey'}. Search by name or marking.
+                  </p>
+                )}
+
+                {matches.length === 0 && (
                   <p className="sight-empty">
                     No cat here matches “{query.trim()}”. Try a colour or a marking, or an admin
                     can add a cat the survey has not recorded yet.

@@ -69,8 +69,8 @@ const CREDITS: Credit[] = [
   },
   {
     what: 'Photographs',
-    who: 'placecats',
-    href: 'https://placecats.com',
+    who: 'Cat as a service',
+    href: 'https://cataas.com',
   },
   {
     what: 'Card stack',

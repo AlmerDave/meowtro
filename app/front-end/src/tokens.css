@@ -292,6 +292,50 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* --- The territory palette ---------------------------------------------
+   The colours a cat can be. One entry per swatch in ui/RecordCat.tsx's
+   picker, and the union `Colour` in data/cats.seed.ts is generated from
+   the same list, so adding a colour is an edit here and an edit there and
+   nothing else in the app changes.
+
+   Eight, not three. Three was enough while there were three cats. It is
+   not enough to hand somebody a picker with, and it is not enough for a
+   survey of twelve.
+
+   **Every entry is a base token or a mix of base tokens. No new hex.** That
+   is the same rule the rest of this file lives by, and it is what makes
+   this block work across all three themes from a single definition:
+   `--rust` and `--ink` are redefined per theme below, custom properties
+   resolve at use time, so each mix lands in whatever palette is active.
+   Note this also means every mix is theme-correct by construction. Mixing
+   toward `--ink` darkens on paper and light, and LIGHTENS on dark, because
+   on dark `--ink` is the near-white one. Either way it moves away from
+   `--paper`, which is the direction contrast improves in.
+
+   **All eight pass WCAG AA (4.5:1) as text on `--paper` in all three
+   themes**, worst case 4.68. That is a real constraint and not a courtesy:
+   a cat's colour is used as `color:` in the rail, the plate and the
+   landing's roster, not only as a fill. `npm run check:palette` reads this
+   block, resolves the mixes and does the arithmetic, so a re-tuned weight
+   that drops one under the floor fails loudly instead of shipping.
+
+   Note --cat-sage is deliberately NOT plain --sage. The raw token is
+   3.79:1 on paper and 3.09:1 on light, under the floor, which is a defect
+   this palette inherited and did not want: BISCUIT's rail label has been
+   below AA since the day it was seeded. Mixed 65/35 toward ink it passes
+   everywhere, and --sage itself is left exactly as it is, because the
+   map's parks are painted with it and a park fill is not text. */
+:root {
+  --cat-rust: var(--rust);
+  --cat-ember: color-mix(in srgb, var(--rust) 60%, var(--ink));
+  --cat-clay: color-mix(in srgb, var(--rust) 60%, var(--ink-soft));
+  --cat-sage: color-mix(in srgb, var(--sage) 65%, var(--ink));
+  --cat-moss: color-mix(in srgb, var(--sage) 40%, var(--ink));
+  --cat-olive: color-mix(in srgb, color-mix(in srgb, var(--sage) 50%, var(--rust)) 75%, var(--ink));
+  --cat-grey: var(--ink-soft);
+  --cat-slate: color-mix(in srgb, var(--ink-soft) 55%, var(--ink));
+}
+
 /* --- Paper grain, spec §4 -------------------------------------------
    Fixed overlay, multiply blend, above the map and below the UI.
    This one detail does most of the work of looking printed. */
