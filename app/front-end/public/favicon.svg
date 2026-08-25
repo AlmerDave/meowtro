@@ -4,23 +4,32 @@
 
     The left ear is cut flat instead of pointed, and that is the whole idea
     rather than a stylisation. An ear tip is the international signal that a
-    street cat has been trapped, neutered and returned to its colony -- it is
+    street cat has been trapped, neutered and returned to its colony: it is
     how you tell, at a glance and from a distance, that an animal belongs to
     a managed population rather than to nobody. This app is a field guide to
     exactly that population, so the mark says what the survey is about using
     the same shorthand the survey's subjects already wear. It also costs one
     straight edge at 16px, which is the only size that really matters here.
 
+    Keep every double hyphen out of THIS comment. An SVG served as
+    image/svg+xml is parsed as strict XML, where a comment containing two
+    hyphens in a row is a fatal well-formedness error and the whole icon
+    silently fails to load. Prose here once used a double hyphen as
+    punctuation and named the ink custom property literally; both broke
+    the tab icon.
+    Punctuate with a comma, colon or semicolon, and refer to custom
+    properties by name in words.
+
     Themed the way everything else in this project is themed: one file, one
     token per state, nothing downstream branching. A browser tab has no
-    access to tokens.css, so the two --ink values are inlined here and
+    access to tokens.css, so the two ink token values are inlined here and
     swapped on prefers-color-scheme. That is also why this is an SVG rather
     than a PNG: a raster favicon would need two files and still could not
     choose between them.
 
     Deliberately not the app's three-theme system. The tab belongs to the
     browser's chrome, not to the page, so it follows the OS the way the rest
-    of the browser does -- the in-app theme is a choice about the map, and
+    of the browser does; the in-app theme is a choice about the map, and
     the map is not what is being drawn here.
   -->
   <style>

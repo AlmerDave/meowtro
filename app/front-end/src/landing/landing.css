@@ -1,0 +1,735 @@
+/* The front door. Tokens come from app.css -> tokens.css; nothing here
+   contains a hex or a magic size, same rule as the rest of the project.
+
+   Layered on top of shell.css rather than replacing it: the map's own
+   furniture is styled there and has to keep its styles here: .map's fixed
+   positioning above all, plus the storm veil and the rain the reel plays.
+   See landing-main.tsx for what happened when this file tried to stand
+   alone. */
+
+/* The front door does not scroll, and should not offer to.
+
+   Every surface on this page is position: fixed, so there is nothing under
+   the fold and nothing a scroll could reveal. shell.css hides the map
+   page's scrollbar but deliberately leaves scrolling itself working, which
+   is right for the app (the wheel still reaches MapLibre and the panels)
+   and pointless here. Stated on both html and body: overflow propagates
+   from body to the viewport, so leaving either one out gets you a page
+   that has stopped scrolling but still draws the track. */
+html:has(.landing),
+body:has(.landing) {
+  overflow: hidden;
+}
+
+.landing {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  /* Container, not viewport: every layout rule below asks this element how
+     wide it is. The page then behaves the same at 390px of phone and at
+     390px of a preview frame, and the mockup and the build cannot drift. */
+  container-type: inline-size;
+  container-name: landing;
+}
+
+/* --- the reveal ---------------------------------------------------------
+   `.landing-nav`, `.landing-wordmark`, `.landing-guide`, `.reel-bar` and
+   `.landing-cta` already carry a transition for opacity/transform — that
+   was written for an entrance that never got wired up on the React side,
+   so it sat there transitioning nothing. This is what gives it a job: each
+   surface starts from this hidden state and Landing.tsx adds `is-ready`
+   one frame after mount, which is what actually plays the transition
+   already declared on each element below, rather than a new one here.
+
+   A staggered `transition-delay`, not a `transition-delay` on the base
+   rule: putting it there would also delay every later hover/press, which
+   is the opposite of what a press wants. Scoped to `:not(.is-ready)`
+   instead — CSS transitions read their timing from the rule matching the
+   state being left, and this element is never in `:not(.is-ready)` again
+   after the first reveal, so the delay only ever applies once. */
+.landing:not(.is-ready) .landing-nav {
+  opacity: 0;
+  translate: 0 -16px;
+}
+
+.landing:not(.is-ready) .landing-wordmark {
+  opacity: 0;
+  filter: blur(6px);
+  scale: 0.985;
+}
+
+.landing:not(.is-ready) .landing-guide {
+  opacity: 0;
+  translate: 0 16px;
+  transition-delay: 160ms;
+}
+
+.landing:not(.is-ready) .reel-bar {
+  opacity: 0;
+  transition-delay: 220ms;
+}
+
+.landing:not(.is-ready) .landing-cta {
+  opacity: 0;
+  translate: 0 16px;
+  transition-delay: 260ms;
+}
+
+/* --- the scrim ---------------------------------------------------------
+   Top and bottom only. Grading the whole frame down to make text easy would
+   also grade the city down, and the city is the reason anyone is here.
+
+   Sits below the map labels for the same reason Storm's veil does: street
+   labels are --ink-soft on --paper, which is 4.67:1 in light, and veiling
+   them takes the composite under AA. The map's own layers dim; the guide
+   does not. See shell.css's note on .storm-veil for the full arithmetic. */
+.landing-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--paper) 66%, transparent) 0%,
+    transparent 30%,
+    transparent 54%,
+    color-mix(in srgb, var(--paper) 52%, transparent) 100%
+  );
+}
+
+/* --- the wordmark ------------------------------------------------------
+   Blended into the city rather than laid on top of it: multiply on the day
+   themes darkens the towers through the letterforms, screen at night
+   lightens them, so the type sits in the same light as the scene. This is
+   the depth effect the reference site implies and does not actually do,
+   and it costs one property rather than a shader.
+
+   Decorative by intent: the accessible name of this page is the <h1> in the
+   guide panel, and this word is repeated in the nav, so the reduced
+   contrast here is not hiding anything from anyone. */
+.landing-hero {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1.1rem, 4cqw, 1.9rem);
+  pointer-events: none;
+  /* Reserves room for .landing-guide, which the wordmark otherwise centers
+     straight through. The card's own footprint (content height plus its
+     bottom offset) measures a near-constant ~320px on desktop regardless
+     of viewport size, since it is set by its CONTENT, not by the
+     viewport — but this element centers in the FULL viewport height with
+     no knowledge of that, so on a short-enough screen the two collide: the
+     card's corner slices into the word's bottom-left descender. 340px
+     covers the measured footprint with a margin; asymmetric padding
+     (bottom only) shifts the centered wordmark up rather than shrinking it
+     from both sides, which is what actually buys the clearance — the
+     15vh cap on font-size below helps too, but alone was not enough at
+     1280x720 and stayed badly overlapped in landscape phone widths.
+
+     min(340px, 44vh), not a flat 340px: this rule is width-only (matches
+     down to 620px, where the mobile rule below takes over), so it is also
+     what is active on a WIDE-but-very-short screen — a phone held sideways
+     is wide enough to stay out of the mobile breakpoint entirely. A flat
+     340px reserve there ate more than the whole viewport and pushed the
+     wordmark off the TOP of the screen, a worse defect than the overlap
+     this rule exists to fix. Scaling down with height avoids that; the
+     card can still touch the word in that one genuinely degenerate case
+     (a card alone can run to 75%+ of a 375px-tall viewport), which is the
+     lesser problem and far the less likely screen this page loads into. */
+  padding-bottom: min(340px, 44vh);
+}
+
+.landing-wordmark {
+  margin: 0;
+  font-family: var(--font-display);
+  /* Capped by height as well as width. 12cqw alone tracks the container's
+     WIDTH only (container-type on .landing is inline-size, so there is no
+     height axis to query directly) — on a wide, short viewport that grows
+     the word without regard for how little vertical room is actually
+     there. .landing-hero centers it in the full viewport height and
+     .landing-guide is anchored to the bottom with a height set by its own
+     content, not by the viewport, so on laptop-class screens (1366x768 is
+     the single most common resolution in the world, and shorter than every
+     size this page was checked against) the two collided: the card's
+     top-left corner sliced into the word's bottom-left descender. 15vh
+     keeps the word from outgrowing the space actually available above the
+     card at any width. */
+  font-size: min(12cqw, 15vh);
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 0.95;
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
+  mix-blend-mode: multiply;
+  text-wrap: balance;
+  transition:
+    opacity var(--dur-panel) var(--ease-out),
+    filter var(--dur-panel) var(--ease-out),
+    scale var(--dur-panel) var(--ease-move);
+}
+
+:root[data-theme='dark'] .landing-wordmark {
+  color: color-mix(in srgb, var(--ink) 60%, transparent);
+  mix-blend-mode: screen;
+}
+
+.landing-hero-cta {
+  pointer-events: auto;
+}
+
+/* --- nav --------------------------------------------------------------- */
+
+.landing-nav {
+  position: fixed;
+  z-index: 5;
+  inset: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: clamp(1rem, 2cqw, 1.6rem) clamp(1.1rem, 2.4cqw, 2rem);
+  transition:
+    opacity var(--dur-panel) var(--ease-out),
+    translate var(--dur-panel) var(--ease-move);
+}
+
+.landing-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+/* The sign-in seam. Not a control yet: phase 8's ?role=admin is what goes
+   behind it, and until then Landing.tsx renders a <span>, so there is no
+   hover lift, no press scale and no focus ring here. Those were written
+   for the anchor it used to be and pointed at the app, which is where
+   Explore already goes, a second button doing the same thing while
+   wearing a different name.
+
+   Kept in the layout rather than removed and re-added later: the slot is
+   the design decision (spec: the sign-in door ships from day one), and
+   what sits behind it is the part that changes. */
+.landing-signin {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
+  border: var(--panel-border);
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-size: var(--t-sm);
+  font-weight: 500;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+/* Where the arrow used to be, and the same 24px rhythm. Says the thing
+   out loud instead of implying a destination with an arrow that does not
+   go anywhere. */
+.landing-signin-soon {
+  display: grid;
+  place-items: center;
+  padding: 0 var(--s-2);
+  height: 24px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+/* --- the guide panel ---------------------------------------------------
+   One surface carrying the whole proposition: what this is, then who is in
+   it. Two floating chips would be a poster; this is an interface. */
+
+.landing-guide {
+  position: fixed;
+  z-index: 5;
+  left: clamp(1rem, 2.4cqw, 2.2rem);
+  bottom: clamp(1rem, 2.4cqw, 2.2rem);
+  width: min(400px, calc(100% - 2rem));
+  display: flex;
+  flex-direction: column;
+  padding: var(--s-6);
+  border: var(--panel-border);
+  border-radius: var(--radius);
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  transition:
+    opacity var(--dur-panel) var(--ease-out),
+    translate var(--dur-panel) var(--ease-move);
+}
+
+.landing-eyebrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.landing-eyebrow b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.landing-eyebrow span {
+  color: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.landing-lede {
+  margin: 0 0 var(--s-4);
+  font-family: var(--font-display);
+  font-size: var(--t-xl);
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.landing-note {
+  margin: 0 0 var(--s-6);
+  font-size: var(--t-sm);
+  line-height: 1.55;
+  color: var(--ink-soft);
+  max-width: 34ch;
+}
+
+.landing-rule {
+  height: 1px;
+  background: var(--rule);
+  margin-bottom: var(--s-4);
+}
+
+.landing-roster {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+}
+
+.landing-chips {
+  display: flex;
+  flex: none;
+}
+
+/* Overlapped, like a stacked-avatar row, but every one is a real control:
+   hoverable, focusable, and the only way to pick a cat on this page. */
+.landing-chip {
+  width: 46px;
+  height: 46px;
+  margin-left: -12px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  overflow: hidden;
+  cursor: pointer;
+  background: var(--paper);
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px transparent;
+  transition:
+    translate var(--dur-ui) var(--ease-out),
+    scale var(--dur-ui) var(--ease-out),
+    box-shadow var(--dur-ui) var(--ease-out);
+}
+
+.landing-chip:first-child {
+  margin-left: 0;
+}
+
+.landing-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing-chip:hover {
+    translate: 0 -3px;
+    scale: 1.06;
+  }
+}
+
+.landing-chip:focus-visible {
+  outline: none;
+  translate: 0 -3px;
+  scale: 1.06;
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--cat-own);
+}
+
+/* Press feedback for the one thing on this page a phone visitor can
+   actually browse: three taps, three cats. Wins over the hover lift above
+   because it is declared after it — same specificity, later rule, and the
+   whole point is that a press reads even mid-hover on a mouse. */
+.landing-chip:active {
+  scale: 0.97;
+}
+
+.landing-chip.on {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 4px var(--cat-own);
+  z-index: 1;
+}
+
+.landing-roster-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: landing-swap var(--dur-panel) var(--ease-out);
+}
+
+@keyframes landing-swap {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.landing-roster-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-base);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  color: var(--cat);
+}
+
+.landing-roster-desc {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+
+/* --- the reel control (rendered by landing/Reel.tsx) -------------------- */
+
+.reel-bar {
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  bottom: clamp(1rem, 2.4cqw, 2.2rem);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2) var(--s-3);
+  border: var(--panel-border);
+  border-radius: 999px;
+  background: var(--surface-glass);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  transition: opacity var(--dur-panel) var(--ease-out);
+}
+
+.reel-ticks {
+  display: flex;
+  gap: var(--s-1);
+}
+
+/* A button, not a decoration: the ticks are how you jump to a beat without
+   waiting for the reel to come back round.
+
+   The button IS the hit target now, not the bar. It used to be the bar —
+   15x3px, padded out with `box-shadow: 0 0 0 6px transparent`, on the
+   theory that the shadow's spread widened the clickable area. It does not:
+   box-shadow is paint, never hit-testing, so the real target was a 15x3px
+   hairline the whole time. The visible mark now lives on ::after, sized
+   exactly as before; the button around it is flexed to a real touch size
+   and stays invisible. */
+.reel-tick {
+  width: 28px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.reel-tick::after {
+  content: '';
+  width: 15px;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--ink) 20%, transparent);
+  transition: background var(--dur-ui) var(--ease-out);
+}
+
+.reel-tick.on::after {
+  background: var(--ink);
+}
+
+.reel-label {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  min-width: 13ch;
+}
+
+/* --- Explore ----------------------------------------------------------- */
+
+.landing-cta {
+  position: fixed;
+  z-index: 6;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-6) var(--s-6) var(--s-6) var(--s-8);
+  border-top-left-radius: clamp(1.5rem, 3cqw, 3rem);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-display);
+  font-size: var(--t-lg);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    gap var(--dur-ui) var(--ease-out),
+    opacity var(--dur-panel) var(--ease-out),
+    translate var(--dur-panel) var(--ease-move),
+    scale var(--dur-press) var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing-cta:hover {
+    gap: var(--s-6);
+  }
+
+  .landing-cta:hover .landing-cta-arrow {
+    transform: translateX(3px);
+  }
+}
+
+/* The one action this whole page exists to get a click on. A phone has no
+   hover, so without this a tap gave zero feedback until the curtain — the
+   exact failure mode shell.css's own Press section is written against. */
+.landing-cta:active {
+  scale: 0.97;
+}
+
+.landing-cta-arrow {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--paper) 20%, transparent);
+  transition: transform var(--dur-ui) var(--ease-out);
+}
+
+/* Inside the hero on a narrow frame: a pill under the wordmark, where the
+   thumb is, rather than a bar welded to the bottom of the screen. */
+.landing-hero-cta .landing-cta {
+  position: static;
+  border-radius: 999px;
+  padding: var(--s-3) var(--s-3) var(--s-3) var(--s-6);
+  font-size: var(--t-base);
+  box-shadow: var(--shadow-glass);
+}
+
+.landing-hero-cta .landing-cta-arrow {
+  width: 34px;
+  height: 34px;
+}
+
+/* --- attribution -------------------------------------------------------
+   OpenStreetMap, Protomaps, the Poly by Google cat and Open-Meteo's CC-BY
+   4.0 are licence conditions, not credits, so this has to stay visible.
+   MapLibre draws it from the source spec in map/style.ts, which is why it
+   is moved here rather than re-typed: one string, one place.
+
+   Lifted clear of the Explore button, which owns the bottom-right corner
+   and was running straight over it. */
+.landing .maplibregl-ctrl-bottom-right {
+  bottom: 6.5rem;
+  right: var(--s-2);
+}
+
+/* --- focus ------------------------------------------------------------- */
+
+.landing :is(a, button):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Direct child of .landing on purpose: that is only ever the flush-corner
+   desktop button. The mobile pill lives at .landing-hero > .landing-hero-cta
+   > .landing-cta and keeps the ordinary outward 3px ring above instead. */
+.landing > .landing-cta:focus-visible {
+  outline-offset: -5px;
+}
+
+/* --- leaving: a curtain, then the app ----------------------------------
+   User direction 2026-08-25: a plain slow fade, not a scene of the HUD
+   sliding and the camera pushing in. The app has its own reveal already
+   (ui/Loading.tsx — the paper curtain lifting once the map has actually
+   painted), so this page's only job on the way out is to cover the screen
+   before the hard navigation, not to stage a second loading moment that
+   would just be replaced by the first one a beat later.
+
+   --paper rather than --ink or black: the app boots into --paper too (its
+   own Loading screen sits on it), so the curtain and the page it opens
+   into are the same colour and the cut is not visible as a cut. */
+
+.landing-curtain {
+  position: fixed;
+  z-index: 8;
+  inset: 0;
+  background: var(--paper);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-plate) var(--ease-out);
+}
+
+.landing.is-leaving .landing-curtain {
+  opacity: 1;
+}
+
+/* --- container queries -------------------------------------------------
+   The frame's own width decides the layout, not the viewport's. */
+
+@container landing (max-width: 1180px) {
+  .reel-bar {
+    left: auto;
+    right: clamp(1rem, 2.4cqw, 2.2rem);
+    bottom: auto;
+    top: 5rem;
+    transform: none;
+  }
+
+  .reel-label {
+    display: none;
+  }
+}
+
+@container landing (max-width: 620px) {
+  .landing-wordmark {
+    /* Same reasoning as the base rule: capped by height too, or a landscape
+       phone (short and wide, same shape problem as a laptop) grows the
+       word straight into the stacked card below it. */
+    font-size: min(17cqw, 15vh);
+  }
+
+  /* The mobile card runs shorter than the desktop one (~260-290px against
+     the guide's own bottom offset, vs. the desktop rule's ~320px), so the
+     same 340px reserve here would eat further into the hero than this
+     card actually needs — and .landing-hero also holds the CTA button in
+     this layout (see .landing-hero-cta), which needs its own room inside
+     whatever is left.
+
+     min(260px, 32vh), not a flat 260px: a flat reserve on a genuinely
+     short viewport — a phone held sideways, ~375px tall — ate a third of
+     the whole screen and pushed the wordmark's top edge off-screen, a
+     worse defect than the overlap it was fixing. Scaling the reserve down
+     with viewport height keeps the word on screen there; the card can
+     still touch it in that one extreme case, which is the lesser of the
+     two problems and the case this page is least likely to be opened in. */
+  .landing-hero {
+    padding-bottom: min(260px, 32vh);
+  }
+
+  /* The word used to be hidden here and the arrow kept, to hold the top
+     bar to one line at 390px. Both halves of that are gone: "Soon" alone
+     names nothing, and a pill this small is no longer a 44px touch target
+     question because it is not a target at all. Measured at 390px the
+     wordmark plus the full pill fits with room, so it stays whole. */
+
+  .landing-guide {
+    left: var(--s-3);
+    right: var(--s-3);
+    bottom: var(--s-3);
+    width: auto;
+    padding: var(--s-4);
+  }
+
+  .landing-lede {
+    font-size: var(--t-lg);
+  }
+
+  .landing-note {
+    font-size: var(--t-xs);
+    margin-bottom: var(--s-4);
+  }
+
+  /* Over the 44px touch floor. 46px was passing on a technicality. */
+  .landing-chip {
+    width: 52px;
+    height: 52px;
+  }
+
+  /* Stacked under the nav, not measured up from the bottom: the guide
+     panel's height depends on its copy, so anything anchored to the bottom
+     collides the moment the text changes.
+
+     Stacked rather than put in opposite corners, which was the first
+     attempt: MapLibre's attribution wraps to two lines at this width and
+     spans the frame, so a corner is not a corner here. It takes the first
+     row and the reel sits under it. */
+  .landing .maplibregl-ctrl-bottom-right {
+    top: 4.4rem;
+    bottom: auto;
+    right: var(--s-3);
+    left: var(--s-3);
+  }
+
+  .reel-bar {
+    top: 8.6rem;
+    bottom: auto;
+    left: var(--s-3);
+    right: auto;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-roster-copy {
+    animation: none;
+  }
+
+  /* The curtain still plays under reduced motion — covering the screen
+     before a navigation is not the kind of motion that preference is
+     asking to lose, only its duration changes: the `wait` in Landing.tsx's
+     explore() drops to 0, so the navigation happens on the same tick and
+     the fade is cut short rather than being absent. */
+  .landing-nav,
+  .landing-guide,
+  .landing-cta,
+  .landing-wordmark,
+  .reel-bar {
+    transition: none;
+  }
+}

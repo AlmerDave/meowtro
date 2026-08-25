@@ -13,12 +13,21 @@ body,
    (wheel, trackpad, touch) still works; only the visible track/thumb are
    gone, and over the map the wheel is MapLibre's. Scoped to the map
    page — the styleguide imports this file too and should keep its
-   scrollbar, it's an actual scrolling document. */
-body:has(.map) {
+   scrollbar, it's an actual scrolling document.
+
+   On `html`, not `body`, and that is the whole reason this rule works.
+   The scrollbar you see at the edge of the window belongs to the VIEWPORT,
+   not to the body box, and per CSS Scrollbars only the ROOT element's
+   scrollbar properties propagate to it. `scrollbar-width` on body is
+   simply ignored there (Firefox showed the bar the entire time), and the
+   ::-webkit-scrollbar fallback from body is a legacy WebKit behaviour not
+   worth relying on. `overflow` and `background` propagate from body,
+   scrollbar styling does not. */
+html:has(.map) {
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* legacy Edge */
 }
-body:has(.map)::-webkit-scrollbar {
+html:has(.map)::-webkit-scrollbar {
   display: none; /* Chromium (Edge, Chrome, Safari) */
 }
 

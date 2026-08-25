@@ -4,7 +4,7 @@ import { CloudLightning, CloudRain, CloudSun, Info, Maximize, Moon, Sun } from '
 import { About } from '@/ui/About'
 import { spring } from '@/motion/springs'
 import { DEFAULT_ZOOM, useMap, WEATHERS, type Weather } from './MapCanvas'
-import { BGC_CENTER, DEFAULT_PITCH, FLAT_PITCH, TOGGLE_THEMES } from './style'
+import { BGC_CENTER, TOGGLE_THEMES } from './style'
 
 /* Four independent controls: theme, weather, orientation, and a way back
    out to the whole map. Styled to the token system instead of MapLibre's
@@ -146,11 +146,9 @@ export function MapControls({ onSelect }: Props) {
         aria-label={isFlat ? 'Switch to 3D view' : 'Switch to flat view'}
         whileTap={{ scale: 0.92 }}
         transition={spring}
-        onClick={() => {
-          const next = !isFlat
-          setIsFlat(next)
-          map.easeTo({ pitch: next ? FLAT_PITCH : DEFAULT_PITCH, duration: 500 })
-        }}
+        // State only. MapCanvas owns the camera that goes with it, so the
+        // landing's reel gets the same pitch change without this button.
+        onClick={() => setIsFlat(!isFlat)}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span

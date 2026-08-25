@@ -13,14 +13,19 @@ turning 3D figure in a pencil-and-ink toon shader.
 **Three themes, one token file. Two of them ship on the toggle.** `light`
 and `dark` are rev 4's glass HUD — translucent blurred panels, rounded,
 real shadow, native display stack, no grain — and light is the default
-(set as `data-theme="light"` on `<html>` in `index.html`). `paper` is rev
+(set as `data-theme="light"` on `<html>` in every entry page). `paper` is rev
 1-3's field-guide identity: cream stock, Fraunces, ink linework, square
 corners, paper grain.
 
 **`paper` is deliberately kept but deliberately off the toggle.** Every
-token, `Grain.tsx`, the Fraunces `<link>` and the styleguide's paper column
-are all still live and still built; the *only* thing excluding it is the
-`TOGGLE_THEMES` array in `src/map/style.ts`. Do not delete paper's tokens,
+token, `Grain.tsx` and the styleguide's paper column are all still live and
+still built; the *only* thing excluding it is the `TOGGLE_THEMES` array in
+`src/map/style.ts`. One exception as of 2026-08-25: the Fraunces `<link>`
+now loads on `styleguide.html` only, since that is the one page where paper
+is reachable. Hand-setting `data-theme="paper"` on the landing or the app
+falls back to Georgia until the family is added back to the font link in
+`head.html`, which is a one-line change and is noted in the link's own
+comment. Do not delete paper's tokens,
 grain or font on the grounds that the app never selects them — that
 reachability is the point, and the styleguide exercises them. Bringing it
 back is one word in `TOGGLE_THEMES`.
@@ -47,10 +52,11 @@ Run from `app/front-end/`:
 
 ```bash
 npm run dev       # vite dev server, defaults to :5173
-                   #   /               the app
+                   #   /                 the landing (index.html)
+                   #   /app.html         the app
                    #   /styleguide.html  design-system proof page
 npx tsc -b         # typecheck only
-npm run build      # tsc -b && vite build (two entry points: app + styleguide)
+npm run build      # tsc -b && vite build (three entries: landing + app + styleguide)
 npm run preview    # serve the production build
 ```
 
@@ -96,8 +102,12 @@ style a component — add a token and set it per theme.
 
 Because a bare `:root` *is* the paper theme, the default has to be stated
 explicitly or the page paints cream for a frame before React mounts and
-corrects it. It's stated in `index.html`/`styleguide.html` (`<html
-data-theme="light">`), not in React, for exactly that reason.
+corrects it. It's stated on the `<html>` tag of every entry page
+(`data-theme="light"`), not in React, for exactly that reason. On the
+landing and the app that attribute is only the fallback for the instant
+before `head.html`'s inline script runs and picks light or dark from the
+hour in Taguig; the styleguide keeps its hand-set value and does not use
+that script at all.
 
 CSS-driven surfaces repaint for free (they read the custom properties live),
 but **the map is a canvas, not DOM, so it needs its own re-theme path**:
@@ -178,11 +188,29 @@ so a plain `.map` rule loses the specificity tie and `inset: 0` silently
 stops applying — the container gets zero height and the map spins forever
 with no error.
 
-### Two build entry points
+### Three build entry points, and one shared head
 
-`vite.config.ts` builds `index.html` (the app) and `styleguide.html`
-(`Styleguide.tsx`, imports `styleguide.css`) as separate pages. The
-styleguide is the reviewable proof that a new token/component change
+`vite.config.ts` builds `index.html` (the landing, `landing/Landing.tsx`),
+`app.html` (the app, `App.tsx`) and `styleguide.html` (`Styleguide.tsx`,
+imports `styleguide.css`) as separate pages.
+
+**`index.html` is the landing, not the app.** It was the other way round
+until 2026-08-25, which left the landing reachable only by typing
+`/landing.html` while its own Explore button pointed at the app on `/`.
+Every `?cat=` deep link now hangs off `/app.html?cat=milo`; `App.tsx`
+builds those from `window.location.pathname`, so nothing in it changed.
+
+`head.html` is the shared `<head>` for the landing and the app, injected at
+the `<!--head-->` placeholder by a four-line `transformIndexHtml` plugin at
+the bottom of `vite.config.ts`. It carries the day/night script (which has
+to be one script on both pages), the icons and the webfont link. Only
+`<title>` and the description/OG block stay per page. It is read per request, so editing it
+shows on the next page reload, but Vite does not watch it and will not
+push an HMR update. `styleguide.html` has no placeholder and keeps
+its own head: it pins a theme by hand and switches all three, so the clock
+must not run there.
+
+The styleguide is the reviewable proof that a new token/component change
 actually reads as Meowtro before it ships into the app. Its palette table
 samples all three themes live off `:root` (flip the attribute, read with
 `getComputedStyle`, restore) rather than listing hexes, so it cannot drift

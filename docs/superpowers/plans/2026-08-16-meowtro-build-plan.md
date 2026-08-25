@@ -13,7 +13,21 @@
 
 ## RESUME HERE
 
-**Last completed:** Weather, 2026-08-24 (below). Before that, Phase 9.
+**Last completed:** the front door and its review, 2026-08-25. Phase 7's
+landing page shipped and was then read back end to end; what that turned up
+is fixed and written up in the feature roadmap
+(`2026-08-24-feature-roadmap.md`, phase 7), which is where landing work is
+tracked. `npx tsc -b` and `npm run build` pass. **Not yet visually
+reviewed.**
+
+The one thing to know before touching anything: **`index.html` is the
+landing now and the app is `app.html`.** The landing used to be
+`landing.html`, which nothing linked to, and its Explore button pointed at
+the app on `/`. Deep links are `/app.html?cat=milo`. `head.html` is a
+shared `<head>` for those two pages, injected by a plugin at the bottom of
+`vite.config.ts`; the styleguide deliberately does not use it.
+
+Before that: Weather, 2026-08-24 (below). Before that, Phase 9.
 
 ---
 

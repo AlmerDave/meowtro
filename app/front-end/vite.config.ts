@@ -1,22 +1,35 @@
+import fs from 'node:fs'
 import path from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), sharedHead()],
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
   },
-  // ngrok preview tunnel — Vite blocks unrecognized Host headers by default.
+  // Preview tunnels. Vite blocks unrecognized Host headers by default, so a
+  // forwarded port answers every request with "Blocked request" until its
+  // domain is listed here. devtunnels.ms is VS Code's own port forwarding,
+  // which is how this gets looked at on a phone.
   server: {
-    allowedHosts: ['.ngrok-free.app'],
+    allowedHosts: ['.ngrok-free.app', '.devtunnels.ms'],
   },
   build: {
     rollupOptions: {
-      // Two pages: the app, and the styleguide that proves its design system.
+      // Three pages: the front door, the app, and the styleguide that
+      // proves its design system. Pages, not routes: App.tsx deliberately
+      // has no router, and two documents that link to each other need none.
+      //
+      // index.html is the LANDING, not the app. It was the other way round
+      // until the landing turned out to be reachable only by typing
+      // /landing.html, while its own Explore button pointed at the app on
+      // `/`. A front door behind the house. Renaming the two files is the
+      // whole fix and it needs no host config, which a rewrite rule would.
       input: {
-        app: path.resolve(__dirname, 'index.html'),
+        app: path.resolve(__dirname, 'app.html'),
+        landing: path.resolve(__dirname, 'index.html'),
         styleguide: path.resolve(__dirname, 'styleguide.html'),
       },
       output: {
@@ -60,3 +73,27 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
 })
+
+/* One <head> for index.html and app.html, read from head.html.
+
+   Both pages need the same day/night script, and it has to stay the same
+   script: two copies is two chances for the front door and the map to
+   disagree about what time it is in Taguig. Four lines of plugin against a
+   whole head block duplicated per page.
+
+   Read on every request rather than once at startup, so editing head.html
+   shows up on the next page reload. Vite does not watch the file, so it is
+   a reload and not an HMR update: nothing tells the browser to go and ask
+   again by itself.
+
+   styleguide.html has no placeholder and is untouched: it pins its theme by
+   hand and switches all three, so the clock must not run there. */
+function sharedHead(): import('vite').Plugin {
+  return {
+    name: 'meowtro-shared-head',
+    transformIndexHtml(html) {
+      const head = fs.readFileSync(path.resolve(__dirname, 'head.html'), 'utf8')
+      return html.replace('<!--head-->', head)
+    },
+  }
+}

@@ -1,0 +1,38 @@
+<!doctype html>
+<!-- The app. `/` is the front door (index.html); this is what its Explore
+     button navigates to, and what every ?cat= deep link now hangs off:
+     /app.html?cat=milo. App.tsx builds those from window.location.pathname,
+     so nothing in it had to change when this file was renamed.
+
+     data-theme="light" here is only the fallback for the instant before the
+     shared head script runs. See head.html. -->
+<html lang="en" data-theme="light">
+  <head>
+    <!--head-->
+    <title>Meowtro · Community cats of Bonifacio Global City</title>
+    <meta
+      name="description"
+      content="The map: named community cats of Bonifacio Global City, each shown by the territory it roams."
+    />
+  </head>
+  <body>
+    <div id="root"></div>
+    <noscript>
+      <div
+        style="
+          font: 500 16px/1.5 system-ui, sans-serif;
+          max-width: 34rem;
+          margin: 20vh auto;
+          padding: 0 1.5rem;
+          text-align: center;
+        "
+      >
+        <h1 style="font-size: 1.5rem; margin: 0 0 0.75rem">Meowtro</h1>
+        <p style="margin: 0">
+          The map is drawn in the browser, so this page needs JavaScript on.
+        </p>
+      </div>
+    </noscript>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

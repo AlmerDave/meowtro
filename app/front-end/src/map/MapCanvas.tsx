@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { Map as MapLibreMap, addProtocol, prewarm, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Protocol } from 'pmtiles'
@@ -11,6 +12,7 @@ import {
   buildStyle,
   BGC_BOUNDS,
   BGC_CENTER,
+  DEFAULT_PITCH,
   FLAT_PITCH,
   applyMapTheme,
   animateSky,
@@ -128,6 +130,31 @@ type Props = {
       the viewport is still blank. `idle` is the first moment there is a map
       on screen worth revealing. */
   onReady?: () => void
+  /** The app's own furniture: the control capsule, the sighting flow, and
+      the street/park/landmark labels. The landing page (landing/Landing.tsx)
+      mounts the same map with the same theme, weather and pitch machinery
+      but none of this, because on the front door the reel drives the view
+      and there is no person to orient with a street name yet — the point
+      of that page is to earn a click through to the one that does. Labels
+      travel with this flag rather than getting their own: they cost a real
+      per-frame DOM reprojection (MapLabels.tsx) that only pays for itself
+      while the map can be panned, and `interactive` below is what the
+      landing turns off at the same time. Defaults to true, so every
+      existing caller is unchanged. */
+  chrome?: boolean
+  /** Whether the map responds to mouse, touch or keyboard input at all —
+      MapLibre's own top-level `interactive` option, so this is one flag
+      rather than disabling drag, scroll-zoom, box-zoom and touch
+      individually. The app wants all of it; the landing wants none: a map
+      a visitor can drag away from BGC invites them to poke at the front
+      door instead of clicking through it, and every handler MapLibre
+      skips binding is one less thing computing on every frame. Defaults
+      to true. */
+  interactive?: boolean
+  /** Rendered inside the map context, so a child can drive isFlat, theme
+      and weather through useMap(). The landing's reel is the only caller;
+      the app passes nothing. */
+  children?: ReactNode
 }
 
 /* Hand-written rather than pulled from mapcn. See the decision log: mapcn's
@@ -145,6 +172,9 @@ export function MapCanvas({
   onRecorded,
   onOpenRecord,
   report,
+  chrome = true,
+  interactive = true,
+  children,
 }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const [map, setMap] = useState<MapLibreMap | null>(null)
@@ -194,6 +224,7 @@ export function MapCanvas({
       minZoom: DEFAULT_ZOOM,
       maxZoom: 17,
       maxBounds: BGC_BOUNDS,
+      interactive,
       // EXPERIMENTAL — spike for the "tilted + extruded" mockup.
       // Starts flat: 3D is an opt-in reached through MapControls' button,
       // not the landing state. Every gesture that could pitch/rotate the
@@ -247,6 +278,22 @@ export function MapCanvas({
     if (!map || !isLoaded) return
     applyMapTheme(map, theme)
   }, [map, isLoaded, theme])
+
+  /* The camera follows isFlat.
+
+     This used to live in MapControls' onClick, next to setIsFlat, which
+     meant the pitch was a side effect of pressing that particular button
+     rather than a consequence of the state. The landing page sets isFlat
+     from its reel and mounts no controls, so it flipped the flag and the
+     city stayed flat. One effect here, and every caller that sets isFlat
+     gets the camera that goes with it.
+
+     No-op on mount: the map is constructed at FLAT_PITCH and isFlat starts
+     true, so the first run eases to where it already is. */
+  useEffect(() => {
+    if (!map) return
+    map.easeTo({ pitch: isFlat ? FLAT_PITCH : DEFAULT_PITCH, duration: 500 })
+  }, [map, isFlat])
 
   // Sky is invisible until pitched (buildSky's comment in style.ts), so the
   // breathing animation only runs while isFlat is false — no point paying
@@ -315,25 +362,28 @@ export function MapCanvas({
                 shell.css. The lightning half of this component sits a rung
                 higher and is unaffected by where it mounts. */}
             <Storm />
-            <MapLabels />
+            {chrome && <MapLabels />}
             {/* Above the map and labels, below every UI panel: see the
                 z-index ladder note on .loading in shell.css, kept in step
                 with this. Rendered unconditionally, like Storm: it decides
                 for itself whether there is anything to draw. */}
             <Rain />
-            <MapControls onSelect={onSelect} />
+            {chrome && <MapControls onSelect={onSelect} />}
             {/* The visitor's one contribution. The admin's counterpart,
                 ui/RecordCat.tsx, is deliberately NOT mounted: adding a cat
                 is a reviewed action and there is nobody to review yet. It
                 is written and working, and goes back on screen behind the
                 role check when accounts land. */}
-            <ReportSighting
-              cats={cats}
-              territories={territories}
-              onReported={onRecorded}
-              onOpenRecord={onOpenRecord}
-              report={report}
-            />
+            {chrome && (
+              <ReportSighting
+                cats={cats}
+                territories={territories}
+                onReported={onRecorded}
+                onOpenRecord={onOpenRecord}
+                report={report}
+              />
+            )}
+            {children}
           </>
         )}
       </MapContext.Provider>

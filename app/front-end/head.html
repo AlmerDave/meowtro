@@ -1,0 +1,84 @@
+<!-- Shared head for the two app pages. The tiny plugin at the bottom of
+     vite.config.ts swaps it in for the placeholder comment near the top of
+     each page's head (an HTML comment whose entire body is the word head).
+
+     Do not write that placeholder out inside a comment, here or in either
+     page. HTML comments do not nest: the parser ends this comment at the
+     first close marker it meets, so a literal copy of the placeholder
+     inside these lines terminates the comment early and dumps the rest of
+     this paragraph onto the page as visible text. That is exactly what
+     happened on the first version of this file.
+
+     It exists for one line in it: the theme script. That script has to be
+     identical on both pages or a visitor gets one theme on the front door
+     and another on the map, and a copy per file is a copy that drifts.
+
+     styleguide.html deliberately does NOT use this. It pins data-theme by
+     hand and carries its own three-theme switcher, so the clock has no
+     business setting anything there.
+
+     Per-page and therefore not here: <title> and the description/OG block,
+     which describe the page rather than the site. -->
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<!-- Day/night, decided by the clock in Bonifacio Global City, not the
+     visitor's own device. First and synchronous, before any stylesheet
+     link has a chance to resolve, so the correct theme is what actually
+     paints first rather than a flash of light corrected a frame later.
+     That is also why data-theme is written on the <html> tag itself in
+     each page: a bare :root IS the paper theme (tokens.css), so without
+     it the page would paint cream for one frame.
+
+     Manila's UTC offset is fixed at +8 year-round (no daylight saving),
+     so reading the hour there is exact, not an estimate. 6am-6pm is a
+     constant day window rather than a real sunrise/sunset calculation:
+     actual sunrise in Manila drifts by about half an hour across the
+     year, which is not worth the added complexity here.
+
+     Only ever picks from TOGGLE_THEMES (map/style.ts): light or dark.
+     Never "paper": that stays a hand-set choice. Set data-theme="paper"
+     on the <html> tag of a page to bring rev 1-3's field-guide identity
+     back; it is still fully built, just off the toggle. If MapControls'
+     cycle button is pressed afterward, that choice overrides this one for
+     the rest of the visit, the same as any other starting theme.
+
+     landing/Reel.tsx reads the value this leaves behind rather than
+     assuming light, so the front door's reel starts on the beat that
+     matches the sky instead of flipping the page to day at midnight. -->
+<script>
+  var bgcHour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      hourCycle: 'h23',
+      timeZone: 'Asia/Manila',
+    }).format(new Date())
+  )
+  document.documentElement.dataset.theme = bgcHour >= 6 && bgcHour < 18 ? 'light' : 'dark'
+</script>
+
+<!-- SVG rather than .ico: one file that repaints itself for light and
+     dark browser chrome, which a raster icon cannot do. See the note
+     inside the file for why the ear is cut flat. -->
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<!-- iOS home-screen bookmarks cannot use the SVG above: Safari wants a
+     raster at a fixed size, composited on an opaque tile of its own. This
+     one is the same path over --paper, generated once at 180x180. -->
+<link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- JetBrains Mono only. Fraunces is the paper theme's display face, and
+     these two pages can only ever be light or dark (the script above picks
+     from TOGGLE_THEMES), where --font-display resolves to the native stack.
+     Loading it here downloaded a four-axis variable font that nothing on
+     either page could use. styleguide.html has its own head and still loads
+     it, because paper is reachable there. Hand-setting data-theme="paper"
+     on these pages now falls back to Georgia until Fraunces is added back
+     to this one link. -->
+<link
+  href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+  rel="stylesheet"
+/>
+<!-- The roster photos. Third-party host, three requests, above the fold on
+     the front door: the handshake is worth starting early. -->
+<link rel="preconnect" href="https://placecats.com" />
