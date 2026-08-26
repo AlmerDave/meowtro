@@ -1,6 +1,6 @@
 /* The five tap-choice questions behind Step 2 of ui/RecordCat.tsx, and the
    pure function that turns an admin's answers into one `description`
-   string — the same style the seeded cats already use ("Grey tabby ·
+   string: the same style the seeded cats already use ("Grey tabby ·
    white socks · male, est. 2 yrs"), without ever asking anyone to
    hand-compose a sentence.
 
@@ -52,7 +52,7 @@ export const EMPTY_ANSWERS: CoatAnswers = { furColour: '', pattern: '', marks: [
 const known = (value: string) => value !== '' && value !== UNKNOWN
 
 /** Composes the five answers into one sentence, skipping any clause with
-    nothing answerable in it — an admin who only knows the colour still
+    nothing answerable in it: an admin who only knows the colour still
     gets a real (short) description rather than a required field with
     nothing to put in it. */
 export function composeDescription(answers: CoatAnswers): string {

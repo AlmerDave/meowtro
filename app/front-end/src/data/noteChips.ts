@@ -1,5 +1,5 @@
 /* Field-note quick phrases for Step 3 of ui/RecordCat.tsx: tap one and it
-   inserts into the note text box (still freely editable after — this is a
+   inserts into the note text box (still freely editable after, this is a
    head start, not a replacement for typing; see the design spec's own
    pushback on why the note stays free text).
 
@@ -29,7 +29,7 @@ const MAX_CHIPS = 20
     phrase, returns the list it should become. Trims, drops anything empty,
     rejects a case-insensitive duplicate of either list (a built-in phrase
     typed out by hand should tap the existing chip, not grow a second one
-    beside it), and caps the length by dropping the oldest entries — newest
+    beside it), and caps the length by dropping the oldest entries: newest
     phrases are the ones an admin is most likely to reach for again. */
 export function mergeChip(list: string[], phrase: string): string[] {
   const trimmed = phrase.trim()
@@ -58,7 +58,7 @@ export function readChips(): string[] {
 }
 
 /** Saves a new phrase and returns the resulting list, or null if the write
-    failed (quota, private mode) — same shape data/localCats.ts's
+    failed (quota, private mode), same shape data/localCats.ts's
     writeStored gives its caller, so the panel can say saving failed
     instead of pretending it worked. */
 export function addChip(phrase: string): string[] | null {
