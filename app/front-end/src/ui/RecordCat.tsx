@@ -346,12 +346,17 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             onKeyDown={(e) => {
               // Steps 0-2 mount no `type="submit"` button, but the implicit-
               // submission rule still fires on Enter through a single
-              // text/file input (the name field, an inline "+ Custom"/
-              // "+ Add your own" box). That would submit the record before
-              // the later steps have even been visited, so Enter is only
-              // allowed through on the step that actually has a submit
-              // button.
-              if (e.key === 'Enter' && !isLastStep) e.preventDefault()
+              // text input (the name field, an inline "+ Custom"/"+ Add
+              // your own" box). That would submit the record before the
+              // later steps have even been visited, so Enter is blocked
+              // on an <input> specifically, not on every element: a plain
+              // `!isLastStep` guard would also eat Enter's default action
+              // on every button (Next included), the note textarea's
+              // newline, and the file input's picker, none of which are
+              // implicit-submission risks in the first place.
+              if (e.key === 'Enter' && !isLastStep && (e.target as HTMLElement).tagName === 'INPUT') {
+                e.preventDefault()
+              }
             }}
             initial={{ opacity: 0, y: 14, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
