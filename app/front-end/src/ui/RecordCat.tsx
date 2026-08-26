@@ -333,7 +333,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             aria-label="Add a new cat"
           >
             <div className="record-head">
-              <h2>New cat — {STEPS[step]}</h2>
+              <h2>New cat · {STEPS[step]}</h2>
               <button type="button" className="record-close" aria-label="Cancel" onClick={close}>
                 <X size={15} />
               </button>
@@ -504,7 +504,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                   </fieldset>
 
                   <p className="record-preview">
-                    Description: <strong>{form.description || '—'}</strong>
+                    Description: <strong>{form.description || '·'}</strong>
                   </p>
                 </>
               )}
@@ -639,7 +639,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
 
                   <div className="record-summary">
                     <p>
-                      <strong>{form.name || 'Unnamed'}</strong> — {form.description || 'no description yet'}
+                      <strong>{form.name || 'Unnamed'}</strong> · {form.description || 'no description yet'}
                     </p>
                     <p>
                       {SHAPES.find((s) => s.id === form.shape)?.label} territory,{' '}
