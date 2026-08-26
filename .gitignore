@@ -3,6 +3,7 @@ dist
 # Local agent state, and the git worktrees live under here too — a worktree
 # has its own .git file and must never be committed into its own parent.
 .claude
+.superpowers
 .vite
 *.tsbuildinfo
 *.local
