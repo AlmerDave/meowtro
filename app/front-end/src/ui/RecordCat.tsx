@@ -5,7 +5,19 @@ import { MapPin, Plus, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { addCat, clearRecorded, countRecorded } from '@/data/catsRepo'
 import { CAT_COLOURS, type Colour } from '@/data/cats.seed'
+import {
+  AGES,
+  composeDescription,
+  EMPTY_ANSWERS,
+  FUR_COLOURS,
+  MARKS,
+  PATTERNS,
+  SEXES,
+  UNKNOWN,
+  type CoatAnswers,
+} from '@/data/describeCat'
 import { SHAPES, shapeRing, type Shape } from '@/data/localCats'
+import { addChip, BUILTIN_NOTE_CHIPS, readChips } from '@/data/noteChips'
 import { compressImage } from './imageToDataUrl'
 import { spring, springSoft } from '@/motion/springs'
 
@@ -86,12 +98,47 @@ const EMPTY_FORM = {
 const token = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
+function SingleChoice({
+  label,
+  options,
+  value,
+  onChange,
+}: {
+  label: string
+  options: readonly string[]
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <fieldset className="record-field record-colours">
+      <legend className="record-label">{label}</legend>
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          className="record-pill"
+          data-on={String(value === option)}
+          onClick={() => onChange(option)}
+        >
+          {option}
+        </button>
+      ))}
+    </fieldset>
+  )
+}
+
 export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
   const { map, isLoaded, placing, setPlacing } = useMap()
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState(0)
   const [form, setForm] = useState(EMPTY_FORM)
   const [extraPhotos, setExtraPhotos] = useState<ExtraPhoto[]>([])
+  const [answers, setAnswers] = useState<CoatAnswers>(EMPTY_ANSWERS)
+  const [customMark, setCustomMark] = useState('')
+  const [showCustomMark, setShowCustomMark] = useState(false)
+  const [myChips, setMyChips] = useState<string[]>([])
+  const [customChip, setCustomChip] = useState('')
+  const [showCustomChip, setShowCustomChip] = useState(false)
   const [center, setCenter] = useState<[number, number] | null>(null)
   const [radiusM, setRadiusM] = useState(90)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +149,11 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     setStep(0)
     setForm(EMPTY_FORM)
     setExtraPhotos([])
+    setAnswers(EMPTY_ANSWERS)
+    setCustomMark('')
+    setShowCustomMark(false)
+    setCustomChip('')
+    setShowCustomChip(false)
     setCenter(null)
     setRadiusM(90)
     setError(null)
@@ -112,6 +164,10 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     setOpen(false)
     reset()
   }
+
+  useEffect(() => {
+    setForm((f) => ({ ...f, description: composeDescription(answers) }))
+  }, [answers])
 
   useEffect(() => {
     if (!open) return
@@ -242,7 +298,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     close()
   }
 
-  const canAdvance = step === 0 ? !!form.photo : true
+  const canAdvance = step === 0 ? !!form.photo : step === 1 ? !!form.name.trim() : true
   const isLastStep = step === STEPS.length - 1
 
   return (
@@ -255,6 +311,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
         onClick={() => {
           if (open) return close()
           setRecorded(countRecorded())
+          setMyChips(readChips())
           setOpen(true)
         }}
         whileTap={{ scale: 0.94 }}
@@ -336,8 +393,218 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                 </>
               )}
 
-              {step === 1 && <p className="record-note">Step 2 lands in the next task.</p>}
-              {step === 2 && <p className="record-note">Step 3 lands in the next task.</p>}
+              {step === 1 && (
+                <>
+                  <label className="record-field">
+                    <span className="record-label">Name</span>
+                    <input
+                      className="record-input"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      placeholder="Mingming"
+                      maxLength={40}
+                      required
+                      autoFocus
+                    />
+                  </label>
+
+                  <SingleChoice
+                    label="Fur colour"
+                    options={FUR_COLOURS}
+                    value={answers.furColour}
+                    onChange={(furColour) => setAnswers((a) => ({ ...a, furColour }))}
+                  />
+                  <SingleChoice
+                    label="Pattern"
+                    options={PATTERNS}
+                    value={answers.pattern}
+                    onChange={(pattern) => setAnswers((a) => ({ ...a, pattern }))}
+                  />
+
+                  <fieldset className="record-field record-colours">
+                    <legend className="record-label">Distinguishing marks</legend>
+                    {MARKS.map((mark) => (
+                      <button
+                        key={mark}
+                        type="button"
+                        className="record-pill"
+                        data-on={String(answers.marks.includes(mark))}
+                        onClick={() =>
+                          setAnswers((a) => ({
+                            ...a,
+                            marks: a.marks.includes(mark) ? a.marks.filter((m) => m !== mark) : [...a.marks, mark],
+                          }))
+                        }
+                      >
+                        {mark}
+                      </button>
+                    ))}
+                    {answers.marks
+                      .filter((mark) => !(MARKS as readonly string[]).includes(mark))
+                      .map((mark) => (
+                        <button
+                          key={mark}
+                          type="button"
+                          className="record-pill"
+                          data-on="true"
+                          onClick={() => setAnswers((a) => ({ ...a, marks: a.marks.filter((m) => m !== mark) }))}
+                        >
+                          {mark}
+                        </button>
+                      ))}
+                    <button type="button" className="record-pill record-pill-add" onClick={() => setShowCustomMark(true)}>
+                      + Custom
+                    </button>
+                  </fieldset>
+                  {showCustomMark && (
+                    <div className="record-inline-add">
+                      <input
+                        className="record-input"
+                        value={customMark}
+                        onChange={(e) => setCustomMark(e.target.value)}
+                        placeholder='e.g. "kinked tail"'
+                        maxLength={30}
+                      />
+                      <button
+                        type="button"
+                        className="record-save"
+                        onClick={() => {
+                          const value = customMark.trim()
+                          if (value) setAnswers((a) => ({ ...a, marks: [...a.marks, value] }))
+                          setCustomMark('')
+                          setShowCustomMark(false)
+                        }}
+                      >
+                        Add
+                      </button>
+                    </div>
+                  )}
+
+                  <SingleChoice
+                    label="Sex"
+                    options={SEXES}
+                    value={answers.sex}
+                    onChange={(sex) => setAnswers((a) => ({ ...a, sex }))}
+                  />
+
+                  <fieldset className="record-field record-colours">
+                    <legend className="record-label">Age</legend>
+                    {AGES.map(({ id, hint }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="record-pill"
+                        data-on={String(answers.age === id)}
+                        onClick={() => setAnswers((a) => ({ ...a, age: id }))}
+                      >
+                        {id}
+                        {hint && <small>{hint}</small>}
+                      </button>
+                    ))}
+                  </fieldset>
+
+                  <p className="record-preview">
+                    Description: <strong>{form.description || '—'}</strong>
+                  </p>
+                </>
+              )}
+              {step === 2 && (
+                <>
+                  <label className="record-field">
+                    <span className="record-label">Field note</span>
+                    <textarea
+                      className="record-input"
+                      value={form.note}
+                      onChange={(e) => setForm({ ...form, note: e.target.value })}
+                      placeholder="One thing you noticed that is not a measurement."
+                      maxLength={220}
+                      rows={2}
+                    />
+                  </label>
+
+                  <div className="record-field record-colours">
+                    {BUILTIN_NOTE_CHIPS.map((phrase) => (
+                      <button
+                        key={phrase}
+                        type="button"
+                        className="record-pill"
+                        onClick={() => setForm((f) => ({ ...f, note: f.note ? `${f.note} ${phrase}.` : `${phrase}.` }))}
+                      >
+                        {phrase}
+                      </button>
+                    ))}
+                    {myChips.map((phrase) => (
+                      <button
+                        key={phrase}
+                        type="button"
+                        className="record-pill record-pill-mine"
+                        onClick={() => setForm((f) => ({ ...f, note: f.note ? `${f.note} ${phrase}.` : `${phrase}.` }))}
+                      >
+                        {phrase}
+                      </button>
+                    ))}
+                    <button type="button" className="record-pill record-pill-add" onClick={() => setShowCustomChip(true)}>
+                      + Add your own
+                    </button>
+                  </div>
+                  {showCustomChip && (
+                    <div className="record-inline-add">
+                      <input
+                        className="record-input"
+                        value={customChip}
+                        onChange={(e) => setCustomChip(e.target.value)}
+                        placeholder="A phrase you use often…"
+                        maxLength={60}
+                      />
+                      <button
+                        type="button"
+                        className="record-save"
+                        onClick={() => {
+                          const saved = addChip(customChip)
+                          if (saved) setMyChips(saved)
+                          setCustomChip('')
+                          setShowCustomChip(false)
+                        }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                  )}
+
+                  <fieldset className="record-field record-colours">
+                    <legend className="record-label">Territory colour</legend>
+                    {COLOURS.map(({ token: name, label }) => (
+                      <button
+                        key={name}
+                        type="button"
+                        className="record-swatch"
+                        style={{ '--swatch': `var(${name})` } as React.CSSProperties}
+                        data-on={String(form.colour === name)}
+                        aria-pressed={form.colour === name}
+                        onClick={() => setForm({ ...form, colour: name })}
+                      >
+                        <span aria-hidden />
+                        {label}
+                      </button>
+                    ))}
+                  </fieldset>
+
+                  <fieldset className="record-field record-colours">
+                    <legend className="record-label">Territory shape</legend>
+                    {SHAPES.map(({ id, label }) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className="record-pill"
+                        data-on={String(form.shape === id)}
+                        onClick={() => setForm({ ...form, shape: id })}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </fieldset>
+                </>
+              )}
               {step === 3 && (
                 <>
                   <div className="record-field">
