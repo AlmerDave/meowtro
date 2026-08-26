@@ -78,9 +78,9 @@ assert.ok(
 )
 
 // --- buildAdminSighting, this redesign -----------------------------------
-// The pure half of addAdminSighting, checked directly for the same reason
-// applyVote is above: addAdminSighting itself degrades to a no-op under
-// node (no window.localStorage to write to).
+// The pure half of addAdminSighting, checked directly because
+// addAdminSighting itself degrades to a no-op under node (no
+// window.localStorage to write to).
 
 const built = buildAdminSighting('milo', [121.05, 14.55], 1000, 'data:image/jpeg;base64,xyz', 2)
 assert.equal(built.catId, 'milo')

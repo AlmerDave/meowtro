@@ -308,16 +308,16 @@ export function addSighting(catId: string, point: [number, number], at: number):
 
 /** An admin's own sighting, created alongside a new cat record rather than
     submitted for review. The pure half: builds the record without
-    touching storage, so it is checkable under node the same way applyVote
-    is (see that function's own note).
+    touching storage or any other browser API, which is what makes it
+    checkable directly under node (sightings.check.ts) rather than only
+    through the localStorage-dependent addAdminSighting below.
 
     `status: 'surveyed'` directly, unlike addSighting's `pending` above:
     an admin attaching a photo while creating the cat record is already at
     the same trust level as the cat record itself, which never goes
     through review at all (ui/RecordCat.tsx's own note on why only
     sightings need it). `order` lets several bootstrap photos stack in the
-    sequence they were uploaded, using the field reorderSighting already
-    built for manual stack sequencing. */
+    sequence they were uploaded, ascending, lower shows first. */
 export function buildAdminSighting(
   catId: string,
   point: [number, number],
