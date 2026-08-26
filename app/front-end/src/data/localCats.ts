@@ -36,7 +36,7 @@ export type CatDraft = {
   shape: Shape
   /** Extra photos for the plate's photo pile, already compressed to a
       data URI each (see ui/imageToDataUrl.ts). Never stored on the cat
-      itself — catsRepo.addCat turns each one into its own surveyed
+      itself: catsRepo.addCat turns each one into its own surveyed
       Sighting, so this array only ever exists for the length of one
       submit. */
   extraPhotos: string[]
@@ -80,11 +80,24 @@ export function isStored(value: unknown): value is StoredCat {
   )
 }
 
+/** A cat recorded by the version of this app before the shape picker
+    existed has no `shape` in its stored JSON: same key, older schema. It is
+    not malformed, it is just missing a field that used to have no other
+    value. `round` (DEFORM.round = () => 1) is provably the plain circle
+    that version always drew, so a legacy record is coerced to `shape:
+    'round'` here rather than dropped by isStored below, the same way a
+    version upgrade should treat "silent" as "unchanged", not "gone". */
+function withLegacyShape(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value
+  const record = value as Record<string, unknown>
+  return 'shape' in record ? record : { ...record, shape: 'round' }
+}
+
 export function readStored(): StoredCat[] {
   try {
     const raw = window.localStorage.getItem(KEY)
     const parsed: unknown = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter(isStored) : []
+    return Array.isArray(parsed) ? parsed.map(withLegacyShape).filter(isStored) : []
   } catch {
     /* Private-mode Safari throws on getItem, and a half-written value
        throws on parse. Both mean the same thing to a caller: there are no
@@ -120,8 +133,8 @@ const M_PER_DEG = (Math.PI * EARTH_RADIUS_M) / 180
 const RING_STEPS = 48
 
 /** The four territories an admin can pick, alongside the colour. `round`
-    is exactly what this app has always drawn — a plain circle, zero
-    deformation — so a shape picker never quietly changes an existing
+    is exactly what this app has always drawn: a plain circle, zero
+    deformation, so a shape picker never quietly changes an existing
     look. The other three are still `Polygon` rings built off the same
     loop, only warped: nothing here is a "real" circle or rectangle
     primitive any more than the seeded territories are, which are also
@@ -140,15 +153,14 @@ export const SHAPES: { id: Shape; label: string }[] = [
    always draw the same outline (localCats.check.ts asserts this), and
    "the same shape looks the same twice" is what makes a picker legible.
 
-   The formulas are deliberately plain trigonometry, same reasoning
-   circleRing always gave for not reaching for turf.js: a small, fixed,
+   The formulas are deliberately plain trigonometry: a small, fixed,
    checkable function beats a library for four shapes. */
 const NOTCH_ANGLE = Math.PI / 4
 const NOTCH_WIDTH = 0.5
 const DEFORM: Record<Shape, (angle: number) => number> = {
   round: () => 1,
   // Two lobes opposite each other: stretched along one axis, pinched
-  // across the other — reads as "runs along a street" rather than a
+  // across the other, reads as "runs along a street" rather than a
   // lopsided blob.
   elongated: (angle) => 1 + 0.35 * Math.cos(2 * angle),
   // A single inward pinch on one side (a Gaussian dip centred on a fixed
@@ -160,9 +172,17 @@ const DEFORM: Record<Shape, (angle: number) => number> = {
   blocky: (angle) => 1 + 0.18 * Math.cos(4 * angle),
 }
 
-/** Territory geometry for any of the four shapes, sharing the exact loop,
-    rounding and closing rule circleRing always used — see its own note on
-    matching the sphere MapLibre itself measures with. */
+/** Territory geometry for any of the four shapes: one shared loop, rounding
+    and closing rule, only the multiplier from DEFORM changes per shape, so
+    "the same shape looks the same twice" holds without four near-duplicate
+    functions.
+
+    Plain trigonometry rather than turf.js: turf is 200KB+ for a project
+    that needs exactly one of its functions, and the equirectangular
+    approximation is accurate to well under a metre over a 250 metre radius
+    at 14 degrees north (checked, not assumed). Coordinates are rounded to
+    six decimals, about 10cm, matching the seeded file rather than storing
+    float noise. */
 export function shapeRing(shape: Shape, center: [number, number], radiusM: number): [number, number][] {
   const [lng, lat] = center
   const dLat = radiusM / M_PER_DEG
@@ -179,6 +199,8 @@ export function shapeRing(shape: Shape, center: [number, number], radiusM: numbe
       round(lat + dLat * Math.sin(angle) * scale),
     ])
   }
+  // GeoJSON rings must close: last point identical to the first, not merely
+  // near it. Pushing the same array element is what guarantees that.
   ring.push(ring[0])
   return ring
 }
@@ -186,6 +208,9 @@ export function shapeRing(shape: Shape, center: [number, number], radiusM: numbe
 export function shapeFeature(stored: StoredCat): Feature<Polygon> {
   return {
     type: 'Feature',
+    // The same two properties the seeded features carry, because
+    // Territories reads `id` off the feature and promotes it for
+    // feature-state, and nothing downstream may care where a cat came from.
     properties: { id: stored.cat.id, name: stored.cat.name },
     geometry: { type: 'Polygon', coordinates: [shapeRing(stored.shape, stored.center, stored.radiusM)] },
   }

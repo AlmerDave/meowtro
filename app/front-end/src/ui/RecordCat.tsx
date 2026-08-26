@@ -169,10 +169,14 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     setForm((f) => ({ ...f, description: composeDescription(answers) }))
   }, [answers])
 
+  // Escape closes, the same courtesy the plate and the mobile panel give.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
+      /* Placing first: Escape while aiming should put the map back, not
+         throw away a half-filled form. Two presses to leave, and the first
+         one is the one you meant. */
       if (placing) setPlacing(false)
       else close()
     }
@@ -180,6 +184,10 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, placing, setPlacing])
 
+  /* The click that places the point. `once`, so the map goes back to being a
+     map straight after: a mode you have to remember to leave is the thing
+     people press Escape at. preventDefault is the second belt, Territories'
+     own `placing` guard being the first. */
   useEffect(() => {
     if (!map || !placing) return
     document.body.dataset.placing = 'true'
@@ -196,6 +204,10 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     }
   }, [map, placing, setPlacing])
 
+  /* The preview shape: the same two layers a real territory gets, so what
+     you are shown while choosing is what the map will look like afterwards.
+     Added when the panel opens and torn down when it closes, rather than
+     kept around empty, so a closed panel leaves no layers on the map. */
   useEffect(() => {
     if (!map || !isLoaded || !open) return
     if (!map.getSource(PREVIEW)) {
@@ -278,6 +290,11 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    /* The territory placement is the one field with no input behind it, so
+       it is the one field the browser cannot check. Everything else is
+       either `required` on a real input (photo, name) or gated on
+       canAdvance before the wizard lets a step be left (description): this
+       is the one condition neither of those covers. */
     if (!center) {
       setError('Place the territory on the map first.')
       return
@@ -298,7 +315,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     close()
   }
 
-  const canAdvance = step === 0 ? !!form.photo : step === 1 ? !!form.name.trim() : true
+  const canAdvance = step === 0 ? !!form.photo : step === 1 ? !!form.name.trim() && !!form.description : true
   const isLastStep = step === STEPS.length - 1
 
   return (
@@ -326,6 +343,16 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
           <motion.form
             className="record"
             onSubmit={submit}
+            onKeyDown={(e) => {
+              // Steps 0-2 mount no `type="submit"` button, but the implicit-
+              // submission rule still fires on Enter through a single
+              // text/file input (the name field, an inline "+ Custom"/
+              // "+ Add your own" box). That would submit the record before
+              // the later steps have even been visited, so Enter is only
+              // allowed through on the step that actually has a submit
+              // button.
+              if (e.key === 'Enter' && !isLastStep) e.preventDefault()
+            }}
             initial={{ opacity: 0, y: 14, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.16 } }}
@@ -470,7 +497,12 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         className="record-save"
                         onClick={() => {
                           const value = customMark.trim()
-                          if (value) setAnswers((a) => ({ ...a, marks: [...a.marks, value] }))
+                          if (value) {
+                            setAnswers((a) => ({
+                              ...a,
+                              marks: a.marks.includes(value) ? a.marks : [...a.marks, value],
+                            }))
+                          }
                           setCustomMark('')
                           setShowCustomMark(false)
                         }}
@@ -560,8 +592,12 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         type="button"
                         className="record-save"
                         onClick={() => {
-                          const saved = addChip(customChip)
+                          const phrase = customChip.trim()
+                          const saved = addChip(phrase)
                           if (saved) setMyChips(saved)
+                          if (phrase) {
+                            setForm((f) => ({ ...f, note: f.note ? `${f.note} ${phrase}.` : `${phrase}.` }))
+                          }
                           setCustomChip('')
                           setShowCustomChip(false)
                         }}
@@ -650,6 +686,9 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                 </>
               )}
 
+              {/* aria-live, because a submit that goes nowhere with a message
+                  appearing somewhere is indistinguishable from a broken
+                  button to anyone not looking at that spot. */}
               {error && (
                 <p className="record-error" role="alert" aria-live="polite">
                   {error}
