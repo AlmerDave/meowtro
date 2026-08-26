@@ -5,10 +5,11 @@ import { MapPin, Plus, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { addCat, clearRecorded, countRecorded } from '@/data/catsRepo'
 import { CAT_COLOURS, type Colour } from '@/data/cats.seed'
-import { circleRing } from '@/data/localCats'
+import { SHAPES, shapeRing, type Shape } from '@/data/localCats'
+import { compressImage } from './imageToDataUrl'
 import { spring, springSoft } from '@/motion/springs'
 
-/* Record a cat: the panel that adds one to the survey.
+/* Add a new cat: the panel that adds one to the survey.
 
    ## Parked, on purpose, and not dead
 
@@ -23,21 +24,22 @@ import { spring, springSoft } from '@/motion/springs'
    Do not delete it on the grounds that nothing imports it. That is the
    state it is meant to be in.
 
-   ## What this is, and what it deliberately is not
+   ## Four steps, not one long form
 
-   Local only. Everything recorded here goes into this browser's storage
-   (data/localCats.ts) and no further, because there is no server yet and
-   pretending otherwise in the UI would be the actual lie. The panel says so
-   in its footer rather than hiding it, so nobody presenting this has to
-   remember to add the caveat out loud.
+   Rev 2026-08-26: guided description questions, an upload gallery and a
+   shape picker together made the original single-page form long enough
+   that "too long" stopped being a nitpick. Each step keeps its own local
+   validation; the one check with no input behind it (a territory must be
+   placed) still lives on final submit, same as it always did.
 
-   The territory is drawn, not typed. You click the map to say roughly where
-   the cat lives and drag a radius around it, and what gets stored is the
-   resulting circle. This is not a nicety: spec §9 forbids this app from
-   holding an exact location for a real animal, and a form with a "location"
-   box in it is exactly how that rule gets broken by accident. A circle you
-   have to size yourself makes the imprecision the point of the interaction
-   instead of a caveat under it.
+   ## The territory is drawn, not typed
+
+   You click the map to say roughly where the cat lives and drag a radius
+   around it; what gets stored is one of four warped-circle polygons (see
+   data/localCats.ts's shapeRing). This is not a nicety: spec §9 forbids
+   this app from holding an exact location for a real animal, and a form
+   with a "location" box in it is exactly how that rule gets broken by
+   accident.
 
    ## Why it lives inside <MapCanvas>
 
@@ -57,18 +59,28 @@ const PREVIEW_LINE = 'record-preview-line'
 const MIN_RADIUS = 30
 const MAX_RADIUS = 250
 
-/* The swatches used to be declared here, three of them, duplicating the
-   union in data/cats.seed.ts. They are the same list now and it lives with
-   the type, so the picker cannot offer a colour the data model rejects. */
+/** The longest edge and JPEG quality every uploaded photo is compressed
+    to, matching the seeded photos' own size (data/cats.seed.ts's CATAAS
+    helper). Not a knob a user sees, see ui/imageToDataUrl.ts's own note
+    on why this is load-bearing rather than tunable polish. */
+const PHOTO_MAX_DIM = 640
+const PHOTO_QUALITY = 0.75
+const MAX_EXTRA_PHOTOS = 6
+
 const COLOURS = CAT_COLOURS
 
-const EMPTY = {
+const STEPS = ['Photo', 'Identity', 'Character & look', 'Place & review'] as const
+
+type ExtraPhoto = { id: string; src: string }
+
+const EMPTY_FORM = {
   name: '',
   description: '',
   note: '',
   photo: '',
   line: '',
   colour: CAT_COLOURS[0].token as Colour,
+  shape: 'round' as Shape,
 }
 
 const token = (name: string) =>
@@ -77,16 +89,19 @@ const token = (name: string) =>
 export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
   const { map, isLoaded, placing, setPlacing } = useMap()
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState(EMPTY)
+  const [step, setStep] = useState(0)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [extraPhotos, setExtraPhotos] = useState<ExtraPhoto[]>([])
   const [center, setCenter] = useState<[number, number] | null>(null)
   const [radiusM, setRadiusM] = useState(90)
   const [error, setError] = useState<string | null>(null)
-  /* Read once per open rather than held in state: the number only changes
-     through this panel, and the panel re-mounts its own body each time. */
+  const [busy, setBusy] = useState(false)
   const [recorded, setRecorded] = useState(0)
 
   const reset = () => {
-    setForm(EMPTY)
+    setStep(0)
+    setForm(EMPTY_FORM)
+    setExtraPhotos([])
     setCenter(null)
     setRadiusM(90)
     setError(null)
@@ -98,14 +113,10 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     reset()
   }
 
-  // Escape closes, the same courtesy the plate and the mobile panel give.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      /* Placing first: Escape while aiming should put the map back, not
-         throw away a half-filled form. Two presses to leave, and the first
-         one is the one you meant. */
       if (placing) setPlacing(false)
       else close()
     }
@@ -113,10 +124,6 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [open, placing, setPlacing])
 
-  /* The click that places the point. `once`, so the map goes back to being a
-     map straight after: a mode you have to remember to leave is the thing
-     people press Escape at. preventDefault is the second belt, Territories'
-     own `placing` guard being the first. */
   useEffect(() => {
     if (!map || !placing) return
     document.body.dataset.placing = 'true'
@@ -133,10 +140,6 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     }
   }, [map, placing, setPlacing])
 
-  /* The preview circle: the same two layers a real territory gets, so what
-     you are shown while choosing is what the map will look like afterwards.
-     Added when the panel opens and torn down when it closes, rather than
-     kept around empty, so a closed panel leaves no layers on the map. */
   useEffect(() => {
     if (!map || !isLoaded || !open) return
     if (!map.getSource(PREVIEW)) {
@@ -154,8 +157,6 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
         paint: {
           'line-color': token('--rust'),
           'line-width': 1.5,
-          // Dashed, like a real territory's boundary, and unlike anything
-          // else on the map: this is a proposal, not a record.
           'line-dasharray': [2, 2],
         },
       })
@@ -166,9 +167,6 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     }
   }, [map, isLoaded, open])
 
-  // Live: every radius step and every re-placed point redraws the ring, and
-  // the colour swatch repaints it, so the choice is made against the map
-  // rather than against a form.
   useEffect(() => {
     if (!map || !open) return
     const source = map.getSource(PREVIEW) as GeoJSONSource | undefined
@@ -180,7 +178,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             {
               type: 'Feature',
               properties: {},
-              geometry: { type: 'Polygon', coordinates: [circleRing(center, radiusM)] },
+              geometry: { type: 'Polygon', coordinates: [shapeRing(form.shape, center, radiusM)] },
             },
           ]
         : [],
@@ -189,18 +187,53 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
       map.setPaintProperty(PREVIEW_FILL, 'fill-color', token(form.colour))
       map.setPaintProperty(PREVIEW_LINE, 'line-color', token(form.colour))
     }
-  }, [map, open, center, radiusM, form.colour])
+  }, [map, open, center, radiusM, form.shape, form.colour])
+
+  const pickMainPhoto = async (file: File | undefined) => {
+    if (!file) return
+    setError(null)
+    try {
+      const compressed = await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+      setForm((f) => ({ ...f, photo: compressed }))
+    } catch {
+      setError('Could not read that photo. Try a different file.')
+    }
+  }
+
+  const pickExtraPhotos = async (files: FileList | null) => {
+    if (!files || files.length === 0) return
+    setError(null)
+    const room = MAX_EXTRA_PHOTOS - extraPhotos.length
+    const picked = Array.from(files).slice(0, room)
+    try {
+      const compressed = await Promise.all(picked.map((file) => compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)))
+      setExtraPhotos((prev) => [
+        ...prev,
+        ...compressed.map((src, i) => ({ id: `${Date.now()}-${i}`, src })),
+      ])
+    } catch {
+      setError('Could not read one of those photos. Try again.')
+    }
+  }
+
+  const removeExtraPhoto = (id: string) => {
+    setExtraPhotos((prev) => prev.filter((photo) => photo.id !== id))
+  }
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
-    /* The point is the one field with no input behind it, so it is the one
-       field the browser cannot check. Everything else is `required` on a
-       real input and is the platform's problem, not this component's. */
     if (!center) {
       setError('Place the territory on the map first.')
       return
     }
-    const cat = await addCat({ ...form, center, radiusM })
+    setBusy(true)
+    const cat = await addCat({
+      ...form,
+      center,
+      radiusM,
+      extraPhotos: extraPhotos.map((photo) => photo.src),
+    })
+    setBusy(false)
     if (!cat) {
       setError('Could not save. This browser may have storage turned off.')
       return
@@ -209,12 +242,15 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     close()
   }
 
+  const canAdvance = step === 0 ? !!form.photo : true
+  const isLastStep = step === STEPS.length - 1
+
   return (
     <>
       <motion.button
         type="button"
         className="record-open"
-        aria-label="Record a cat"
+        aria-label="Add a new cat"
         data-open={String(open)}
         onClick={() => {
           if (open) return close()
@@ -225,7 +261,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
         transition={spring}
       >
         <Plus size={15} />
-        <span>Record a cat</span>
+        <span>Add a new cat</span>
       </motion.button>
 
       <AnimatePresence>
@@ -237,124 +273,105 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.98, transition: { duration: 0.16 } }}
             transition={springSoft}
-            aria-label="Record a cat"
+            aria-label="Add a new cat"
           >
             <div className="record-head">
-              <h2>New record</h2>
+              <h2>New cat — {STEPS[step]}</h2>
               <button type="button" className="record-close" aria-label="Cancel" onClick={close}>
                 <X size={15} />
               </button>
             </div>
 
+            <div className="record-progress" role="progressbar" aria-valuenow={step + 1} aria-valuemin={1} aria-valuemax={STEPS.length}>
+              {STEPS.map((label, i) => (
+                <span key={label} data-on={String(i === step)} aria-label={label} />
+              ))}
+            </div>
+
             <div className="record-body">
-              <label className="record-field">
-                <span className="record-label">Name</span>
-                <input
-                  className="record-input"
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="Mingming"
-                  maxLength={40}
-                  required
-                  autoFocus
-                />
-              </label>
+              {step === 0 && (
+                <>
+                  <label className="record-field">
+                    <span className="record-label">Photo</span>
+                    <div className="record-photo-row">
+                      {form.photo && <img className="record-thumb" src={form.photo} alt="" />}
+                      <input
+                        className="record-file"
+                        type="file"
+                        accept="image/*"
+                        required={!form.photo}
+                        onChange={(e) => pickMainPhoto(e.target.files?.[0])}
+                      />
+                    </div>
+                  </label>
 
-              <label className="record-field">
-                <span className="record-label">Description</span>
-                <input
-                  className="record-input"
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder="Grey tabby · white socks · male, est. 2 yrs"
-                  maxLength={90}
-                  required
-                />
-              </label>
+                  <div className="record-field">
+                    <span className="record-label">More photos (optional)</span>
+                    <div className="record-gallery">
+                      {extraPhotos.map((photo) => (
+                        <div key={photo.id} className="record-gallery-item">
+                          <img src={photo.src} alt="" />
+                          <button
+                            type="button"
+                            aria-label="Remove photo"
+                            onClick={() => removeExtraPhoto(photo.id)}
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                      {extraPhotos.length < MAX_EXTRA_PHOTOS && (
+                        <label className="record-gallery-add">
+                          <Plus size={16} />
+                          <input
+                            type="file"
+                            accept="image/*"
+                            multiple
+                            onChange={(e) => pickExtraPhotos(e.target.files)}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
 
-              {/* type="url" so the browser rejects a pasted filename before
-                  this ever reaches storage. Required, and that is a real v1
-                  limit rather than an oversight: there is no server to
-                  upload a photograph to, so a link is the only photo this
-                  version can hold. */}
-              <label className="record-field">
-                <span className="record-label">Photo link</span>
-                <input
-                  className="record-input"
-                  type="url"
-                  value={form.photo}
-                  onChange={(e) => setForm({ ...form, photo: e.target.value })}
-                  placeholder="https://…"
-                  required
-                />
-              </label>
+              {step === 1 && <p className="record-note">Step 2 lands in the next task.</p>}
+              {step === 2 && <p className="record-note">Step 3 lands in the next task.</p>}
+              {step === 3 && (
+                <>
+                  <div className="record-field">
+                    <span className="record-label">Territory</span>
+                    <button
+                      type="button"
+                      className="record-place"
+                      data-on={String(placing)}
+                      onClick={() => setPlacing(!placing)}
+                    >
+                      <MapPin size={13} />
+                      {placing
+                        ? 'Click the map…'
+                        : center
+                          ? `${center[1].toFixed(4)}, ${center[0].toFixed(4)}`
+                          : 'Place on the map'}
+                    </button>
+                    <label className="record-radius">
+                      <span>Rough size</span>
+                      <input
+                        type="range"
+                        min={MIN_RADIUS}
+                        max={MAX_RADIUS}
+                        step={10}
+                        value={radiusM}
+                        onChange={(e) => setRadiusM(Number(e.target.value))}
+                        disabled={!center}
+                      />
+                      <span className="record-radius-value">{radiusM * 2} m</span>
+                    </label>
+                  </div>
+                </>
+              )}
 
-              <label className="record-field">
-                <span className="record-label">Field note</span>
-                <textarea
-                  className="record-input"
-                  value={form.note}
-                  onChange={(e) => setForm({ ...form, note: e.target.value })}
-                  placeholder="One thing you noticed that is not a measurement."
-                  maxLength={220}
-                  rows={2}
-                />
-              </label>
-
-              <fieldset className="record-field record-colours">
-                <legend className="record-label">Territory colour</legend>
-                {COLOURS.map(({ token: name, label }) => (
-                  <button
-                    key={name}
-                    type="button"
-                    className="record-swatch"
-                    style={{ '--swatch': `var(${name})` } as React.CSSProperties}
-                    data-on={String(form.colour === name)}
-                    aria-pressed={form.colour === name}
-                    onClick={() => setForm({ ...form, colour: name })}
-                  >
-                    <span aria-hidden />
-                    {label}
-                  </button>
-                ))}
-              </fieldset>
-
-              <div className="record-field">
-                <span className="record-label">Territory</span>
-                <button
-                  type="button"
-                  className="record-place"
-                  data-on={String(placing)}
-                  onClick={() => setPlacing(!placing)}
-                >
-                  <MapPin size={13} />
-                  {placing
-                    ? 'Click the map…'
-                    : center
-                      ? `${center[1].toFixed(4)}, ${center[0].toFixed(4)}`
-                      : 'Place on the map'}
-                </button>
-
-                {/* Native range input, so the drag, the keyboard steps and
-                    the touch target are all the platform's. */}
-                <label className="record-radius">
-                  <span>Rough size</span>
-                  <input
-                    type="range"
-                    min={MIN_RADIUS}
-                    max={MAX_RADIUS}
-                    step={10}
-                    value={radiusM}
-                    onChange={(e) => setRadiusM(Number(e.target.value))}
-                    disabled={!center}
-                  />
-                  <span className="record-radius-value">{radiusM * 2} m</span>
-                </label>
-              </div>
-
-              {/* aria-live, because a submit that goes nowhere with a message
-                  appearing somewhere is indistinguishable from a broken
-                  button to anyone not looking at that spot. */}
               {error && (
                 <p className="record-error" role="alert" aria-live="polite">
                   {error}
@@ -363,28 +380,45 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             </div>
 
             <div className="record-foot">
-              <span className="record-note">
-                Saved in this browser only.
-                {recorded > 0 && (
-                  <>
-                    {' '}
-                    <button
-                      type="button"
-                      className="record-clear"
-                      onClick={() => {
-                        clearRecorded()
-                        setRecorded(0)
-                        onRecorded()
-                      }}
-                    >
-                      Clear {recorded} recorded
-                    </button>
-                  </>
-                )}
-              </span>
-              <button type="submit" className="record-save">
-                Record
-              </button>
+              {step > 0 ? (
+                <button type="button" className="record-back" onClick={() => setStep((s) => s - 1)}>
+                  Back
+                </button>
+              ) : (
+                <span className="record-note">
+                  Saved in this browser only.
+                  {recorded > 0 && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="record-clear"
+                        onClick={() => {
+                          clearRecorded()
+                          setRecorded(0)
+                          onRecorded()
+                        }}
+                      >
+                        Clear {recorded} recorded
+                      </button>
+                    </>
+                  )}
+                </span>
+              )}
+              {isLastStep ? (
+                <button type="submit" className="record-save" disabled={busy}>
+                  {busy ? 'Saving…' : 'Add cat'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="record-save"
+                  disabled={!canAdvance}
+                  onClick={() => setStep((s) => s + 1)}
+                >
+                  Next
+                </button>
+              )}
             </div>
           </motion.form>
         )}
