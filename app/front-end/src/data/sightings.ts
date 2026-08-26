@@ -79,6 +79,12 @@ export type Sighting = {
       actually makes today arrives without this field. A consumer that
       assumed it was there would be broken by the first real report. */
   photo?: string
+  /** An admin's manual sequencing, set by buildAdminSighting/addAdminSighting
+      below so several bootstrap photos on one new cat stack in the order
+      they were uploaded. Absent means "no opinion": a sighting without one
+      falls back to newest-first wherever this is read. Ascending, lower
+      shows first. */
+  order?: number
 }
 
 const STATUSES: SightingStatus[] = ['pending', 'surveyed', 'discarded']
@@ -87,7 +93,7 @@ function isSighting(value: unknown): value is Omit<Sighting, 'status'> & {
   status?: SightingStatus
 } {
   if (!value || typeof value !== 'object') return false
-  const { id, catId, point, at, photo, status } = value as Partial<Sighting>
+  const { id, catId, point, at, photo, status, order } = value as Partial<Sighting>
   return (
     typeof id === 'string' &&
     typeof catId === 'string' &&
@@ -101,7 +107,8 @@ function isSighting(value: unknown): value is Omit<Sighting, 'status'> & {
     // Absent is valid and means `surveyed`; see the field's own note. An
     // unrecognised value is not: a typo'd status must not be able to make a
     // record invisible to review by matching none of the filters.
-    (status === undefined || STATUSES.includes(status))
+    (status === undefined || STATUSES.includes(status)) &&
+    (order === undefined || (typeof order === 'number' && Number.isFinite(order)))
   )
 }
 
@@ -296,6 +303,50 @@ export function addSighting(catId: string, point: [number, number], at: number):
     at,
     status: 'pending',
   }
+  return write([...readSightings(), sighting]) ? sighting : null
+}
+
+/** An admin's own sighting, created alongside a new cat record rather than
+    submitted for review. The pure half: builds the record without
+    touching storage, so it is checkable under node the same way applyVote
+    is (see that function's own note).
+
+    `status: 'surveyed'` directly, unlike addSighting's `pending` above:
+    an admin attaching a photo while creating the cat record is already at
+    the same trust level as the cat record itself, which never goes
+    through review at all (ui/RecordCat.tsx's own note on why only
+    sightings need it). `order` lets several bootstrap photos stack in the
+    sequence they were uploaded, using the field reorderSighting already
+    built for manual stack sequencing. */
+export function buildAdminSighting(
+  catId: string,
+  point: [number, number],
+  at: number,
+  photo: string,
+  order: number
+): Sighting {
+  return {
+    id: `${catId}-${at}-${order}-${Math.random().toString(36).slice(2, 7)}`,
+    catId,
+    point,
+    at,
+    status: 'surveyed',
+    photo,
+    order,
+  }
+}
+
+/** Persists buildAdminSighting's record. Returns null on write failure
+    (quota, private mode), same contract every other writer in this file
+    already gives its caller. */
+export function addAdminSighting(
+  catId: string,
+  point: [number, number],
+  at: number,
+  photo: string,
+  order: number
+): Sighting | null {
+  const sighting = buildAdminSighting(catId, point, at, photo, order)
   return write([...readSightings(), sighting]) ? sighting : null
 }
 

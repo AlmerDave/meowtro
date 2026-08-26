@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import type { FeatureCollection, Polygon } from 'geojson'
-import { allSightings, latestByCat, translateToward } from './sightings'
+import { allSightings, buildAdminSighting, latestByCat, translateToward } from './sightings'
 import baseTerritories from './territories.geo.json'
 
 /* The one runnable check behind the seeded observations.
@@ -76,5 +76,28 @@ assert.ok(
   seeded.every((sighting) => sighting.photo === undefined || sighting.photo.startsWith('https://')),
   'a seeded photo is not an https URL'
 )
+
+// --- buildAdminSighting, this redesign -----------------------------------
+// The pure half of addAdminSighting, checked directly for the same reason
+// applyVote is above: addAdminSighting itself degrades to a no-op under
+// node (no window.localStorage to write to).
+
+const built = buildAdminSighting('milo', [121.05, 14.55], 1000, 'data:image/jpeg;base64,xyz', 2)
+assert.equal(built.catId, 'milo')
+assert.deepEqual(built.point, [121.05, 14.55])
+assert.equal(built.at, 1000)
+assert.equal(built.photo, 'data:image/jpeg;base64,xyz')
+assert.equal(built.order, 2)
+assert.equal(
+  built.status,
+  'surveyed',
+  'an admin-authored sighting must land surveyed: it is already at the trust level a new cat record itself skips review at, and it has to show in the photo pile immediately'
+)
+assert.ok(built.id.length > 0, 'buildAdminSighting produced an empty id')
+
+const builtAgain = buildAdminSighting('milo', [121.05, 14.55], 1000, 'data:image/jpeg;base64,xyz', 2)
+assert.notEqual(built.id, builtAgain.id, 'two calls with identical inputs collided on id')
+
+console.log('buildAdminSighting: ok')
 
 console.log('sightings: ok')

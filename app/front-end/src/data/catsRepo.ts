@@ -3,6 +3,7 @@ import { CATS, type Cat } from './cats.seed'
 import baseTerritories from './territories.geo.json'
 import { shapeFeature, readStored, slugify, writeStored, type CatDraft } from './localCats'
 import {
+  addAdminSighting,
   allSightings,
   describeWhen,
   isOwnPending,
@@ -211,7 +212,23 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     photo: draft.photo.trim(),
   }
 
-  if (!writeStored([...stored, { cat, center: draft.center, radiusM: draft.radiusM, shape: draft.shape }])) return null
+  if (!writeStored([...stored, { cat, center: draft.center, radiusM: draft.radiusM, shape: draft.shape }])) {
+    return null
+  }
+
+  /* Every extra photo becomes its own surveyed sighting, pointed at the
+     same territory centre (the only coordinate this flow has). This is
+     what feeds the plate's existing photo pile (plate/Plate.tsx's
+     CardStack); no display code changes for it. A photo that fails to
+     save here is silently dropped rather than failing the whole submit:
+     the cat itself is already safely stored by this point, and losing one
+     gallery photo to a quota edge is a smaller problem than losing the
+     cat record over it. */
+  const now = Date.now()
+  draft.extraPhotos.forEach((photo, index) => {
+    addAdminSighting(cat.id, draft.center, now, photo, index)
+  })
+
   return cat
 }
 
