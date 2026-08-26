@@ -636,6 +636,17 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                       <span className="record-radius-value">{radiusM * 2} m</span>
                     </label>
                   </div>
+
+                  <div className="record-summary">
+                    <p>
+                      <strong>{form.name || 'Unnamed'}</strong> — {form.description || 'no description yet'}
+                    </p>
+                    <p>
+                      {SHAPES.find((s) => s.id === form.shape)?.label} territory,{' '}
+                      {COLOURS.find((c) => c.token === form.colour)?.label} ·{' '}
+                      {1 + extraPhotos.length} photo{extraPhotos.length === 0 ? '' : 's'}
+                    </p>
+                  </div>
                 </>
               )}
 
