@@ -349,12 +349,20 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
               // text input (the name field, an inline "+ Custom"/"+ Add
               // your own" box). That would submit the record before the
               // later steps have even been visited, so Enter is blocked
-              // on an <input> specifically, not on every element: a plain
-              // `!isLastStep` guard would also eat Enter's default action
-              // on every button (Next included), the note textarea's
-              // newline, and the file input's picker, none of which are
-              // implicit-submission risks in the first place.
-              if (e.key === 'Enter' && !isLastStep && (e.target as HTMLElement).tagName === 'INPUT') {
+              // on a text-like <input> specifically, not on every element:
+              // a plain `!isLastStep` guard would also eat Enter's default
+              // action on every button (Next included), the note
+              // textarea's newline, and the file inputs' own picker, none
+              // of which are implicit-submission risks in the first place
+              // (a file input does not block implicit submission the way
+              // a text field does, so it is excluded here too).
+              const target = e.target
+              if (
+                e.key === 'Enter' &&
+                !isLastStep &&
+                target instanceof HTMLInputElement &&
+                target.type !== 'file'
+              ) {
                 e.preventDefault()
               }
             }}
