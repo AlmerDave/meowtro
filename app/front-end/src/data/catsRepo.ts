@@ -1,7 +1,7 @@
 import type { FeatureCollection, Polygon } from 'geojson'
 import { CATS, type Cat } from './cats.seed'
 import baseTerritories from './territories.geo.json'
-import { circleFeature, readStored, slugify, writeStored, type CatDraft } from './localCats'
+import { shapeFeature, readStored, slugify, writeStored, type CatDraft } from './localCats'
 import {
   allSightings,
   describeWhen,
@@ -152,7 +152,7 @@ export async function listTerritories(): Promise<FeatureCollection<Polygon>> {
        what the map draws is that outline plus whatever has been observed
        since, which is the same relationship a review queue will need: the
        submission never destroys what it proposes to change. */
-    features: [...base.features, ...readStored().map(circleFeature)].map((feature) => {
+    features: [...base.features, ...readStored().map(shapeFeature)].map((feature) => {
       const sighting = seen.get(feature.properties?.id as string)
       return sighting ? translateToward(feature, sighting.point) : feature
     }),
@@ -211,7 +211,7 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     photo: draft.photo.trim(),
   }
 
-  if (!writeStored([...stored, { cat, center: draft.center, radiusM: draft.radiusM }])) return null
+  if (!writeStored([...stored, { cat, center: draft.center, radiusM: draft.radiusM, shape: draft.shape }])) return null
   return cat
 }
 

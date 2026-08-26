@@ -33,6 +33,13 @@ export type CatDraft = {
   photo: string
   line: string
   colour: Cat['colour']
+  shape: Shape
+  /** Extra photos for the plate's photo pile, already compressed to a
+      data URI each (see ui/imageToDataUrl.ts). Never stored on the cat
+      itself — catsRepo.addCat turns each one into its own surveyed
+      Sighting, so this array only ever exists for the length of one
+      submit. */
+  extraPhotos: string[]
   /** Where the person clicked. Becomes the centre of the ring below. */
   center: [number, number]
   /** Rough radius in metres, off the panel's slider. */
@@ -43,6 +50,7 @@ export type StoredCat = {
   cat: Cat
   center: [number, number]
   radiusM: number
+  shape: Shape
 }
 
 /* localStorage is a string the user can edit, a different version of this
@@ -51,9 +59,11 @@ export type StoredCat = {
    otherwise is not a wrong cat, it is a malformed polygon thrown into
    addSource, which takes the whole map down with it and leaves a blank
    screen with a console error nobody presenting this would see coming. */
-function isStored(value: unknown): value is StoredCat {
+const SHAPE_IDS = new Set<Shape>(['round', 'elongated', 'notched', 'blocky'])
+
+export function isStored(value: unknown): value is StoredCat {
   if (!value || typeof value !== 'object') return false
-  const { cat, center, radiusM } = value as Partial<StoredCat>
+  const { cat, center, radiusM, shape } = value as Partial<StoredCat>
   return (
     !!cat &&
     typeof cat.id === 'string' &&
@@ -64,7 +74,9 @@ function isStored(value: unknown): value is StoredCat {
     center.every((n) => typeof n === 'number' && Number.isFinite(n)) &&
     typeof radiusM === 'number' &&
     Number.isFinite(radiusM) &&
-    radiusM > 0
+    radiusM > 0 &&
+    typeof shape === 'string' &&
+    SHAPE_IDS.has(shape as Shape)
   )
 }
 
@@ -107,42 +119,75 @@ const M_PER_DEG = (Math.PI * EARTH_RADIUS_M) / 180
     similar density. */
 const RING_STEPS = 48
 
-/* A circle, because every territory in territories.geo.json is already one
-   (see centroid.ts's note) and because a rough area is the only shape this
-   app is willing to state. A polygon editor would let someone trace a real
-   cat's actual movements, which is precisely the thing spec §9 exists to
-   stop.
+/** The four territories an admin can pick, alongside the colour. `round`
+    is exactly what this app has always drawn — a plain circle, zero
+    deformation — so a shape picker never quietly changes an existing
+    look. The other three are still `Polygon` rings built off the same
+    loop, only warped: nothing here is a "real" circle or rectangle
+    primitive any more than the seeded territories are, which are also
+    just irregular point-rings (territories.geo.json). */
+export type Shape = 'round' | 'elongated' | 'notched' | 'blocky'
 
-   Plain trigonometry rather than turf.js: turf is 200KB+ for a project that
-   needs exactly one of its functions, and the equirectangular approximation
-   is accurate to well under a metre over a 250 metre radius at 14 degrees
-   north (checked, not assumed). Coordinates are rounded to six decimals, about 10cm, matching the
-   seeded file rather than storing float noise. */
-export function circleRing(center: [number, number], radiusM: number): [number, number][] {
+export const SHAPES: { id: Shape; label: string }[] = [
+  { id: 'round', label: 'Round' },
+  { id: 'elongated', label: 'Elongated' },
+  { id: 'notched', label: 'Notched' },
+  { id: 'blocky', label: 'Blocky' },
+]
+
+/* Each entry returns a multiplier on radiusM for a given angle (radians).
+   Fixed constants, no randomness: the same shape at the same radius must
+   always draw the same outline (localCats.check.ts asserts this), and
+   "the same shape looks the same twice" is what makes a picker legible.
+
+   The formulas are deliberately plain trigonometry, same reasoning
+   circleRing always gave for not reaching for turf.js: a small, fixed,
+   checkable function beats a library for four shapes. */
+const NOTCH_ANGLE = Math.PI / 4
+const NOTCH_WIDTH = 0.5
+const DEFORM: Record<Shape, (angle: number) => number> = {
+  round: () => 1,
+  // Two lobes opposite each other: stretched along one axis, pinched
+  // across the other — reads as "runs along a street" rather than a
+  // lopsided blob.
+  elongated: (angle) => 1 + 0.35 * Math.cos(2 * angle),
+  // A single inward pinch on one side (a Gaussian dip centred on a fixed
+  // angle), for an L-shaped block or a corner lot.
+  notched: (angle) => 1 - 0.34 * Math.exp(-((angle - NOTCH_ANGLE) ** 2) / (2 * NOTCH_WIDTH ** 2)),
+  // Four gentle lobes: not literally square (a real square ring would
+  // need far more than 48 points to look sharp-cornered rather than
+  // faceted), but reads as squared-off next to Round and Elongated.
+  blocky: (angle) => 1 + 0.18 * Math.cos(4 * angle),
+}
+
+/** Territory geometry for any of the four shapes, sharing the exact loop,
+    rounding and closing rule circleRing always used — see its own note on
+    matching the sphere MapLibre itself measures with. */
+export function shapeRing(shape: Shape, center: [number, number], radiusM: number): [number, number][] {
   const [lng, lat] = center
   const dLat = radiusM / M_PER_DEG
   const dLng = radiusM / (M_PER_DEG * Math.cos((lat * Math.PI) / 180))
   const round = (n: number) => Math.round(n * 1e6) / 1e6
+  const deform = DEFORM[shape]
 
   const ring: [number, number][] = []
   for (let i = 0; i < RING_STEPS; i++) {
     const angle = (i / RING_STEPS) * Math.PI * 2
-    ring.push([round(lng + dLng * Math.cos(angle)), round(lat + dLat * Math.sin(angle))])
+    const scale = deform(angle)
+    ring.push([
+      round(lng + dLng * Math.cos(angle) * scale),
+      round(lat + dLat * Math.sin(angle) * scale),
+    ])
   }
-  // GeoJSON rings must close: last point identical to the first, not merely
-  // near it. Pushing the same array element is what guarantees that.
   ring.push(ring[0])
   return ring
 }
 
-export function circleFeature(stored: StoredCat): Feature<Polygon> {
+export function shapeFeature(stored: StoredCat): Feature<Polygon> {
   return {
     type: 'Feature',
-    // The same two properties the seeded features carry, because
-    // Territories reads `id` off the feature and promotes it for
-    // feature-state, and nothing downstream may care where a cat came from.
     properties: { id: stored.cat.id, name: stored.cat.name },
-    geometry: { type: 'Polygon', coordinates: [circleRing(stored.center, stored.radiusM)] },
+    geometry: { type: 'Polygon', coordinates: [shapeRing(stored.shape, stored.center, stored.radiusM)] },
   }
 }
 
