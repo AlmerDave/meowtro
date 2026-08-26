@@ -2529,6 +2529,22 @@ html:has(.map)::-webkit-scrollbar {
   color: var(--ink);
 }
 
+.record-summary {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+}
+.record-summary p {
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+.record-summary strong {
+  color: var(--ink);
+}
+
 .record-error {
   margin: 0;
   font-size: var(--t-sm);
