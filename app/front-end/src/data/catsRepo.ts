@@ -1,17 +1,26 @@
 import type { FeatureCollection, Polygon } from 'geojson'
-import { CATS, type Cat } from './cats.seed'
-import baseTerritories from './territories.geo.json'
-import { shapeFeature, readStored, slugify, writeStored, type CatDraft } from './localCats'
-import { applyOverlay, hideOverlay, patchOverlay, readOverlay } from './overlay'
+import {
+  collection,
+  deleteDoc,
+  deleteField,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore'
+import { db } from '@/firebase'
+import type { Cat } from './cats.seed'
+import { shapeRing, slugify, type CatDraft, type Shape } from './territoryShape'
 import {
   addAdminSighting,
-  allSightings,
   deleteSighting as removeAnySighting,
   describeWhen,
   isOwnPending,
   isSurveyed,
   latestByCat,
-  readSightings,
+  listAllSightings,
+  myVoteFor,
   removeSighting,
   reorderSighting as reorder,
   reviewSighting as review,
@@ -21,27 +30,42 @@ import {
   type Sighting,
 } from './sightings'
 
-/* The v1/v2 seam, spec §9. The entire abstraction is that these functions are
-   async over local data, so every consumer already handles loading and
-   swapping to a real API is an edit to this file only.
-   Territories stay polygons here and in v2: never an exact point for a real
-   cat (spec §9, safety constraint). Do not add a `location` to Cat.
+/* The v1/v2 seam, spec §9: the whole app already goes through this file for
+   its data, so what changed at phase 9 is only what sits on the other side
+   of these functions, Firestore instead of a seeded array and localStorage.
+   Nothing above this file noticed the swap; every consumer already handled
+   "async over data I don't own yet".
 
-   Two sources behind that seam now, not one: the seeded three, and whatever
-   has been recorded into this browser (localCats.ts). They are concatenated
-   here rather than merged anywhere downstream, so nothing in the app knows
-   or cares which of the two a cat came from. That is the point of doing it
-   at this file: when the recorded ones move to a server, this is again the
-   only file that changes. */
+   Territories stay polygons here and always will: never an exact point for
+   a real cat (spec §9, safety constraint). Do not add a `location` to Cat. */
 
-/* --- The review boundary, phase 8 --------------------------------------
+const COLLECTION = 'cats'
+
+/** A Firestore cats/{id} document: everything on Cat except `id` (the doc
+    id already is it) and `lastSeen` (derived, see below), plus the
+    resolved territory ring. Storing the ring pre-computed rather than
+    center/radiusM/shape is what lets a seeded cat (an arbitrary hand-drawn
+    polygon from territories.geo.json, not expressible as a warped circle)
+    and an admin-recorded cat (built by shapeRing) live in the same shape:
+    listTerritories reads `territory` off every doc identically, with no
+    branch on where the cat came from. */
+type CatDoc = Omit<Cat, 'id' | 'lastSeen'> & {
+  lastSeen?: string
+  territory: [number, number][]
+}
+
+function catFromDoc(id: string, data: CatDoc): Omit<Cat, 'lastSeen'> & { lastSeen?: string } {
+  const { territory: _territory, ...rest } = data
+  return { id, ...rest }
+}
+
+/* --- The review boundary ------------------------------------------------
 
    This file is where "published" is decided, and the reason it is here
    rather than in each consumer is that a real server would do exactly the
    same thing: a public endpoint never serves pending rows, so nothing
    downstream can forget to filter and nothing downstream has to learn what
-   a status is. Phase 9 replaces these bodies with fetches and the guarantee
-   survives the move.
+   a status is.
 
    The predicates themselves live in data/sightings.ts, because
    map/Territories.tsx has to apply the same policy synchronously from
@@ -49,207 +73,41 @@ import {
    "published", two callers. */
 
 /** What the public map is built from. */
-function published(): Sighting[] {
-  return allSightings().filter(isSurveyed)
+async function surveyedSightings(): Promise<Sighting[]> {
+  return (await listAllSightings()).filter(isSurveyed)
 }
 
-const CAT_OVERLAY = 'meowtro.cats.overlay.v1'
-
 export async function listCats(): Promise<Cat[]> {
-  /* Surveyed only, and this is a safety line rather than a detail.
-     `lastSeen` is derived from the newest observation, so an unreviewed
-     report would otherwise print "Last seen: Today" on the public record:
-     an unverified claim that a real animal was somewhere recently, which is
-     precisely what review exists to hold back. */
-  const seen = latestByCat(published())
-  const base = [...CATS, ...readStored().map((entry) => entry.cat)].map((cat) => {
+  const [snap, sightings] = await Promise.all([getDocs(collection(db, COLLECTION)), surveyedSightings()])
+  /* Surveyed only: an unreviewed report must never print "Last seen:
+     Today" on the public record, the same safety line the pre-Firestore
+     version drew. */
+  const seen = latestByCat(sightings)
+  return snap.docs.map((docSnap) => {
+    const cat = catFromDoc(docSnap.id, docSnap.data() as CatDoc)
     const sighting = seen.get(cat.id)
-    /* `range` is deliberately NOT derived here the way lastSeen is, and
-       went through two other designs before landing here. First it was
-       overwritten with a generic sentence on every cat with a published
-       sighting — which a seed cat's overlay patch could still win against
-       (the overlay applies after this map), but a recorded cat had no
-       overlay step after it, so the generic text silently clobbered
-       anything more specific on every single read. Second, a dedicated
-       writer (setDerivedRange, since removed) tried to persist a real
-       place name at the moment of approval instead — which fixed the
-       clobbering but could still go stale, the same way any write-once
-       field can: a cat's `range` kept whatever was written at ITS last
-       approval, however out of date that later became.
-
-       `range` is now left alone here entirely, same as any other seed
-       field, and the live fact — how big the territory currently is, and
-       what's nearest its centre — is computed fresh on every render
-       instead, by plate/TerritoryGlyph.tsx off the live translated ring
-       this file's own listTerritories already produces. Nothing to clobber
-       and nothing to go stale, because nothing is ever written. */
-    return sighting ? { ...cat, lastSeen: describeWhen(sighting.at) } : cat
+    /* `cat.lastSeen` is only ever present when an admin explicitly set it
+       (updateCat below): listCats never writes it. That absence-by-default
+       is what lets the derived value win when there is no override and the
+       admin's correction win when there is one, the same precedence the
+       old overlay-applied-after-derivation gave. */
+    return { ...cat, lastSeen: cat.lastSeen ?? (sighting ? describeWhen(sighting.at) : undefined) }
   })
-  /* The overlay applies last, after the derived lastSeen above, so an
-     admin's manual correction always wins over the automatic one. That is
-     the one deliberate exception to "derived fields are not typed in": see
-     CatPatch below for why lastSeen is on that list at all. */
-  return applyOverlay(CAT_OVERLAY, base, (cat) => cat.id)
 }
 
 export async function getCat(id: string): Promise<Cat | null> {
   return (await listCats()).find((cat) => cat.id === id) ?? null
 }
 
-/** One cat's observations, newest first.
-
-    Per cat rather than all of them, because that is the request a server
-    will actually be asked to serve: the plate is the only thing that reads
-    these, and it is only ever open on one cat. Behind the same seam as the
-    rest, so phase 3 replaces the body of this function with a fetch and
-    changes nothing above it. */
-export async function listSightings(catId: string): Promise<Sighting[]> {
-  /* Published, plus this browser's own unreviewed reports. The one place
-     pending data reaches a non-admin surface, and safe for a specific
-     reason spelled out at isOwnPending: it came from this browser, so it
-     tells its reader nothing they did not type in. The plate marks them,
-     and offers to withdraw them.
-
-     Discarded ones are not here. They belong to the audit trail, not to a
-     cat's record: showing a visitor a turned-down report every time they
-     open that plate is a standing argument, not a log. */
-  const own = readSightings()
-  return sortForDisplay(
-    allSightings()
-      .filter((sighting) => sighting.catId === catId)
-      .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, own))
-  )
-}
-
-/** Everything waiting on a verdict, oldest first, for the review queue.
-
-    Oldest first on purpose, unlike every other list in this app: a queue is
-    worked from the front, and the submission that has been waiting longest
-    is the one somebody is still waiting on an answer to. */
-export async function listPending(): Promise<Sighting[]> {
-  return allSightings()
-    .filter((sighting) => sighting.status === 'pending')
-    .sort((a, b) => a.at - b.at)
-}
-
-/** Every decision that has been made, newest first: the audit trail. Both
-    verdicts, because "what did we turn down" is the half of a review log
-    that is actually worth having. Seeded history is excluded, since nobody
-    ever decided anything about it. */
-export async function listReviewed(): Promise<Sighting[]> {
-  return readSightings()
-    .filter((sighting) => sighting.status !== 'pending')
-    .sort((a, b) => b.at - a.at)
-}
-
-/** An admin's verdict. Approving is what makes the territory move, which
-    until now happened the instant a sighting was made. */
-export async function reviewSighting(
-  id: string,
-  verdict: 'surveyed' | 'discarded'
-): Promise<boolean> {
-  return review(id, verdict)
-}
-
-/** A visitor taking back their own unreviewed report. Deletes it: nothing
-    was published and no decision was made, so there is nothing to keep.
-
-    Guarded rather than trusting the caller, because "withdraw" must never
-    become a way to delete somebody else's record or an already-approved
-    one. Only this browser's own storage is readable here at all, so the
-    only real check left is that it is still pending. */
-export async function withdrawSighting(id: string): Promise<boolean> {
-  const mine = readSightings().find((sighting) => sighting.id === id)
-  if (!mine || mine.status !== 'pending') return false
-  return removeSighting(id)
-}
-
-/** An admin cleaning up the sighting log itself: any record, any status,
-    gone for good. Not a review verdict (reviewSighting above) and not a
-    visitor's own undo (withdrawSighting above) — see sightings.ts's
-    deleteSighting for the distinction written out in full. */
-export async function deleteSighting(id: string): Promise<boolean> {
-  return removeAnySighting(id)
-}
-
-/** An admin re-sequencing one cat's log: which photo leads the stack, never
-    when a sighting happened. */
-export async function reorderSighting(catId: string, id: string, direction: 'up' | 'down'): Promise<boolean> {
-  return reorder(catId, id, direction)
-}
-
-/** Every open report on one cat, oldest first: the admin's decision list on
-    the plate (phase 9). Unlike listSightings above, not narrowed to "mine
-    plus published" — this is the one place besides admin review itself
-    that a non-owner's pending row is readable, and it stays readable here
-    on purpose: the plate's own visitor-facing lock (plate/Plate.tsx) reads
-    the same list to know a report already exists, without ever rendering
-    its point. What differs by caller is what gets drawn from it, not what
-    is fetched. */
-export async function listPendingForCat(catId: string): Promise<Sighting[]> {
-  return allSightings()
-    .filter((sighting) => sighting.catId === catId && sighting.status === 'pending')
-    .sort((a, b) => a.at - b.at)
-}
-
-/** A visitor's corroborating (or doubting) thumb on an open report, local to
-    this browser (see Sighting.votes' own note on why that is honest rather
-    than a shortcut). */
-export async function voteSighting(id: string, direction: 'up' | 'down'): Promise<boolean> {
-  return vote(id, direction)
-}
-
-/** An admin attaching a photo to an EXISTING cat's record from the plate's
-    "Update record" mode, same trust level as addCat's own bootstrap photos
-    below (sightings.ts's buildAdminSighting) — added straight in as
-    `surveyed`, no review. `order: 0` puts it at the front of the stack;
-    reaching for a fresh photo is usually the point of adding one, and an
-    admin who wants it elsewhere already has the reorder controls next to
-    "Manage sightings" to move it there. */
-export async function addAdminPhoto(
-  catId: string,
-  point: [number, number],
-  photo: string
-): Promise<boolean> {
-  return !!addAdminSighting(catId, point, Date.now(), photo, 0)
-}
-
-/* The territory shapes, on the same seam and for the same reason. This used
-   to be a static import in Territories.tsx and CatMarkers.tsx, which was
-   correct while the only cats were the seeded three and wrong the moment one
-   could be added at runtime: a JSON import is frozen at module evaluation,
-   so a newly recorded cat would have had a marker, a rail row and a plate,
-   and no territory under any of them. */
-export async function listTerritories(): Promise<FeatureCollection<Polygon>> {
-  const base = baseTerritories as FeatureCollection<Polygon>
-  /* Surveyed only. This is the line that turns a sighting from something
-     that moves the map into something that proposes to. */
-  const seen = latestByCat(published())
-  /* A deleted seed cat's territory has to go with it, or the map would keep
-     drawing a shape for a record the plate and the rail no longer show. */
-  const hiddenIds = readOverlay(CAT_OVERLAY).hidden
-  return {
-    type: 'FeatureCollection',
-    /* Sightings are applied here, at read time, rather than written back
-       into the shapes. The recorded outline stays the recorded outline, and
-       what the map draws is that outline plus whatever has been observed
-       since, which is the same relationship a review queue will need: the
-       submission never destroys what it proposes to change. */
-    features: [...base.features, ...readStored().map(shapeFeature)]
-      .filter((feature) => !hiddenIds.includes(feature.properties?.id as string))
-      .map((feature) => {
-        const sighting = seen.get(feature.properties?.id as string)
-        return sighting ? translateToward(feature, sighting.point) : feature
-      }),
-  }
-}
-
-/** How many cats this browser has recorded. Sync, and the one place the
-    local-only nature of the mock leaks into the UI on purpose: the panel
-    offers to clear them, which is an affordance that exists because storage
-    is a browser, and disappears when it is a server. */
-export function countRecorded(): number {
-  return readStored().length
+/** How many cats exist in the survey. Firestore replaces the old
+    seeded-plus-locally-recorded split (`CATS` and `readStored()`) with one
+    collection, so there is no separate "recorded" subset left to count;
+    this simply counts every doc. Async now, unlike before, because a
+    collection read can no longer happen synchronously the way reading
+    localStorage did. */
+export async function countRecorded(): Promise<number> {
+  const snap = await getDocs(collection(db, COLLECTION))
+  return snap.size
 }
 
 const MONTH = new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' })
@@ -264,15 +122,16 @@ function formatCoordinates([lng, lat]: [number, number]): string {
 }
 
 /** One higher than every survey-line number already on record, seeded and
-    locally recorded alike, so a newly added cat continues the same count
+    admin-recorded alike, so a newly added cat continues the same count
     rather than restarting at a fixed placeholder every time. Parses the
     number off the front of each existing `line` string ("LINE 11 ·
     KALAYAAN" -> 11); a cat with no such prefix does not raise the max,
-    same as one with nothing to contribute. The seeded cats stop at 11
-    (two of them share LINE 01), so the first recorded cat lands on 12. */
-function nextLineNumber(stored: { cat: Cat }[]): number {
-  const all = [...CATS, ...stored.map((entry) => entry.cat)]
-  const max = all.reduce((n, cat) => {
+    same as one with nothing to contribute. The seeded cats stop at 11 (two
+    of them share LINE 01), so the first recorded cat lands on 12.
+    Unchanged logic from before Firestore; reads the live `cats` collection
+    instead of `[...CATS, ...stored]`. */
+function nextLineNumber(cats: { line: string }[]): number {
+  const max = cats.reduce((n, cat) => {
     const match = /^LINE (\d+)/.exec(cat.line)
     return match ? Math.max(n, Number(match[1])) : n
   }, 0)
@@ -287,8 +146,9 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
   const name = draft.name.trim()
   if (!name) return null
 
-  const stored = readStored()
-  const taken = new Set([...CATS, ...stored.map((entry) => entry.cat)].map((cat) => cat.id))
+  const snap = await getDocs(collection(db, COLLECTION))
+  const existing = snap.docs.map((d) => ({ id: d.id, ...(d.data() as CatDoc) }))
+  const taken = new Set(existing.map((cat) => cat.id))
 
   /* -2, -3 and so on rather than a random suffix: two cats called Mingming
      should read as mingming and mingming-2, and the id shows up in the URL
@@ -297,11 +157,10 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
   let id = base
   for (let n = 2; taken.has(id); n++) id = `${base}-${n}`
 
-  const cat: Cat = {
-    id,
+  const catData: CatDoc = {
     name: name.toUpperCase(),
-    plate: `PLATE ${String(CATS.length + stored.length + 1).padStart(2, '0')}`,
-    line: `LINE ${String(nextLineNumber(stored)).padStart(2, '0')} · ${draft.line.trim() || 'FIELD ENTRY'}`,
+    plate: `PLATE ${String(existing.length + 1).padStart(2, '0')}`,
+    line: `LINE ${String(nextLineNumber(existing)).padStart(2, '0')} · ${draft.line.trim() || 'FIELD ENTRY'}`,
     colour: draft.colour,
     description: draft.description.trim(),
     firstRecorded: MONTH.format(new Date()),
@@ -310,33 +169,53 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     note: draft.note.trim() || undefined,
     coordinates: formatCoordinates(draft.center),
     photo: draft.photo.trim(),
+    territory: shapeRing(draft.shape, draft.center, draft.radiusM),
   }
 
-  if (!writeStored([...stored, { cat, center: draft.center, radiusM: draft.radiusM, shape: draft.shape }])) {
+  try {
+    await setDoc(doc(db, COLLECTION, id), catData)
+  } catch {
     return null
   }
 
-  /* Every extra photo becomes its own surveyed sighting, pointed at the
-     same territory centre (the only coordinate this flow has). This is
-     what feeds the plate's existing photo pile (plate/Plate.tsx's
-     CardStack); no display code changes for it. A photo that fails to
-     save here is silently dropped rather than failing the whole submit:
-     the cat itself is already safely stored by this point, and losing one
-     gallery photo to a quota edge is a smaller problem than losing the
-     cat record over it. */
+  /* Every extra photo becomes its own surveyed sighting, same as before:
+     draft.extraPhotos already carries Storage URLs by the time this runs
+     (ui/RecordCat.tsx's pickExtraPhotos uploads them at pick time, see
+     Task 13), so this is just attaching them, not compressing them. A
+     photo that fails to save here is silently dropped rather than failing
+     the whole submit: addAdminSighting swallows its own errors and
+     returns null instead of throwing, so one failed write never rejects
+     the Promise.all below, and the cat itself is already safely stored by
+     this point, so losing one gallery photo is a smaller problem than
+     losing the cat record over it. */
   const now = Date.now()
-  draft.extraPhotos.forEach((photo, index) => {
-    addAdminSighting(cat.id, draft.center, now, photo, index)
-  })
+  await Promise.all(
+    draft.extraPhotos.map((photo, index) => addAdminSighting(id, draft.center, now, photo, index, draft.authorUid))
+  )
 
-  return cat
+  /* `territory` is Firestore-only: a Cat has never carried its own ring (it
+     is re-derived from listTerritories at read time), so it is stripped
+     here rather than spread into the returned Cat, which would otherwise
+     fail the excess-property check on this function's Promise<Cat | null>
+     return type. */
+  const { territory: _territory, ...catFields } = catData
+  return { id, ...catFields }
 }
 
-/** Removes every recorded cat, not one. Kept for the same reason it always
-    existed (a fast demo reset); per-cat deletion is `deleteCat` below, now
-    that there is a role to gate it behind. */
-export function clearRecorded(): boolean {
-  return writeStored([])
+/** Removes every cat in the collection, seeded and admin-recorded alike:
+    Firestore holds one `cats` collection now, so there is no separate
+    "recorded" subset the way `readStored()` used to carve out from `CATS`.
+    Kept for the same reason it always existed (a fast demo reset); per-cat
+    deletion is `deleteCat` below. Async because deleting a live collection
+    can no longer happen synchronously the way clearing localStorage did. */
+export async function clearRecorded(): Promise<boolean> {
+  const snap = await getDocs(collection(db, COLLECTION))
+  try {
+    await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)))
+    return true
+  } catch {
+    return false
+  }
 }
 
 /* --- Admin edits, phase 8's role gate extended to the record itself ----
@@ -346,7 +225,7 @@ export function clearRecorded(): boolean {
    set once at creation and never revisited, and `lastSeen` is normally
    derived (see listCats above) rather than typed in at all. Both are now on
    the list because an admin correcting the record after the fact is a real
-   need review surfaced — a wrong disposition or a stale derived date should
+   need review surfaced, a wrong disposition or a stale derived date should
    not have to wait for the next sighting to fix itself.
 
    Never `id`, `plate`, `coordinates` or `range`: those describe the
@@ -375,8 +254,8 @@ export type CatPatch = Partial<
    already enforce on the way in. */
 const CLEARABLE = new Set<keyof CatPatch>(['note', 'lastSeen'])
 
-function cleanPatch(patch: CatPatch): CatPatch | null {
-  const clean: Record<string, string | undefined> = {}
+function cleanPatch(patch: CatPatch): Record<string, string | ReturnType<typeof deleteField>> | null {
+  const clean: Record<string, string | ReturnType<typeof deleteField>> = {}
   for (const [key, raw] of Object.entries(patch)) {
     if (typeof raw !== 'string') continue
     const value = raw.trim()
@@ -385,39 +264,192 @@ function cleanPatch(patch: CatPatch): CatPatch | null {
       continue
     }
     if (!CLEARABLE.has(key as keyof CatPatch)) return null
-    clean[key] = undefined
+    clean[key] = deleteField()
   }
-  return clean as CatPatch
+  return clean
 }
 
-/** An admin correcting a record after the fact. A seed cat's edit lands in
-    the overlay (see data/overlay.ts); a recorded cat's storage entry is
-    rewritten directly, since nothing is frozen about it to begin with. */
+/** An admin correcting a record after the fact. Every cat's doc is
+    rewritten directly now, seeded or admin-recorded alike, since Firestore
+    does not fork the two the way the old CATS-versus-overlay split did. */
 export async function updateCat(id: string, patch: CatPatch): Promise<boolean> {
   const clean = cleanPatch(patch)
   if (!clean) return false
-  if (CATS.some((cat) => cat.id === id)) return patchOverlay(CAT_OVERLAY, id, clean)
-  const stored = readStored()
-  const idx = stored.findIndex((entry) => entry.cat.id === id)
-  if (idx < 0) return false
-  const next = [...stored]
-  next[idx] = { ...next[idx], cat: { ...next[idx].cat, ...clean } }
-  return writeStored(next)
+  try {
+    await updateDoc(doc(db, COLLECTION, id), clean)
+    return true
+  } catch {
+    return false
+  }
 }
 
-/** Removes a cat from the survey entirely: a recorded cat's entry is
-    deleted outright, a seed cat is hidden by the overlay (cats.seed.ts
-    itself is never rewritten). Its territory goes with it (listTerritories
-    filters the same hidden set), and the cat vanishing from listCats is
-    what closes its plate (App.tsx's own effect clears a selection that no
-    longer names a cat). Its sightings are left in the log rather than swept
-    up: they are their own record of what somebody reported seeing, and a
-    deleted cat is not a reason to also erase that anybody looked. */
+/** Removes a cat from the survey entirely, deleted outright now that every
+    cat lives in the same collection (no seed-versus-overlay split to hide
+    one behind instead). Its territory goes with it, since listTerritories
+    reads the same `cats` collection this deletes from, and the cat
+    vanishing from listCats is what closes its plate (App.tsx's own effect
+    clears a selection that no longer names a cat). Its sightings are left
+    in the log rather than swept up: they are their own record of what
+    somebody reported seeing, and a deleted cat is not a reason to also
+    erase that anybody looked. */
 export async function deleteCat(id: string): Promise<boolean> {
-  if (CATS.some((cat) => cat.id === id)) return hideOverlay(CAT_OVERLAY, id)
-  const stored = readStored()
-  if (!stored.some((entry) => entry.cat.id === id)) return false
-  return writeStored(stored.filter((entry) => entry.cat.id !== id))
+  try {
+    await deleteDoc(doc(db, COLLECTION, id))
+    return true
+  } catch {
+    return false
+  }
+}
+
+/* The territory shapes, on the same seam and for the same reason. This used
+   to be a static import in Territories.tsx and CatMarkers.tsx, which was
+   correct while the only cats were the seeded three and wrong the moment one
+   could be added at runtime: a JSON import is frozen at module evaluation,
+   so a newly recorded cat would have had a marker, a rail row and a plate,
+   and no territory under any of them. */
+export async function listTerritories(): Promise<FeatureCollection<Polygon>> {
+  const [snap, sightings] = await Promise.all([getDocs(collection(db, COLLECTION)), surveyedSightings()])
+  /* Surveyed only. This is the line that turns a sighting from something
+     that moves the map into something that proposes to. */
+  const seen = latestByCat(sightings)
+  return {
+    type: 'FeatureCollection',
+    /* Sightings are applied here, at read time, rather than written back
+       into the shapes. The recorded outline stays the recorded outline,
+       and what the map draws is that outline plus whatever has been
+       observed since, which is the same relationship a review queue
+       needs: the submission never destroys what it proposes to change. */
+    features: snap.docs.map((docSnap) => {
+      const data = docSnap.data() as CatDoc
+      const feature: FeatureCollection<Polygon>['features'][number] = {
+        type: 'Feature',
+        properties: { id: docSnap.id, name: data.name },
+        geometry: { type: 'Polygon', coordinates: [data.territory] },
+      }
+      const sighting = seen.get(docSnap.id)
+      return sighting ? translateToward(feature, sighting.point) : feature
+    }),
+  }
+}
+
+/** One cat's observations, newest first.
+
+    Per cat rather than all of them, because that is the request a server
+    will actually be asked to serve: the plate is the only thing that reads
+    these, and it is only ever open on one cat. */
+export async function listSightings(catId: string, uid: string | null): Promise<Sighting[]> {
+  /* Published, plus this viewer's own unreviewed reports. The one place
+     pending data reaches a non-admin surface, and safe for a specific
+     reason spelled out at isOwnPending: it is already theirs, so it tells
+     its reader nothing they did not submit. The plate marks them, and
+     offers to withdraw them.
+
+     Discarded ones are not here. They belong to the audit trail, not to a
+     cat's record: showing a visitor a turned-down report every time they
+     open that plate is a standing argument, not a log. */
+  const list = (await listAllSightings())
+    .filter((sighting) => sighting.catId === catId)
+    .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, uid))
+  return sortForDisplay(list)
+}
+
+/** Everything waiting on a verdict, oldest first, for the review queue.
+
+    Oldest first on purpose, unlike every other list in this app: a queue is
+    worked from the front, and the submission that has been waiting longest
+    is the one somebody is still waiting on an answer to. */
+export async function listPending(): Promise<Sighting[]> {
+  return (await listAllSightings())
+    .filter((sighting) => sighting.status === 'pending')
+    .sort((a, b) => a.at - b.at)
+}
+
+/** Every decision that has been made, newest first: the audit trail. Both
+    verdicts, because "what did we turn down" is the half of a review log
+    that is actually worth having. */
+export async function listReviewed(): Promise<Sighting[]> {
+  return (await listAllSightings())
+    .filter((sighting) => sighting.status !== 'pending')
+    .sort((a, b) => b.at - a.at)
+}
+
+/** An admin's verdict. Approving is what makes the territory move, which
+    until now happened the instant a sighting was made. */
+export async function reviewSighting(id: string, verdict: 'surveyed' | 'discarded'): Promise<boolean> {
+  return review(id, verdict)
+}
+
+/** A visitor taking back their own unreviewed report. Deletes it: nothing
+    was published and no decision was made, so there is nothing to keep.
+
+    `uid` is checked here as well as by firestore.rules: belt and
+    suspenders, same as the pre-Firestore version checked its own storage
+    before trusting the caller. "Withdraw" must never become a way to
+    delete somebody else's record or an already-approved one. */
+export async function withdrawSighting(id: string, uid: string): Promise<boolean> {
+  const all = await listAllSightings()
+  const mine = all.find((sighting) => sighting.id === id)
+  if (!mine || mine.status !== 'pending' || mine.authorUid !== uid) return false
+  return removeSighting(id)
+}
+
+/** An admin cleaning up the sighting log itself: any record, any status,
+    gone for good. Not a review verdict (reviewSighting above) and not a
+    visitor's own undo (withdrawSighting above): see sightings.ts's
+    deleteSighting for the distinction written out in full. */
+export async function deleteSighting(id: string): Promise<boolean> {
+  return removeAnySighting(id)
+}
+
+/** An admin re-sequencing one cat's log: which photo leads the stack, never
+    when a sighting happened. */
+export async function reorderSighting(catId: string, id: string, direction: 'up' | 'down'): Promise<boolean> {
+  return reorder(catId, id, direction)
+}
+
+/** Every open report on one cat, oldest first: the admin's decision list on
+    the plate. Unlike listSightings above, not narrowed to "mine plus
+    published": this is the one place besides admin review itself that a
+    non-owner's pending row is readable, and it stays readable here on
+    purpose. The plate's own visitor-facing lock (plate/Plate.tsx) reads the
+    same list to know a report already exists, without ever rendering its
+    point. What differs by caller is what gets drawn from it, not what is
+    fetched. */
+export async function listPendingForCat(catId: string, uid: string | null): Promise<Sighting[]> {
+  const pending = (await listAllSightings())
+    .filter((sighting) => sighting.catId === catId && sighting.status === 'pending')
+    .sort((a, b) => a.at - b.at)
+  if (!uid) return pending
+  /* Join in this viewer's own vote per sighting. A handful of extra reads
+     at most: a cat rarely has more than one or two open reports at once
+     (catsRepo.addSighting locks the report button once one exists), so
+     one getDoc per pending row is the right size of solution here rather
+     than a batched query for a list this short. */
+  return Promise.all(
+    pending.map(async (sighting) => ({ ...sighting, myVote: await myVoteFor(sighting.id, uid) }))
+  )
+}
+
+/** A visitor's corroborating (or doubting) thumb on an open report, one per
+    uid now that voting spans every viewer rather than one browser (see
+    Sighting.votes' own note in sightings.ts). */
+export async function voteSighting(id: string, uid: string, direction: 'up' | 'down'): Promise<boolean> {
+  return vote(id, uid, direction)
+}
+
+/** An admin attaching a photo to an EXISTING cat's record from the plate's
+    "Update record" mode, same trust level as addCat's own bootstrap photos
+    above: added straight in as `surveyed`, no review. `order: 0` puts it at
+    the front of the stack; reaching for a fresh photo is usually the point
+    of adding one, and an admin who wants it elsewhere already has the
+    reorder controls next to "Manage sightings" to move it there. */
+export async function addAdminPhoto(
+  catId: string,
+  point: [number, number],
+  photo: string,
+  authorUid: string
+): Promise<boolean> {
+  return !!(await addAdminSighting(catId, point, Date.now(), photo, 0, authorUid))
 }
 
 export type { Cat, CatDraft, Sighting }
