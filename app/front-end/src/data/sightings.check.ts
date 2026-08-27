@@ -1,91 +1,16 @@
 import assert from 'node:assert/strict'
-import type { FeatureCollection, Polygon } from 'geojson'
-import {
-  allSightings,
-  applyVote,
-  buildAdminSighting,
-  latestByCat,
-  pendingByCat,
-  translateToward,
-  type Sighting,
-} from './sightings'
-import baseTerritories from './territories.geo.json'
+import { applyVote, pendingByCat, type Sighting } from './sightings'
 
-/* The one runnable check behind the seeded observations.
+/* Run: npm run check:sightings (no test runner in this project, see
+   package.json). Phase 9 narrowed this file's scope: everything it
+   checked that touched localStorage or the seeded history moved either
+   to territoryShape.check.ts (the geometry) or out of node's reach
+   entirely (scripts/migrateSeed.ts writes to a real/emulated Firestore,
+   and Task 2's rules.test.mjs is what actually exercises Firestore
+   writes under a check). What is left here is genuinely pure: no
+   localStorage, no network, same as before. */
 
-   The property it defends is not obvious from reading either file on its
-   own, which is exactly why it is written down. catsRepo.listTerritories
-   applies the newest sighting for a cat by translating that cat's
-   territory onto the reported point. Every cat now has seeded sightings,
-   so that translation runs on first load, before anybody has done
-   anything. It is only harmless because each seed sits on its own
-   territory's centroid, which makes the offset exactly zero.
-
-   Nothing throws if that stops being true. The hand-drawn outlines would
-   simply be somewhere slightly other than where territories.geo.json puts
-   them, on every load, and the way you would find out is by noticing that
-   the map looks a bit wrong. Redrawing a polygon, or writing a seed point
-   out by hand instead of deriving it, are both one-line changes that would
-   do it.
-
-   Run: npm run check:sightings (see package.json -- there is no test
-   runner in this project, so this compiles itself and runs on node).
-
-   Note that allSightings() returns the seeds alone here: it reads
-   localStorage through readSightings, which is guarded, and node has no
-   window for it to read. That is the intended degradation and it is what
-   makes this file able to check the seeds in isolation. */
-
-const territories = baseTerritories as FeatureCollection<Polygon>
-const seeded = allSightings()
-
-assert.ok(seeded.length > 0, 'no seeded sightings at all')
-assert.ok(
-  seeded.every((sighting) => sighting.id.startsWith('seed-')),
-  'allSightings returned something that was not a seed, so localStorage leaked into node'
-)
-
-// The property the territories depend on.
-const newest = latestByCat()
-for (const feature of territories.features) {
-  const id = feature.properties?.id as string
-  const sighting = newest.get(id)
-  /* A plain throw rather than assert.ok, which does narrow the type in
-     principle but only when TypeScript can prove the assertion target's
-     declaration, and an imported namespace member does not always qualify. */
-  if (!sighting) throw new Error(`${id} has no seeded sighting, so the plate shows no "Last seen"`)
-  assert.deepEqual(
-    translateToward(feature, sighting.point).geometry.coordinates,
-    feature.geometry.coordinates,
-    `${id}'s territory moves on load: its newest seed is not on its own centroid`
-  )
-}
-
-// Newest-wins, which is what makes the line above test the seed that
-// actually gets applied rather than an arbitrary one.
-for (const id of ['milo', 'biscuit', 'tala']) {
-  const mine = seeded.filter((sighting) => sighting.catId === id)
-  assert.ok(mine.length > 1, `${id} needs more than one seed for this to mean anything`)
-  assert.equal(
-    newest.get(id)?.at,
-    Math.max(...mine.map((sighting) => sighting.at)),
-    `latestByCat did not pick the newest sighting for ${id}`
-  )
-}
-
-// The optional photo is genuinely optional. Every sighting a visitor can
-// make today arrives without one, so a seed without one has to exist or
-// the plate is only ever exercised on the easy case.
-assert.ok(
-  seeded.some((sighting) => sighting.photo === undefined),
-  'every seed has a photo, so the photo-less path is never exercised'
-)
-assert.ok(
-  seeded.every((sighting) => sighting.photo === undefined || sighting.photo.startsWith('https://')),
-  'a seeded photo is not an https URL'
-)
-
-// --- pendingByCat, phase 9 ----------------------------------------------
+// --- pendingByCat --------------------------------------------------------
 // The map's ghost (map/Territories.tsx) and pending badge (map/
 // CatMarkers.tsx) both anchor to whichever sighting this function calls
 // "oldest", and the plate's own count next to "Pending review" is this
@@ -98,6 +23,7 @@ const at = (id: string, catId: string, status: Sighting['status'], atMs: number)
   point: [121.05, 14.55],
   at: atMs,
   status,
+  authorUid: 'test-uid',
 })
 
 const p1 = at('p1', 'milo', 'pending', 300)
@@ -113,19 +39,14 @@ assert.equal(summary.get('milo')?.count, 3, 'pendingByCat miscounted a cat with 
 assert.equal(summary.get('biscuit')?.count, 1, 'a different cat’s own pending report was not counted')
 assert.equal(summary.has('nobody'), false, 'a cat with nothing pending should not appear at all')
 
-// A decided sighting is not pending, however recently it was decided.
-assert.equal(
-  pendingByCat([done]).size,
-  0,
-  'a surveyed sighting was counted as pending'
-)
+assert.equal(pendingByCat([done]).size, 0, 'a surveyed sighting was counted as pending')
 
 console.log('pendingByCat: ok')
 
-// --- applyVote, phase 9 ---------------------------------------------------
+// --- applyVote -------------------------------------------------------------
 // The pure half of voteSighting, checked directly because voteSighting
-// itself degrades to a silent no-op under node (no localStorage — same
-// intended degradation sightings.check.ts already relies on above).
+// itself needs a live/emulated Firestore transaction (Task 2 covers the
+// rules; this stays a plain node check of the arithmetic alone).
 
 const fresh = applyVote({}, 'up')
 assert.deepEqual(fresh, { votes: { up: 1, down: 0 }, myVote: 'up' }, 'a first vote did not register')
@@ -144,35 +65,9 @@ assert.deepEqual(
   'switching thumbs did not move the vote off the first one'
 )
 
-// A vote can never go negative, whatever state it starts from — this is
-// the guard against the up/down tally on a hand-edited or corrupted
-// localStorage entry going negative and reading as more support than "0".
 const corrupt = applyVote({ votes: { up: 0, down: 0 }, myVote: 'up' }, 'up')
 assert.equal(corrupt.votes?.up, 0, 'withdrawing a vote from an already-zeroed tally went negative')
 
 console.log('applyVote: ok')
-
-// --- buildAdminSighting, this redesign -----------------------------------
-// The pure half of addAdminSighting, checked directly because
-// addAdminSighting itself degrades to a no-op under node (no
-// window.localStorage to write to).
-
-const built = buildAdminSighting('milo', [121.05, 14.55], 1000, 'data:image/jpeg;base64,xyz', 2)
-assert.equal(built.catId, 'milo')
-assert.deepEqual(built.point, [121.05, 14.55])
-assert.equal(built.at, 1000)
-assert.equal(built.photo, 'data:image/jpeg;base64,xyz')
-assert.equal(built.order, 2)
-assert.equal(
-  built.status,
-  'surveyed',
-  'an admin-authored sighting must land surveyed: it is already at the trust level a new cat record itself skips review at, and it has to show in the photo pile immediately'
-)
-assert.ok(built.id.length > 0, 'buildAdminSighting produced an empty id')
-
-const builtAgain = buildAdminSighting('milo', [121.05, 14.55], 1000, 'data:image/jpeg;base64,xyz', 2)
-assert.notEqual(built.id, builtAgain.id, 'two calls with identical inputs collided on id')
-
-console.log('buildAdminSighting: ok')
 
 console.log('sightings: ok')
