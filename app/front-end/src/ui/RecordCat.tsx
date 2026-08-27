@@ -199,13 +199,24 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
      actual writer, not whoever held the gate open when the panel opened. */
   const [uid, setUid] = useState<string | null>(null)
   useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
-  /* True while either photo picker has a network upload in flight. The old
-     compressImage path resolved to a local data URI, instant enough that
-     nothing needed to track "still working" between pick and preview; a
-     real Storage upload is a round trip that can visibly take a moment on
-     a slow connection, and Next/Add cat must not be pressable while a
-     photo the submit is about to send is still only partially there. */
-  const [photoUploading, setPhotoUploading] = useState(false)
+  /* A count of uploads currently in flight, not a boolean: the main photo
+     and the extra-photos gallery are two independent pickers on the same
+     screen (pickMainPhoto/pickExtraPhotos below), each reachable while the
+     other is still mid-upload, and pickExtraPhotos itself fires several
+     uploads at once via Promise.all. A boolean set true-then-false around
+     each call would have the last upload to *start* clear it the moment
+     it, alone, finishes, even while its siblings are still running, which
+     is exactly the silently-dropped-photo bug a review caught here. The
+     count only reaches zero once every upload that started has actually
+     finished (its own `finally` decrements it), so "uploading" is simply
+     `photosUploading > 0`. The old compressImage path resolved to a local
+     data URI, instant enough that nothing needed to track "still working"
+     between pick and preview at all; a real Storage upload is a round
+     trip that can visibly take a moment on a slow connection, and
+     Next/Add cat must not be pressable while a photo the submit is about
+     to send is still only partially there. */
+  const [photosUploading, setPhotosUploading] = useState(0)
+  const photoUploading = photosUploading > 0
 
   const reset = () => {
     setStep(0)
@@ -330,7 +341,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
   const pickMainPhoto = async (file: File | undefined) => {
     if (!file) return
     setError(null)
-    setPhotoUploading(true)
+    setPhotosUploading((n) => n + 1)
     try {
       const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
       const url = await uploadPhoto(blob, 'cats')
@@ -338,7 +349,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     } catch {
       setError('Could not upload that photo. Check your connection and try again.')
     } finally {
-      setPhotoUploading(false)
+      setPhotosUploading((n) => n - 1)
     }
   }
 
@@ -347,16 +358,25 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     setError(null)
     const room = MAX_EXTRA_PHOTOS - extraPhotos.length
     const picked = Array.from(files).slice(0, room)
-    setPhotoUploading(true)
     try {
+      /* Each photo in the batch counts itself in and out of
+         photosUploading individually, not the Promise.all as a whole:
+         Storage upload times vary per file, and the count must stay above
+         zero for as long as ANY of them is still running, not just until
+         the fastest one resolves. */
       const urls = await Promise.all(
-        picked.map(async (file) => uploadPhoto(await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY), 'cats'))
+        picked.map(async (file) => {
+          setPhotosUploading((n) => n + 1)
+          try {
+            return await uploadPhoto(await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY), 'cats')
+          } finally {
+            setPhotosUploading((n) => n - 1)
+          }
+        })
       )
       setExtraPhotos((prev) => [...prev, ...urls.map((src, i) => ({ id: `${Date.now()}-${i}`, src }))])
     } catch {
       setError('Could not upload one of those photos. Try again.')
-    } finally {
-      setPhotoUploading(false)
     }
   }
 
