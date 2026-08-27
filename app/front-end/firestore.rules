@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Marker docs only, one per admin, keyed by their Google uid. Added by
+    // hand in the Firebase console (design doc, "Data model"); there is no
+    // client path that should ever write one.
+    match /admins/{uid} {
+      allow read: if isSignedIn();
+      allow write: if false;
+    }
+
+    match /cats/{catId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /sightings/{sightingId} {
+      allow read: if true;
+
+      // A visitor's own report lands pending, self-attributed. An admin's
+      // direct photo add (catsRepo.addAdminPhoto) lands surveyed outright,
+      // same trust level as the cat record itself (sightings.ts's own note
+      // on buildAdminSighting).
+      allow create: if
+        (isSignedIn()
+          && request.resource.data.authorUid == request.auth.uid
+          && request.resource.data.status == 'pending')
+        || (isAdmin() && request.resource.data.status == 'surveyed');
+
+      // Admin: verdicts, reorders, corrections, anything. Any signed-in
+      // user, separately: may update ONLY the `votes` tally, which is what
+      // the vote transaction's parent-doc write does (data/sightings.ts).
+      //
+      // This trusts the client's vote arithmetic rather than re-deriving it
+      // from the votes/ subcollection: a real integrity gap (a malicious
+      // client could still write an inflated count) that a Cloud Function
+      // trigger would close. Left open deliberately: closing it needs
+      // Cloud Functions, which this phase is scoped to avoid (design doc,
+      // "Platform"). Upgrade path if it ever matters: a Function that
+      // recomputes `votes` from the subcollection on every write to it.
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes']));
+
+      // Withdraw (own, still pending) or an admin's housekeeping (any).
+      allow delete: if isAdmin()
+        || (isSignedIn()
+            && resource.data.authorUid == request.auth.uid
+            && resource.data.status == 'pending');
+
+      match /votes/{uid} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && request.auth.uid == uid;
+      }
+    }
+  }
+}
