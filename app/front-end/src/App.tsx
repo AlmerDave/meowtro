@@ -254,10 +254,11 @@ export default function App() {
      `data-placing`: a body-level attribute is what lets shell.css reserve
      room for the admin banner below (.rail/.plate's `top`) without
      threading a boolean prop through components that have no other reason
-     to know about it. `admin` never changes after mount (useAdmin's own
-     note), so this effect only ever runs once — still an effect, not a
-     bare assignment during render, for the same reason every other DOM
-     side effect in this app is one. */
+     to know about it. Still depends on `[admin]`, which now matters for a
+     real reason: this is the effect that re-runs when `admin` flips from
+     false to true post-mount, once subscribeAuth/isAdmin (useAdmin's own
+     note) resolve. Still an effect, not a bare assignment during render,
+     for the same reason every other DOM side effect in this app is one. */
   useEffect(() => {
     document.body.dataset.admin = String(admin)
   }, [admin])
