@@ -17,7 +17,7 @@ import {
   UNKNOWN,
   type CoatAnswers,
 } from '@/data/describeCat'
-import { SHAPES, shapePreviewPoints, shapeRing, type Shape } from '@/data/localCats'
+import { SHAPES, shapePreviewPoints, shapeRing, type Shape } from '@/data/territoryShape'
 import { addChip, BUILTIN_NOTE_CHIPS, readChips } from '@/data/noteChips'
 import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
 import { spring, springSoft } from '@/motion/springs'
