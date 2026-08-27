@@ -4,6 +4,7 @@ import { ArrowRight, ArrowUpRight } from 'lucide-react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { MapCanvas } from '@/map/MapCanvas'
 import { listCats, type Cat } from '@/data/catsRepo'
+import type { Sighting } from '@/data/sightings'
 import { photoAt } from '@/data/cats.seed'
 import { signInWithGoogle } from '@/data/auth'
 import { Reel } from './Reel'
@@ -34,6 +35,7 @@ import { Reel } from './Reel'
    actually see them. The map's job here is to be the city. */
 const NO_TERRITORIES: FeatureCollection<Polygon> = { type: 'FeatureCollection', features: [] }
 const NO_CATS: Cat[] = []
+const NO_SIGHTINGS: Sighting[] = []
 
 /* The centre of the seeded territory data, stated to two minutes. Not read
    from the geojson at runtime: it is a caption about where BGC is, and
@@ -173,6 +175,8 @@ export default function Landing() {
         interactive={false}
         cats={NO_CATS}
         territories={NO_TERRITORIES}
+        sightings={NO_SIGHTINGS}
+        uid={null}
         selectedId={null}
         onSelect={() => {}}
         hoveredId={null}

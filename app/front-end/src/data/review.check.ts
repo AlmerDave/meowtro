@@ -12,15 +12,22 @@ import { isOwnPending, isSurveyed, type Sighting } from './sightings'
    spec §9 exists to prevent, and it fails silently: the map just quietly
    shows more than it should.
 
+   Updated phase 9: isOwnPending's signature changed from "is this sighting
+   in this array of my own reports" (a browser-local readSightings() scan)
+   to "does this sighting's authorUid match mine" (an account fact, now
+   that everyone signs in to report). Same predicate, same safety boundary,
+   different underlying source of "mine".
+
    Run: npm run check:review (there is no test runner in this project, so
    this compiles itself and runs on node). */
 
-const at = (id: string, status: Sighting['status']): Sighting => ({
+const at = (id: string, status: Sighting['status'], authorUid = 'me'): Sighting => ({
   id,
   catId: 'milo',
   point: [121.05, 14.55],
   at: 0,
   status,
+  authorUid,
 })
 
 const surveyed = at('a', 'surveyed')
@@ -36,42 +43,38 @@ assert.equal(isSurveyed(discarded), false, 'discarded is NOT published')
 // --- The one exception, and its limits ---------------------------------
 
 // Mine, and unreviewed: the plate shows it back to me with a withdraw.
-assert.equal(isOwnPending(pending, [pending]), true, 'my own pending is visible to me')
+assert.equal(isOwnPending(pending, 'me'), true, 'my own pending is visible to me')
 
 // The clause that matters most. Somebody ELSE's pending sighting is not
 // mine to see, no matter which surface is asking. If this ever returns true
-// for a sighting absent from `own`, the exception has become the rule.
-assert.equal(isOwnPending(pending, []), false, 'a pending sighting I do not own stays hidden')
-assert.equal(
-  isOwnPending(pending, [at('other', 'pending')]),
-  false,
-  'owning a different pending sighting grants nothing'
-)
+// for a sighting whose authorUid does not match the asking uid, the
+// exception has become the rule.
+assert.equal(isOwnPending(pending, 'someone-else'), false, 'a pending sighting I do not own stays hidden')
+assert.equal(isOwnPending(pending, null), false, 'a signed-out viewer owns nothing')
 
 // Ownership does not resurrect a decided record. A discarded sighting of
 // mine belongs to the audit trail, not to the cat's plate, and an approved
 // one is already visible through isSurveyed rather than through this.
-assert.equal(isOwnPending(discarded, [discarded]), false, 'my discarded report is not pending')
-assert.equal(isOwnPending(surveyed, [surveyed]), false, 'my approved report is not pending')
+assert.equal(isOwnPending(at('d', 'discarded', 'me'), 'me'), false, 'my discarded report is not pending')
+assert.equal(isOwnPending(at('e', 'surveyed', 'me'), 'me'), false, 'my approved report is not pending')
 
 // --- The two together, which is how every caller actually uses them -----
 
 // This is the exact composition in catsRepo.listSightings and in
 // Territories' "seen elsewhere" zones, asserted as one thing so a change to
 // either predicate that breaks the pair fails here.
-const visible = (sighting: Sighting, own: Sighting[]) =>
-  isSurveyed(sighting) || isOwnPending(sighting, own)
+const visible = (sighting: Sighting, uid: string | null) => isSurveyed(sighting) || isOwnPending(sighting, uid)
 
-const log = [surveyed, pending, discarded, at('other', 'pending')]
+const log = [surveyed, pending, discarded, at('f', 'pending', 'someone-else')]
 assert.deepEqual(
-  log.filter((sighting) => visible(sighting, [pending])).map((s) => s.id),
+  log.filter((sighting) => visible(sighting, 'me')).map((s) => s.id),
   ['a', 'b'],
   'a visitor sees published records plus their own unreviewed one, and nothing else'
 )
 assert.deepEqual(
-  log.filter((sighting) => visible(sighting, [])).map((s) => s.id),
+  log.filter((sighting) => visible(sighting, null)).map((s) => s.id),
   ['a'],
-  'a visitor who has reported nothing sees only what is published'
+  'a signed-out visitor sees only what is published'
 )
 
 console.log('review: ok')

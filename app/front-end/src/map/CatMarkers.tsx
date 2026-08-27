@@ -6,7 +6,7 @@ import { motion } from 'motion/react'
 import { Cat as CatGlyph, Flag } from 'lucide-react'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
-import { pendingByCat } from '@/data/sightings'
+import { pendingByCat, type Sighting } from '@/data/sightings'
 import { photoAt, THUMB_PX } from '@/data/cats.seed'
 import type { Cat } from '@/data/catsRepo'
 
@@ -64,6 +64,10 @@ type Props = {
   cats: Cat[]
   /* Passed in rather than imported. See the note by `centroids` below. */
   territories: FeatureCollection<Polygon>
+  /* The whole sightings log, fetched once by App.tsx alongside cats and
+     territories rather than read out of localStorage from in here: see
+     the pendingByCat call below for why the fetch had to move up a level. */
+  sightings: Sighting[]
   selectedId: string | null
   onSelect: (id: string | null) => void
   hoveredId: string | null
@@ -224,6 +228,7 @@ type DomMarker = { cat: Cat; el: HTMLDivElement }
 export function CatMarkers({
   cats,
   territories,
+  sightings,
   selectedId,
   onSelect,
   hoveredId,
@@ -241,15 +246,17 @@ export function CatMarkers({
   const { map, isLoaded, isFlat, theme } = useMap()
   const [domMarkers, setDomMarkers] = useState<DomMarker[]>([])
 
-  /* Read plainly at render time, not in an effect: it is a cheap
-     synchronous localStorage scan over a handful of rows (data/
-     sightings.ts), not a canvas paint, and this component already
-     re-renders whenever `cats`/`territories` change, which is exactly the
-     signal every action that adds, decides or withdraws a report already
-     produces (App.tsx's onRecorded/onChanged cascade). A vote alone does
-     not touch this set: see data/sightings.ts's pendingByCat for why a
-     tally never changes who is in it. */
-  const pending = admin ? pendingByCat() : null
+  /* Read plainly at render time, not in an effect: it is a cheap pass over
+     an already-fetched array (the `sightings` prop, App.tsx's own
+     Promise.all), not a canvas paint, and this component already
+     re-renders whenever `cats`/`territories`/`sightings` change, which is
+     exactly the signal every action that adds, decides or withdraws a
+     report already produces (App.tsx's onRecorded/onChanged cascade
+     refetches all three together). Cheaper than the localStorage scan this
+     replaced, and still correctly re-run on the same trigger. A vote alone
+     does not touch this set: see data/sightings.ts's pendingByCat for why
+     a tally never changes who is in it. */
+  const pending = admin ? pendingByCat(sightings) : null
 
   // The pitched-mode circle layer. isFlat is deliberately in this effect's
   // deps, 2026-08-17 — reverted from a split "create once, toggle visibility

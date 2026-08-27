@@ -36,4 +36,17 @@ export async function isAdmin(uid: string): Promise<boolean> {
   return snap.exists()
 }
 
+/** One-shot read of the signed-in uid, unlike subscribeAuth's ongoing
+    subscription, for callers that only need a snapshot at the moment
+    they ask (ui/About.tsx's open-time readout), not live updates for as
+    long as they're mounted. */
+export function getCurrentUid(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe()
+      resolve(user?.uid ?? null)
+    })
+  })
+}
+
 export type { User }

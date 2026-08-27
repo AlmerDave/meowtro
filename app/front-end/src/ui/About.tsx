@@ -3,7 +3,8 @@ import { motion } from 'motion/react'
 import { X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { countRecorded, listCats } from '@/data/catsRepo'
-import { allSightings, isSurveyed, readSightings } from '@/data/sightings'
+import { isSurveyed, listAllSightings } from '@/data/sightings'
+import { getCurrentUid } from '@/data/auth'
 import { useEscape } from '@/ui/escape'
 import { springSoft } from '@/motion/springs'
 
@@ -95,23 +96,39 @@ export function About({ onClose }: Props) {
 
   useEffect(() => {
     let live = true
-    listCats().then((cats) => {
-      if (!live) return
-      const mine = readSightings()
-      setSurvey({
-        cats: cats.length,
-        /* Surveyed only, matching what the map is drawn from. The count
-           under "Observations" is a statement about the survey, and an
-           unreviewed report is not part of it yet. */
-        observations: allSightings().filter(isSurveyed).length,
-        // The visitor's own additions, both kinds counted together: from
-        // their side these are one thing, "what I put in", regardless of
-        // which store it landed in. Unreviewed ones included, because they
-        // are still theirs; the line below says how many are still waiting.
-        yours: countRecorded() + mine.length,
-        waiting: mine.filter((sighting) => sighting.status === 'pending').length,
-      })
-    })
+    /* All four in one Promise.all rather than the old listCats().then(...)
+       chain, which used to finish the cats half asynchronously and then
+       reach back into localStorage synchronously for the sightings half
+       (readSightings/allSightings): now that sightings live in Firestore
+       too, there is no synchronous half left to reach for, so this panel
+       just finishes the async chain it was already inside instead of
+       degrading partway through it. getCurrentUid is the one-shot read
+       (data/auth.ts) built for exactly this: a snapshot at the moment this
+       panel opens, not an ongoing subscription for as long as it stays
+       mounted. */
+    Promise.all([listCats(), listAllSightings(), countRecorded(), getCurrentUid()]).then(
+      ([cats, sightings, recorded, uid]) => {
+        if (!live) return
+        /* "Mine" is now an authorUid match rather than a browser-local
+           readSightings() scan, same reasoning as isOwnPending's own note
+           (data/sightings.ts): everyone signs in to report as of phase 9,
+           so ownership is an account fact, not a storage fact. */
+        const mine = sightings.filter((sighting) => sighting.authorUid === uid)
+        setSurvey({
+          cats: cats.length,
+          /* Surveyed only, matching what the map is drawn from. The count
+             under "Observations" is a statement about the survey, and an
+             unreviewed report is not part of it yet. */
+          observations: sightings.filter(isSurveyed).length,
+          // The visitor's own additions, both kinds counted together: from
+          // their side these are one thing, "what I put in", regardless of
+          // which store it landed in. Unreviewed ones included, because they
+          // are still theirs; the line below says how many are still waiting.
+          yours: recorded + mine.length,
+          waiting: mine.filter((sighting) => sighting.status === 'pending').length,
+        })
+      }
+    )
     return () => {
       live = false
     }

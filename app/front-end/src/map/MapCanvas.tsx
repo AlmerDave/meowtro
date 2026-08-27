@@ -6,6 +6,7 @@ import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, Polygon } from 'geojson'
 import type { Cat } from '@/data/catsRepo'
+import type { Sighting } from '@/data/sightings'
 import type { Request } from '@/App'
 import { ReportSighting } from '@/ui/ReportSighting'
 import {
@@ -120,6 +121,20 @@ type Props = {
   /** The territory shapes, from the repo rather than a static import: one
       of them may have been recorded a second ago. */
   territories: FeatureCollection<Polygon>
+  /** The whole sightings log, fetched once by App.tsx alongside cats and
+      territories and handed down as a plain array. Forwarded to both
+      Territories (its "elsewhere" zones and ghost territory) and CatMarkers
+      (its pending badge) so neither has to read data/sightings.ts's
+      storage directly, which stopped being possible synchronously once
+      that file's source of record became Firestore. */
+  sightings: Sighting[]
+  /** The signed-in visitor's own uid, or null while signed out. Forwarded
+      to Territories only: it is the one place here that needs to tell
+      "my own unreviewed sighting" apart from everybody else's (see
+      isOwnPending in data/sightings.ts). CatMarkers' badge counts every
+      pending sighting on a cat regardless of who filed it, so it has no
+      ownership-dependent logic to feed. */
+  uid: string | null
   /** A cat was recorded. App re-reads the repo. */
   onRecorded: () => void
   /** The scanner identified a cat and the person wants to read about it. */
@@ -180,6 +195,8 @@ type Props = {
 export function MapCanvas({
   cats,
   territories,
+  sightings,
+  uid,
   selectedId,
   onSelect,
   hoveredId,
@@ -384,7 +401,7 @@ export function MapCanvas({
      MapLabels, Rain, Storm, MapControls and ReportSighting all call
      useMap(), so moving the pointer over a territory was re-rendering the
      whole map tree, including CatMarkers' twelve portals and its
-     synchronous pendingByCat() localStorage scan.
+     pendingByCat() pass over the sightings prop.
 
      setIsFlat/setTheme/setPlacing are React's own setters and setWeather is
      a useCallback, so every dependency here is either state or already
@@ -419,6 +436,8 @@ export function MapCanvas({
             <Territories
               cats={cats}
               territories={territories}
+              sightings={sightings}
+              uid={uid}
               selectedId={selectedId}
               onSelect={onSelect}
               hoveredId={hoveredId}
@@ -427,6 +446,7 @@ export function MapCanvas({
             <CatMarkers
               cats={cats}
               territories={territories}
+              sightings={sightings}
               selectedId={selectedId}
               onSelect={onSelect}
               hoveredId={hoveredId}

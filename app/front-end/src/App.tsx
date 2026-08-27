@@ -12,6 +12,7 @@ import { Rail } from '@/ui/Rail'
 import { CatDeck } from '@/ui/CatDeck'
 import { Loading } from '@/ui/Loading'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
+import { listAllSightings, type Sighting } from '@/data/sightings'
 import { isAdmin, subscribeAuth } from '@/data/auth'
 import type { FeatureCollection, Polygon } from 'geojson'
 
@@ -240,6 +241,12 @@ export default function App() {
     type: 'FeatureCollection',
     features: [],
   })
+  /* The whole sightings log, fetched alongside cats/territories rather than
+     read out of localStorage from inside map/Territories.tsx and
+     map/CatMarkers.tsx as it used to be (data/sightings.ts's own note on
+     why those two predicates cannot await). Handed down as a plain array so
+     nothing downstream has to fetch or await anything of its own. */
+  const [sightings, setSightings] = useState<Sighting[]>([])
   const [selectedId, setSelectedId, linked] = useUrlSelection()
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   /* Two flags, not one. mapReady is a fact reported by MapLibre; opened is
@@ -303,18 +310,26 @@ export default function App() {
 
   /* Async from day one. See data/catsRepo.ts.
 
-     Both halves are read together and set together, deliberately. A cat and
-     its territory are one record split across two calls, and setting them in
-     two passes would give the map a render where a cat has a marker with no
-     shape under it, or a shape with no cat to name it. */
+     All three are read together and set together, deliberately. A cat and
+     its territory are one record split across two calls, and setting them
+     in separate passes would give the map a render where a cat has a marker
+     with no shape under it, or a shape with no cat to name it. Sightings
+     joined the same Promise.all as of phase 9: it is the same one-load,
+     one-set shape, and every existing trigger for this effect (approving or
+     discarding a sighting, adding a cat, reporting one) already means the
+     sightings log has changed too, so it refreshes for free rather than
+     needing a second loadToken. */
   const [loadToken, setLoadToken] = useState(0)
   useEffect(() => {
     let live = true
-    Promise.all([listCats(), listTerritories()]).then(([loadedCats, loadedTerritories]) => {
-      if (!live) return
-      setCats(loadedCats)
-      setTerritories(loadedTerritories)
-    })
+    Promise.all([listCats(), listTerritories(), listAllSightings()]).then(
+      ([loadedCats, loadedTerritories, loadedSightings]) => {
+        if (!live) return
+        setCats(loadedCats)
+        setTerritories(loadedTerritories)
+        setSightings(loadedSightings)
+      }
+    )
     return () => {
       live = false
     }
@@ -429,6 +444,8 @@ export default function App() {
         onReady={onMapReady}
         onFailed={onMapFailed}
         territories={territories}
+        sightings={sightings}
+        uid={uid}
         onRecorded={onRecorded}
         onOpenRecord={openRecord}
         report={report}

@@ -4,14 +4,13 @@ import type { FeatureCollection, Polygon } from 'geojson'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
 import {
-  allSightings,
   distanceM,
   isOwnPending,
   isSurveyed,
   pendingByCat,
-  readSightings,
   ringRadiusM,
   translateToward,
+  type Sighting,
 } from '@/data/sightings'
 import type { Cat } from '@/data/catsRepo'
 
@@ -180,6 +179,17 @@ type Props = {
   cats: Cat[]
   /* Passed in rather than imported. See the note by `centroids` below. */
   territories: FeatureCollection<Polygon>
+  /* The whole sightings log, fetched once by App.tsx alongside cats and
+     territories (data/sightings.ts's own note on why the async fetch had
+     to move up there: this component draws from inside a MapLibre effect
+     that cannot await). Read here, never fetched, so the "elsewhere" zone
+     and ghost-territory effects below stay synchronous filters over an
+     array that is already in hand. */
+  sightings: Sighting[]
+  /* The signed-in visitor's own uid, or null while signed out: the other
+     half of isOwnPending below (Sighting.authorUid's own note on why
+     "mine" is now an account fact rather than a browser fact). */
+  uid: string | null
   selectedId: string | null
   onSelect: (id: string | null) => void
   hoveredId: string | null
@@ -189,6 +199,8 @@ type Props = {
 export function Territories({
   cats,
   territories,
+  sightings,
+  uid,
   selectedId,
   onSelect,
   hoveredId,
@@ -502,19 +514,21 @@ export function Territories({
        threshold is a share of the cat's own reach rather than a fixed
        distance, so it means "outside its patch" for a cat with a small
        range and for one with a large one alike. */
-    /* Published observations, plus this browser's own unreviewed ones, and
+    /* Published observations, plus this viewer's own unreviewed one, and
        that filter is the safety line rather than a preference: these zones
        draw the POINTS of sightings onto the public map, so an unreviewed
        report rendered here would publish exactly the precise location that
-       review exists to hold back (spec §9).
+       review exists to hold back, precisely the thing spec §9 requires
+       review to hold back until somebody has looked at it.
 
-       Synchronous, which is why the predicates live in data/sightings.ts
-       and not in catsRepo: this runs inside a MapLibre effect that cannot
-       await. Same policy, same definition, applied from the other side. */
-    const own = readSightings()
-    const elsewhere = allSightings()
+       Synchronous, off the `sightings` prop App.tsx already fetched: this
+       runs inside a MapLibre effect that cannot await, which is the same
+       reason isSurveyed/isOwnPending live in data/sightings.ts rather than
+       in catsRepo.ts, so an async caller and this synchronous one can share
+       one definition of "published" instead of two that could drift. */
+    const elsewhere = sightings
       .filter((sighting) => sighting.catId === selectedId)
-      .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, own))
+      .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, uid))
       .map((sighting) => sighting.point)
       .filter((point) => distanceM(centre, point) > reach * 0.6)
 
@@ -601,8 +615,13 @@ export function Territories({
        stroke colour is read off :root once, when the layers are built, and
        a canvas layer cannot repaint itself when a custom property changes.
        Without it, switching theme with a cat selected leaves the rings
-       drawn in the previous theme's rust. */
-  }, [map, isLoaded, selectedId, territories, centroids, cats, theme])
+       drawn in the previous theme's rust.
+
+       sightings and uid are in here because `elsewhere` above is computed
+       from them: a new report, a review verdict or a sign-in/out all
+       change which points this effect should be ringing, and none of
+       those touch selectedId. */
+  }, [map, isLoaded, selectedId, territories, centroids, cats, theme, sightings, uid])
 
   // theme is only a trigger here: the paint values themselves come from
   // re-reading :root, the same live-token pattern the mount effect above
@@ -689,7 +708,7 @@ export function Territories({
     const source = map.getSource(GHOST_SOURCE) as GeoJSONSource | undefined
     if (!source) return
 
-    const summary = selectedId ? pendingByCat().get(selectedId) : undefined
+    const summary = selectedId ? pendingByCat(sightings).get(selectedId) : undefined
     const feature = selectedId
       ? territories.features.find((f) => f.properties?.id === selectedId)
       : undefined
@@ -698,7 +717,7 @@ export function Territories({
       type: 'FeatureCollection',
       features: feature && summary ? [translateToward(feature, summary.oldest.point)] : [],
     })
-  }, [map, selectedId, territories])
+  }, [map, selectedId, territories, sightings])
 
   return null
 }
