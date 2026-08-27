@@ -6,8 +6,10 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import type { Cat } from './cats.seed'
@@ -48,14 +50,25 @@ const COLLECTION = 'cats'
     polygon from territories.geo.json, not expressible as a warped circle)
     and an admin-recorded cat (built by shapeRing) live in the same shape:
     listTerritories reads `territory` off every doc identically, with no
-    branch on where the cat came from. */
+    branch on where the cat came from.
+
+    `source` is the one field that DOES branch on where the cat came from,
+    and exists for exactly one reason: `countRecorded`/`clearRecorded`
+    below need to mean what they always meant, "cats an admin added from
+    this survey's own panel", not "every document in the collection".
+    Before Firestore that distinction was free (`CATS` was a separate
+    literal array from `readStored()`); one shared collection needs a field
+    to carry the same fact. Every other reader of this collection
+    (`listCats`, `getCat`, `listTerritories`) ignores it entirely: a cat
+    shows on the map identically either way. */
 type CatDoc = Omit<Cat, 'id' | 'lastSeen'> & {
   lastSeen?: string
   territory: [number, number][]
+  source: 'seed' | 'recorded'
 }
 
 function catFromDoc(id: string, data: CatDoc): Omit<Cat, 'lastSeen'> & { lastSeen?: string } {
-  const { territory: _territory, ...rest } = data
+  const { territory: _territory, source: _source, ...rest } = data
   return { id, ...rest }
 }
 
@@ -99,14 +112,16 @@ export async function getCat(id: string): Promise<Cat | null> {
   return (await listCats()).find((cat) => cat.id === id) ?? null
 }
 
-/** How many cats exist in the survey. Firestore replaces the old
-    seeded-plus-locally-recorded split (`CATS` and `readStored()`) with one
-    collection, so there is no separate "recorded" subset left to count;
-    this simply counts every doc. Async now, unlike before, because a
-    collection read can no longer happen synchronously the way reading
-    localStorage did. */
+/** How many cats an admin has recorded through this survey's own panel,
+    seeded cats not included: the same count `CATS.length` versus
+    `readStored().length` used to give for free by being two separate
+    arrays. One shared `cats` collection needs a filter instead, so this
+    reads `source == 'recorded'` (see CatDoc's own note on why that field
+    exists) rather than the whole collection. Async now, unlike before,
+    because a filtered query can no longer happen synchronously the way
+    reading localStorage did. */
 export async function countRecorded(): Promise<number> {
-  const snap = await getDocs(collection(db, COLLECTION))
+  const snap = await getDocs(query(collection(db, COLLECTION), where('source', '==', 'recorded')))
   return snap.size
 }
 
@@ -170,6 +185,7 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     coordinates: formatCoordinates(draft.center),
     photo: draft.photo.trim(),
     territory: shapeRing(draft.shape, draft.center, draft.radiusM),
+    source: 'recorded',
   }
 
   try {
@@ -193,23 +209,26 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     draft.extraPhotos.map((photo, index) => addAdminSighting(id, draft.center, now, photo, index, draft.authorUid))
   )
 
-  /* `territory` is Firestore-only: a Cat has never carried its own ring (it
-     is re-derived from listTerritories at read time), so it is stripped
-     here rather than spread into the returned Cat, which would otherwise
-     fail the excess-property check on this function's Promise<Cat | null>
-     return type. */
-  const { territory: _territory, ...catFields } = catData
+  /* `territory` and `source` are Firestore-only: a Cat has never carried
+     its own ring or its own provenance (both are re-derived or ignored by
+     every reader, see CatDoc's own note), so they are stripped here rather
+     than spread into the returned Cat, which would otherwise fail the
+     excess-property check on this function's Promise<Cat | null> return
+     type. */
+  const { territory: _territory, source: _source, ...catFields } = catData
   return { id, ...catFields }
 }
 
-/** Removes every cat in the collection, seeded and admin-recorded alike:
-    Firestore holds one `cats` collection now, so there is no separate
-    "recorded" subset the way `readStored()` used to carve out from `CATS`.
-    Kept for the same reason it always existed (a fast demo reset); per-cat
-    deletion is `deleteCat` below. Async because deleting a live collection
-    can no longer happen synchronously the way clearing localStorage did. */
+/** Removes every cat this survey's own panel recorded, seeded cats left
+    alone: the same distinction `clearRecorded` always drew back when
+    `readStored()` was a separate array from `CATS`, now expressed as a
+    `source == 'recorded'` filter over the one shared collection instead of
+    a second array to wipe. Kept for the same reason it always existed (a
+    fast demo reset); per-cat deletion is `deleteCat` below. Async because
+    deleting a filtered query's results can no longer happen synchronously
+    the way clearing localStorage did. */
 export async function clearRecorded(): Promise<boolean> {
-  const snap = await getDocs(collection(db, COLLECTION))
+  const snap = await getDocs(query(collection(db, COLLECTION), where('source', '==', 'recorded')))
   try {
     await Promise.all(snap.docs.map((d) => deleteDoc(d.ref)))
     return true
