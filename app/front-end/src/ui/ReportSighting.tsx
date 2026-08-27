@@ -12,7 +12,9 @@ import type { Request } from '@/App'
 import { ScanCat } from '@/ui/ScanCat'
 import { useEscape } from '@/ui/escape'
 import { spring, springSoft } from '@/motion/springs'
-import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
+import { compressImageToBlob, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
+import { uploadPhoto } from '@/data/photoUpload'
+import { signInWithGoogle, subscribeAuth } from '@/data/auth'
 
 /* "I saw a cat": the one thing a visitor can contribute to the survey.
 
@@ -63,7 +65,7 @@ import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
    is the one thing this project has a written rule against.
 
    And as of phase 8 a sighting is a PROPOSAL. It lands `pending`, it moves
-   nothing, and a reviewer approving it is what applies it — from the
+   nothing, and a reviewer approving it is what applies it: from the
    plate's own "Pending review" section as of phase 9 (plate/Plate.tsx),
    not the corner panel that used to own this (map/MapCanvas.tsx has the
    note on why). That is the sentence at the 'done' step below, and it used
@@ -73,7 +75,7 @@ import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
    open report on it: ReportSighting itself does not check for that (only
    the plate's own "I saw here" button does, see plate/Plate.tsx), so
    picking a cat here via the floating menu still lands a second,
-   independent report rather than routing to a vote. Known, not fixed —
+   independent report rather than routing to a vote. Known, not fixed:
    the request that shipped phase 9 was scoped to the plate's button.
 
    Why a sighting rather than "move the cat" is argued in data/sightings.ts,
@@ -175,6 +177,12 @@ export function ReportSighting({
      is deliberately a snapshot rather than the live centre. */
   const [origin, setOrigin] = useState<[number, number] | null>(null)
   const [undoId, setUndoId] = useState<string | null>(null)
+  /* Who is signed in, phase 9: a sighting now needs a real author (the
+     same authorUid withdrawSighting checks before letting a "Withdraw"
+     succeed), so an anonymous visitor cannot reach the report button at
+     all any more, see the confirm step's sign-in prompt below. */
+  const [uid, setUid] = useState<string | null>(null)
+  useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
   const panelRef = useRef<HTMLElement>(null)
 
   /* The front door. Pressing the trigger no longer commits to a step; it
@@ -463,10 +471,16 @@ export function ReportSighting({
     setPlacing(true)
   }
 
-  const commit = () => {
-    if (!cat || !point) return
+  const commit = async () => {
+    /* uid is the new guard here, phase 9: a report needs a real author now
+       (addSighting writes it as authorUid, the same field withdrawSighting
+       later checks before letting a "Withdraw" succeed), so this can no
+       longer fire for a signed-out visitor. The confirm step below renders
+       a sign-in prompt in this button's place rather than letting the
+       press silently do nothing. */
+    if (!cat || !point || !uid) return
     const minutes = WHEN.find((w) => w.key === when)?.minutesAgo ?? 0
-    const sighting = addSighting(cat.id, point, Date.now() - minutes * 60_000, photo || undefined)
+    const sighting = await addSighting(cat.id, point, Date.now() - minutes * 60_000, uid, photo || undefined)
     if (!sighting) return
     setUndoId(sighting.id)
     setStep('done')
@@ -477,9 +491,10 @@ export function ReportSighting({
     if (!file) return
     setPhotoError(null)
     try {
-      setPhoto(await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY))
+      const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+      setPhoto(await uploadPhoto(blob, 'sightings'))
     } catch {
-      setPhotoError('Could not read that photo. Try a different file.')
+      setPhotoError('Could not upload that photo. Check your connection and try again.')
     }
   }
 
@@ -624,7 +639,7 @@ export function ReportSighting({
                  aria-label carries the distinction a sighted person gets
                  from the different role and position, so the two do not
                  read as one dead control to a screen reader. */
-              aria-label="I saw a cat — pick it from the list"
+              aria-label="I saw a cat, pick it from the list"
               tabIndex={-1}
               className="sight-menu-item"
               onClick={() => openStep('pick')}
@@ -899,10 +914,29 @@ export function ReportSighting({
                         : 'If approved, its territory shifts slightly.'}
                     </p>
 
-                    <button type="button" className="sight-go" onClick={commit}>
-                      <Check size={14} />
-                      Report sighting
-                    </button>
+                    {/* A sighting is now a signed report (phase 9: addSighting
+                        writes uid as authorUid, and withdrawSighting later
+                        checks it), so an anonymous visitor gets the door to
+                        sign in here, in the exact slot the report button
+                        occupies once they have. Not disabling the button
+                        instead: a disabled control with no explanation reads
+                        as broken, and "why can't I press this" is a worse
+                        question to leave unanswered than just showing what
+                        to do about it. */}
+                    {uid ? (
+                      <button type="button" className="sight-go" onClick={() => void commit()}>
+                        <Check size={14} />
+                        Report sighting
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="sight-go"
+                        onClick={() => void signInWithGoogle()}
+                      >
+                        Sign in with Google to report
+                      </button>
+                    )}
                   </>
                 )}
               </div>

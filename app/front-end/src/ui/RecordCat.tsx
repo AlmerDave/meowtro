@@ -5,6 +5,7 @@ import { MapPin, Plus, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
 import { nearestPlaceName } from '@/map/landmark'
 import { addCat, clearRecorded, countRecorded } from '@/data/catsRepo'
+import { subscribeAuth } from '@/data/auth'
 import { CAT_COLOURS, type Colour } from '@/data/cats.seed'
 import {
   AGES,
@@ -19,7 +20,8 @@ import {
 } from '@/data/describeCat'
 import { SHAPES, shapePreviewPoints, shapeRing, type Shape } from '@/data/territoryShape'
 import { addChip, BUILTIN_NOTE_CHIPS, readChips } from '@/data/noteChips'
-import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
+import { compressImageToBlob, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
+import { uploadPhoto } from '@/data/photoUpload'
 import { spring, springSoft } from '@/motion/springs'
 
 /* Add a new cat: the panel that adds one to the survey.
@@ -190,6 +192,20 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [recorded, setRecorded] = useState(0)
+  /* Who is signed in, phase 9: RecordCat is only ever mounted behind
+     App.tsx's admin gate, so this is practically always non-null by the
+     time the form is reachable, but the field is read fresh here rather
+     than trusted from a prop because addCat's authorUid has to name the
+     actual writer, not whoever held the gate open when the panel opened. */
+  const [uid, setUid] = useState<string | null>(null)
+  useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
+  /* True while either photo picker has a network upload in flight. The old
+     compressImage path resolved to a local data URI, instant enough that
+     nothing needed to track "still working" between pick and preview; a
+     real Storage upload is a round trip that can visibly take a moment on
+     a slow connection, and Next/Add cat must not be pressable while a
+     photo the submit is about to send is still only partially there. */
+  const [photoUploading, setPhotoUploading] = useState(false)
 
   const reset = () => {
     setStep(0)
@@ -303,14 +319,26 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     }
   }, [map, open, center, radiusM, form.shape, form.colour])
 
+  /* Both pickers now upload to Storage rather than keeping a local data
+     URI: form.photo/extraPhotos hold a real https://firebasestorage...
+     URL from the moment a file is chosen, the same thing addCat writes
+     straight into the cat's record, so there is no separate "promote the
+     preview to a real photo" step at submit time the way there never was
+     before. The trade is that the thumbnail no longer appears the instant
+     a file is picked; photoUploading covers that gap by disabling the
+     step's advance button until the round trip finishes. */
   const pickMainPhoto = async (file: File | undefined) => {
     if (!file) return
     setError(null)
+    setPhotoUploading(true)
     try {
-      const compressed = await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
-      setForm((f) => ({ ...f, photo: compressed }))
+      const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+      const url = await uploadPhoto(blob, 'cats')
+      setForm((f) => ({ ...f, photo: url }))
     } catch {
-      setError('Could not read that photo. Try a different file.')
+      setError('Could not upload that photo. Check your connection and try again.')
+    } finally {
+      setPhotoUploading(false)
     }
   }
 
@@ -319,14 +347,16 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     setError(null)
     const room = MAX_EXTRA_PHOTOS - extraPhotos.length
     const picked = Array.from(files).slice(0, room)
+    setPhotoUploading(true)
     try {
-      const compressed = await Promise.all(picked.map((file) => compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)))
-      setExtraPhotos((prev) => [
-        ...prev,
-        ...compressed.map((src, i) => ({ id: `${Date.now()}-${i}`, src })),
-      ])
+      const urls = await Promise.all(
+        picked.map(async (file) => uploadPhoto(await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY), 'cats'))
+      )
+      setExtraPhotos((prev) => [...prev, ...urls.map((src, i) => ({ id: `${Date.now()}-${i}`, src }))])
     } catch {
-      setError('Could not read one of those photos. Try again.')
+      setError('Could not upload one of those photos. Try again.')
+    } finally {
+      setPhotoUploading(false)
     }
   }
 
@@ -352,7 +382,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
        so a recorded cat used to fall straight through to a literal
        fallback string every time. Same lookup Plate.tsx already uses for
        a cat's own "Near X" range line, run here against the point that
-       was just placed — "Near " is stripped because the seeded convention
+       was just placed: "Near " is stripped because the seeded convention
        names the place directly rather than prefixing it. Null when
        nothing named is within range (map/landmark.ts's SEARCH_RADIUS_M),
        which leaves draft.line empty and addCat's own "FIELD ENTRY"
@@ -366,6 +396,11 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
       center,
       radiusM,
       extraPhotos: extraPhotos.map((photo) => photo.src),
+      /* RecordCat only ever mounts behind App.tsx's admin gate, so uid is
+         non-null in practice by the time this form is reachable; the
+         fallback empty string is here only so a stale/expired session
+         cannot throw at submit instead of just recording an odd author. */
+      authorUid: uid ?? '',
     })
     setBusy(false)
     if (!cat) {
@@ -388,7 +423,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
         data-open={String(open)}
         onClick={() => {
           if (open) return close()
-          setRecorded(countRecorded())
+          void countRecorded().then(setRecorded)
           setMyChips(readChips())
           setOpen(true)
         }}
@@ -798,9 +833,10 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         type="button"
                         className="record-clear"
                         onClick={() => {
-                          clearRecorded()
-                          setRecorded(0)
-                          onRecorded()
+                          void clearRecorded().then(() => {
+                            setRecorded(0)
+                            onRecorded()
+                          })
                         }}
                       >
                         Clear {recorded} recorded
@@ -810,17 +846,17 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                 </span>
               )}
               {isLastStep ? (
-                <button type="submit" className="record-save" disabled={busy}>
+                <button type="submit" className="record-save" disabled={busy || photoUploading}>
                   {busy ? 'Saving…' : 'Add cat'}
                 </button>
               ) : (
                 <button
                   type="button"
                   className="record-save"
-                  disabled={!canAdvance}
+                  disabled={!canAdvance || photoUploading}
                   onClick={() => setStep((s) => s + 1)}
                 >
-                  Next
+                  {photoUploading ? 'Uploading…' : 'Next'}
                 </button>
               )}
             </div>

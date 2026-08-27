@@ -36,7 +36,8 @@ import { CardStack, type StackCard } from '@/components/ui/card-stack'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
 import { useEscape } from '@/ui/escape'
-import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from '@/ui/imageToDataUrl'
+import { compressImageToBlob, PHOTO_MAX_DIM, PHOTO_QUALITY } from '@/ui/imageToDataUrl'
+import { uploadPhoto } from '@/data/photoUpload'
 import { spring, springSoft } from '@/motion/springs'
 
 /* The specimen plate. Motion owns the enter *and the exit* — the exit
@@ -89,14 +90,14 @@ type Props = {
   /** Whether this visitor is holding the admin gate open (App.tsx's
       useAdmin). Everything under "Admin" below is gated on this alone. */
   admin?: boolean
-  /** The signed-in visitor's own uid (App.tsx's useUid), phase 9. Received
-      here now so the prop exists on the wire; catsRepo's listSightings,
-      listPendingForCat, withdrawSighting, voteSighting and addAdminPhoto
-      are the functions that actually take it, and this file's own calls to
-      them below still pass their pre-uid argument lists. Optional, unlike
-      the App.tsx and CatDeck.tsx call sites which always supply it: the
-      styleguide's specimen plate (Styleguide.tsx) has no signed-in visitor
-      to speak of and renders one with nothing behind this prop at all. */
+  /** The signed-in visitor's own uid (App.tsx's useUid), phase 9. Threaded
+      into catsRepo's listSightings, listPendingForCat, withdrawSighting,
+      voteSighting and addAdminPhoto below, the functions that actually
+      take it. Optional, unlike the App.tsx and CatDeck.tsx call sites
+      which always supply it: the styleguide's specimen plate
+      (Styleguide.tsx) has no signed-in visitor to speak of and renders one
+      with nothing behind this prop at all, so every call site below falls
+      back to `uid ?? ''` or `uid ?? null` rather than assuming a string. */
   uid?: string | null
   /** Told to re-read cats and territories after an edit or delete, since
       either can change what the rest of the app is showing: a renamed cat
@@ -245,7 +246,7 @@ export function Plate({
 
   const loadSightings = useCallback(() => {
     let live = true
-    Promise.all([listSightings(cat.id), listPendingForCat(cat.id)]).then(([list, pending]) => {
+    Promise.all([listSightings(cat.id, uid), listPendingForCat(cat.id, uid)]).then(([list, pending]) => {
       if (!live) return
       setSightings(list)
       setPendingForCat(pending)
@@ -253,7 +254,7 @@ export function Plate({
     return () => {
       live = false
     }
-  }, [cat.id])
+  }, [cat.id, uid])
 
   useEffect(() => loadSightings(), [loadSightings])
 
@@ -452,20 +453,26 @@ export function Plate({
      visitor's report. Pointed at the territory's own centre, the only
      coordinate this surface has (same fallback describeReach above uses). */
   const addPhoto = async (file: File | undefined) => {
-    if (!file || !catRing) return
+    /* uid required now, not just catRing: addAdminPhoto writes it as the
+       sighting's authorUid, the same field every other sighting in the
+       log carries, and "Update record" is only ever open behind the admin
+       gate anyway, so a missing uid here means an expired session rather
+       than a real visitor this should silently do nothing for. */
+    if (!file || !catRing || !uid) return
     setAddPhotoError(null)
     setAddingPhoto(true)
     try {
-      const compressed = await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
-      const ok = await addAdminPhoto(cat.id, ringCentroid(catRing), compressed)
+      const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+      const url = await uploadPhoto(blob, 'sightings')
+      const ok = await addAdminPhoto(cat.id, ringCentroid(catRing), url, uid)
       if (ok) {
         loadSightings()
         onChanged?.()
       } else {
-        setAddPhotoError('Could not save. This browser may have storage turned off.')
+        setAddPhotoError('Could not save. Check your connection and try again.')
       }
     } catch {
-      setAddPhotoError('Could not read that photo. Try a different file.')
+      setAddPhotoError('Could not upload that photo. Try a different file.')
     } finally {
       setAddingPhoto(false)
     }
@@ -476,7 +483,13 @@ export function Plate({
      what the cat's record looks like elsewhere, so there is nothing for
      onChanged to tell the rest of the app. */
   const castVote = async (id: string, direction: 'up' | 'down') => {
-    if (await voteSighting(id, direction)) loadSightings()
+    /* uid ?? '': voteSighting takes a required string, one per uid now
+       that a vote spans every viewer rather than one browser (see
+       Sighting.votes' own note in data/sightings.ts). The vote buttons
+       below render for anyone, signed in or not; a signed-out '' simply
+       fails the write server-side (firestore.rules) rather than this
+       function pretending to know in advance who is allowed to vote. */
+    if (await voteSighting(id, uid ?? '', direction)) loadSightings()
   }
 
   /* An admin's verdict, reachable straight from the plate now rather than
@@ -904,7 +917,12 @@ export function Plate({
                 <button
                   type="button"
                   onClick={() => {
-                    void withdrawSighting(sighting.id).then((gone) => {
+                    /* uid ?? '': withdrawSighting checks the caller's uid
+                       against the sighting's own authorUid before deleting
+                       anything, so a mismatched or empty uid just fails the
+                       check and returns false rather than withdrawing
+                       something this visitor did not report. */
+                    void withdrawSighting(sighting.id, uid ?? '').then((gone) => {
                       if (gone) loadSightings()
                     })
                   }}
