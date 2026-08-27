@@ -237,16 +237,27 @@ top reads correctly at desktop width.
 
 ---
 
-## Phase 9 — The backend
+## Phase 9: the backend, done 2026-08-27
 
-- [ ] **Real API behind `catsRepo`** — the one file. Phase 8's mocked review
-      becomes real moderation with no UI rewrite.
-- [ ] **Sighting photo uploads** — `photo?: string` is already URL-shaped, so
-      the field does not change; only where the URL comes from does.
-- [ ] **Cross-device survey** — today every visitor has a private one.
-- [ ] **Migrate localStorage** — `data/localCats.ts` and `data/sightings.ts`
-      are the two stores that move. Decide whether existing local data is
-      imported or abandoned.
+Full plan and design in `2026-08-27-phase9-backend-implementation.md` and
+`../specs/2026-08-27-phase9-backend-design.md`. Not yet visually reviewed;
+see the build plan's RESUME HERE block for the full remaining checklist
+(Firebase project setup, security-rule emulator run, browser walkthrough,
+one open product question on the vote buttons).
+
+- [x] **Real API behind `catsRepo`** (the one file). Phase 8's mocked
+      review becomes real moderation with no UI rewrite: Firestore
+      reads/writes, Firebase Auth for identity, Cloud Storage for photos,
+      all behind the same public surface.
+- [x] **Sighting photo uploads.** `photo?: string` was already
+      URL-shaped, so the field did not change; the URL now comes from
+      Cloud Storage.
+- [x] **Cross-device survey.** Firestore is the shared store now, not a
+      per-visitor `localStorage` blob.
+- [x] **Migrate localStorage.** `data/localCats.ts` and `data/overlay.ts`
+      are deleted; `data/sightings.ts`'s local storage is gone too.
+      Existing local data was abandoned, not imported (the survey was
+      fictional seed data, not something worth carrying forward).
 
 ---
 

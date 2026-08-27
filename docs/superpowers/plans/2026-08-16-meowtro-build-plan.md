@@ -13,7 +13,59 @@
 
 ## RESUME HERE
 
-**Last completed:** phase 8, roles and review, 2026-08-25. The full
+**Last completed:** phase 9, the backend, 2026-08-27. Full plan and design
+in `2026-08-27-phase9-backend-implementation.md` and
+`2026-08-27-phase9-backend-design.md`. Firestore, Firebase Auth, and Cloud
+Storage replace `localStorage` behind the one seam this project keeps for
+exactly this reason: `catsRepo.ts`, whose public surface did not change.
+`?role=admin` is gone; real Google sign-in gates the admin surface on
+membership in an `admins` Firestore collection, checked in `catsRepo.ts`.
+`data/localCats.ts` and `data/overlay.ts` are deleted; territory geometry
+(the hand-drawn survey polygons and the warped-circle admin shapes alike)
+now lives in one place, `territoryShape.ts`. The whole project typechecks
+clean (`npx tsc -b`, zero errors).
+
+**Four things stand between this and calling phase 9 fully landed:**
+
+1. **No real Firebase project exists yet.** `.env.local` was never filled
+   in with real credentials in this environment. Before any of this code
+   can run: create a Firebase project, enable Firestore, Storage, and
+   Google sign-in under Authentication, fill in `.env.local` from Task 1's
+   `.env.local.example`, deploy the security rules
+   (`firebase deploy --only firestore:rules,storage`), generate a service
+   account key, and run `npm run seed:firebase` once to populate the 12
+   cats and 30 seeded sightings. Note: this plan's own prose says "29 seed
+   sightings" in a couple of places; that is wrong. The real count, in the
+   script and in its console output, is 30.
+2. **The Firestore/Storage security rules were never run against the
+   local emulator.** This machine has no Java runtime, which the emulator
+   needs. The rules were checked by two independent close readings (every
+   test assertion traced by hand against the rule logic) but never
+   actually executed. Run `npm run test:rules` once Java is available,
+   before trusting the rules in production.
+3. **The full sign-in, report, review, approve flow has never run in a
+   real browser.** Every task's automated verification was `npx tsc -b`
+   (now clean project-wide) plus the individual `*.check.ts` scripts;
+   nothing in this implementation process opened a browser, matching this
+   project's own convention that visual gates are closed by the user from
+   a screenshot, not a self-launched browser. Still needed: `npm run dev`,
+   sign in with a real Google account, confirm the admin banner appears
+   (once that account is added as a document in the `admins` collection),
+   add a cat with a photo and confirm it uploads to Storage and the
+   resulting URL renders, report a sighting from a second account (and
+   from a signed-out one, to confirm the sign-in gate), approve it from
+   the review queue, and confirm the territory moves.
+4. **One open product question, not a bug.** `Plate.tsx`'s vote buttons
+   on a pending sighting work identically whether or not the viewer is
+   signed in; a signed-out vote is rejected server-side by the Firestore
+   rules with no error shown in the UI. Reporting a sighting has an
+   explicit "sign in to report" prompt; voting has no equivalent "sign in
+   to vote" prompt. This matches the plan's own literal design (it never
+   specified a sign-in gate on voting), so it is not an implementation
+   defect, but it is worth the user's attention as a UX choice they may
+   want to revisit.
+
+Before that: phase 8, roles and review, 2026-08-25. The full
 write-up including the four design decisions is in the feature roadmap.
 Two things to know before touching data: `catsRepo` is now the review
 boundary (its public reads return surveyed rows only, and the predicates
