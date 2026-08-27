@@ -21,7 +21,7 @@ export async function signOutUser(): Promise<void> {
 }
 
 /** Wraps Firebase's own onAuthStateChanged so callers never import
-    `firebase/auth` directly — same reasoning catsRepo.ts already gives
+    `firebase/auth` directly; same reasoning catsRepo.ts already gives
     for being the one file that knows what storage looks like underneath
     it. Returns the unsubscribe function React effects expect back. */
 export function subscribeAuth(cb: (user: User | null) => void): () => void {
