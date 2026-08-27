@@ -63,6 +63,11 @@ type Props = {
       for what each does; this component has no admin business of its own,
       it just has the only <Plate> mobile ever mounts. */
   admin?: boolean
+  /** Also passed straight through, same reasoning as `admin` above: this
+      component has no use for a uid of its own, it exists purely so the
+      <Plate> below has one (App.tsx's useUid, threaded here for the same
+      reason `admin` is). */
+  uid: string | null
   onChanged?: () => void
   territories: FeatureCollection<Polygon>
   nearestPlaceName?: (point: [number, number]) => string | null
@@ -76,6 +81,7 @@ export function CatDeck({
   record,
   onReport,
   admin,
+  uid,
   onChanged,
   territories,
   nearestPlaceName,
@@ -376,6 +382,7 @@ export function CatDeck({
                   cat={expanded}
                   onClose={collapse}
                   admin={admin}
+                  uid={uid}
                   onChanged={onChanged}
                   territories={territories}
                   nearestPlaceName={nearestPlaceName}

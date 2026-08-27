@@ -5,6 +5,7 @@ import type { FeatureCollection, Polygon } from 'geojson'
 import { MapCanvas } from '@/map/MapCanvas'
 import { listCats, type Cat } from '@/data/catsRepo'
 import { photoAt } from '@/data/cats.seed'
+import { signInWithGoogle } from '@/data/auth'
 import { Reel } from './Reel'
 
 /* The front door.
@@ -210,22 +211,30 @@ export default function Landing() {
             right, one Explore. If this ever needs links again they should
             be real destinations, not three names for the same href. */}
 
-        {/* The seam, and as of phase 8 it opens onto something. It was a
-            span reading "Soon" for exactly as long as ?role=admin had no
-            handler; now it unlocks the record panel and the review queue,
-            so it is an anchor again.
+        {/* The seam. It was a span reading "Soon" for exactly as long as
+            there was nothing behind it, then a link out to ?role=admin's
+            stand-in gate for phase 8. Phase 9: a real Google popup, so the
+            element itself changes from an anchor to a button, there is no
+            href for this to navigate through any more, sign-in is
+            something that happens on this page before the navigation does.
 
-            Still not authentication and the label does not claim to be:
-            App.tsx's useAdmin reads a query parameter, which anybody can
-            type. That is honest for a mock whose entire store is the
-            reader's own localStorage, and phase 10 replaces the one
-            function without touching this link. */}
-        <a className="landing-signin" href={`${APP}?role=admin`}>
+            Explore's own curtain timing (see `explore` above) is not
+            reused here: signing in is not a page transition, there is
+            nothing to reveal underneath it, so this navigates directly
+            once the popup resolves. */}
+        <button
+          type="button"
+          className="landing-signin"
+          onClick={async () => {
+            await signInWithGoogle()
+            window.location.href = APP
+          }}
+        >
           Sign in
           <span className="landing-signin-arrow" aria-hidden="true">
             <ArrowUpRight size={14} />
           </span>
-        </a>
+        </button>
       </header>
 
       <div className="landing-hero">

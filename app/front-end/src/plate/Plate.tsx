@@ -89,6 +89,15 @@ type Props = {
   /** Whether this visitor is holding the admin gate open (App.tsx's
       useAdmin). Everything under "Admin" below is gated on this alone. */
   admin?: boolean
+  /** The signed-in visitor's own uid (App.tsx's useUid), phase 9. Received
+      here now so the prop exists on the wire; catsRepo's listSightings,
+      listPendingForCat, withdrawSighting, voteSighting and addAdminPhoto
+      are the functions that actually take it, and this file's own calls to
+      them below still pass their pre-uid argument lists. Optional, unlike
+      the App.tsx and CatDeck.tsx call sites which always supply it: the
+      styleguide's specimen plate (Styleguide.tsx) has no signed-in visitor
+      to speak of and renders one with nothing behind this prop at all. */
+  uid?: string | null
   /** Told to re-read cats and territories after an edit or delete, since
       either can change what the rest of the app is showing: a renamed cat
       in the rail, a corrected lastSeen, a deleted cat's territory on the
@@ -206,6 +215,7 @@ export function Plate({
   onClose,
   onReport,
   admin = false,
+  uid = null,
   onChanged,
   territories,
   nearestPlaceName,

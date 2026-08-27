@@ -12,6 +12,7 @@ import { Rail } from '@/ui/Rail'
 import { CatDeck } from '@/ui/CatDeck'
 import { Loading } from '@/ui/Loading'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
+import { isAdmin, subscribeAuth } from '@/data/auth'
 import type { FeatureCollection, Polygon } from 'geojson'
 
 /* The one legal way to reach the live MapLibre instance from Plate.tsx,
@@ -97,26 +98,48 @@ function useIsMobile() {
    page you asked for, which is what this is, and it needs no server config
    to work on static hosting because the query never reaches the router
    there is none of. */
-/* The admin gate, phase 8. A stand-in for auth, and honest about it.
+/* The admin gate, phase 9. Real Firebase Auth now: signed in with Google
+   AND listed in the `admins` collection (firestore.rules' isAdmin(),
+   data/auth.ts's isAdmin(uid) mirrors it for the client). Unlike the old
+   ?role=admin, this genuinely cannot be typed into the address bar: the
+   Firestore rule is what actually enforces it either way, this hook only
+   decides what the UI shows.
 
-   ?role=admin, matching the ?cat= convention directly above for the same
-   reason: a query is metadata about which page you asked for, and it needs
-   no server config on static hosting. It is not a credential and does not
-   pretend to be one. Anybody who reads this file knows the password, which
-   is fine while the only thing behind the gate is a panel that writes to
-   the reader's own localStorage. Phase 10 replaces this function and
-   nothing else has to change, because everything downstream takes a
-   boolean.
-
-   Read once and held for the session, unlike ?cat= which is consumed and
-   cleared. Clearing this one would log an admin out on their own refresh,
-   and here the URL IS the credential: taking it out of the address bar
-   would take the role with it. */
+   No longer constant after mount, unlike the old useAdmin: sign-in
+   resolves asynchronously (onAuthStateChanged fires once Firebase has
+   checked for a persisted session, then again if the user signs in this
+   visit), so `admin` can flip from false to true after first paint. The
+   effect below that mirrors it onto `document.body.dataset.admin` already
+   depends on `[admin]` and re-runs correctly either way, nothing else
+   needed changing for that. */
 function useAdmin(): boolean {
-  const [admin] = useState(
-    () => new URLSearchParams(window.location.search).get('role') === 'admin'
-  )
+  const [admin, setAdmin] = useState(false)
+  useEffect(() => {
+    return subscribeAuth((user) => {
+      if (!user) {
+        setAdmin(false)
+        return
+      }
+      isAdmin(user.uid).then(setAdmin)
+    })
+  }, [])
   return admin
+}
+
+/* The signed-in visitor's own uid, tracked alongside admin rather than
+   folded into it: an admin is also a signed-in uid, but ordinary sighting
+   business needs to know WHO is asking, not only whether they hold the
+   admin gate. plate/Plate.tsx is the one component that actually calls the
+   uid-taking functions (catsRepo's listSightings, listPendingForCat,
+   withdrawSighting, voteSighting, addAdminPhoto): once directly, from this
+   file's own <Plate> below, and once by pass-through through
+   ui/CatDeck.tsx, which mounts its own <Plate> for the mobile layout and
+   has no other use for the value itself. null while signed out, the same
+   shape those functions already expect for an anonymous visitor. */
+function useUid(): string | null {
+  const [uid, setUid] = useState<string | null>(null)
+  useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
+  return uid
 }
 
 function useUrlSelection() {
@@ -225,6 +248,7 @@ export default function App() {
      sheet was still covering them, and the whole point of the reveal is that
      it reveals something arriving. */
   const admin = useAdmin()
+  const uid = useUid()
 
   /* Same reactive-attribute shape ui/ReportSighting.tsx already uses for
      `data-placing`: a body-level attribute is what lets shell.css reserve
@@ -462,6 +486,7 @@ export default function App() {
           record={record}
           onReport={startReport}
           admin={admin}
+          uid={uid}
           onChanged={onRecorded}
           territories={territories}
           nearestPlaceName={findNearestPlace}
@@ -488,6 +513,7 @@ export default function App() {
                 onClose={close}
                 onReport={startReport}
                 admin={admin}
+                uid={uid}
                 onChanged={onRecorded}
                 territories={territories}
                 nearestPlaceName={findNearestPlace}
