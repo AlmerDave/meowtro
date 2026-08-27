@@ -9,6 +9,14 @@
    the same reason nothing under src/map/ has one either. Verified by
    tsc -b plus the manual gate where ui/RecordCat.tsx first calls this. */
 
+/** The longest edge and JPEG quality every uploaded photo is compressed to,
+    matching the seeded photos' own size (data/cats.seed.ts's CATAAS
+    helper). Shared by every uploader (ui/RecordCat.tsx, ui/ReportSighting.tsx,
+    plate/Plate.tsx's admin sighting uploader) so a phone photo lands at the
+    same size wherever it enters the survey. */
+export const PHOTO_MAX_DIM = 640
+export const PHOTO_QUALITY = 0.75
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

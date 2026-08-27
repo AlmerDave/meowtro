@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom'
 import { Marker } from 'maplibre-gl'
 import type { FeatureCollection, Point, Polygon } from 'geojson'
 import { motion } from 'motion/react'
-import { Cat as CatGlyph } from 'lucide-react'
+import { Cat as CatGlyph, Flag } from 'lucide-react'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
+import { pendingByCat } from '@/data/sightings'
+import { photoAt, THUMB_PX } from '@/data/cats.seed'
 import type { Cat } from '@/data/catsRepo'
 
 /* Cat markers. One representation in both modes now, not two.
@@ -66,6 +68,15 @@ type Props = {
   onSelect: (id: string | null) => void
   hoveredId: string | null
   onHover: (id: string | null) => void
+  /** Whether this visitor is holding the admin gate open (App.tsx's
+      useAdmin). Gates the pulsing "needs review" badge below — the badge
+      itself names nothing a regular visitor cannot already see (a cat
+      already has a public pin here), but the map is the one surface this
+      feature keeps admin-only end to end: the plate's own locked-report
+      note (plate/Plate.tsx) is the public-facing half of phase 9, and it
+      never renders a coordinate either. Defaults to false, matching every
+      other admin-gated prop in this app. */
+  admin?: boolean
 }
 
 type PinProps = {
@@ -73,6 +84,8 @@ type PinProps = {
   active: boolean
   /** Pitched mode: the stake grows so the pin clears low buildings. */
   lifted: boolean
+  /** This cat has at least one sighting waiting on a verdict. */
+  pending: boolean
   onClick: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
@@ -112,10 +125,15 @@ type PinProps = {
 
    ## Fallback
 
-   No photo, or a photo that failed, falls back to lucide's cat glyph in
-   linework. That is the offline story the rest of the app already tells:
-   with no network this degrades to the drawing it would have been before
-   photos existed, not to a broken image.
+   No photo, a photo that failed, or a photo still in flight: all three
+   show lucide's cat glyph in linework underneath, with the photo itself
+   fading in over it once it actually resolves. Both sit in the same grid
+   cell (.cat-pin-head is a single-cell grid, so stacking is DOM order, no
+   absolute positioning needed) so the glyph reads through the photo's
+   `<img>` for exactly as long as that image is transparent. That is the
+   offline story the rest of the app already tells: with no network this
+   degrades to the drawing it would have been before photos existed, not
+   to a broken image or a blank disc while waiting.
 
    A real <button> for free keyboard focus and activation, not a styled div.
 
@@ -125,21 +143,28 @@ type PinProps = {
    target this small that made mouseup land on the bare map instead, so the
    native click fired on an ancestor and onClick never ran. The button box
    never moves. Only what is inside it does. */
-function CatPin({ cat, active, lifted, onClick, onMouseEnter, onMouseLeave }: PinProps) {
+function CatPin({ cat, active, lifted, pending, onClick, onMouseEnter, onMouseLeave }: PinProps) {
   /* null while the photo is still in flight, so the glyph is not flashed up
      and then replaced a moment later on every marker at once. */
   const [hasPhoto, setHasPhoto] = useState<boolean | null>(null)
+
+  /* The same URL the <img> below renders, and the same one ui/CatRow.tsx
+     asks for, so the probe, the pin and the row are one download per cat
+     rather than three. Computed here rather than passed in for that reason:
+     a probe pointed at a different URL from the element it is probing is
+     both a wasted request and an answer about the wrong file. */
+  const photo = photoAt(cat.photo, THUMB_PX)
 
   useEffect(() => {
     let live = true
     const img = new Image()
     img.onload = () => live && setHasPhoto(true)
     img.onerror = () => live && setHasPhoto(false)
-    img.src = cat.photo
+    img.src = photo
     return () => {
       live = false
     }
-  }, [cat.photo])
+  }, [photo])
 
   return (
     <button
@@ -147,10 +172,11 @@ function CatPin({ cat, active, lifted, onClick, onMouseEnter, onMouseLeave }: Pi
       className="cat-pin"
       data-active={String(active)}
       data-lifted={String(lifted)}
+      data-pending={String(pending)}
       /* The cat's own territory token themes the whole marker, straight out
          of the data, exactly as the rail row and the plate do. */
       style={{ '--accent': `var(${cat.colour})` } as React.CSSProperties}
-      aria-label={cat.name}
+      aria-label={pending ? `${cat.name}, a sighting is awaiting review` : cat.name}
       onClick={onClick}
       /* Pointer events with a type check, not onMouseEnter/onMouseLeave. A
          touch tap synthesises a mouseenter but does not reliably synthesise
@@ -161,6 +187,16 @@ function CatPin({ cat, active, lifted, onClick, onMouseEnter, onMouseLeave }: Pi
       onPointerEnter={(e) => e.pointerType === 'mouse' && onMouseEnter()}
       onPointerLeave={(e) => e.pointerType === 'mouse' && onMouseLeave()}
     >
+      {/* One glyph, not the check/cross pair this used to be: at any real
+          count of cats, two icons per pending pin reads as a puddle of
+          circles rather than a flag (the admin's own review of this
+          screen). Decorative either way — the actual approve/reject
+          buttons live inside the plate this pin opens. */}
+      {pending && (
+        <span className="cat-pin-pending" aria-hidden>
+          <Flag size={9} strokeWidth={2.5} />
+        </span>
+      )}
       <motion.span
         className="cat-pin-head"
         initial={{ scale: 0.4, opacity: 0 }}
@@ -169,11 +205,8 @@ function CatPin({ cat, active, lifted, onClick, onMouseEnter, onMouseLeave }: Pi
         whileTap={{ scale: 0.94 }}
         transition={{ type: 'spring', stiffness: 420, damping: 24 }}
       >
-        {hasPhoto === false ? (
-          <CatGlyph className="cat-pin-fallback" strokeWidth={1.8} aria-hidden />
-        ) : (
-          <img className="cat-pin-photo" src={cat.photo} alt="" data-ready={String(!!hasPhoto)} />
-        )}
+        <CatGlyph className="cat-pin-fallback" strokeWidth={1.8} aria-hidden />
+        <img className="cat-pin-photo" src={photo} alt="" data-ready={String(!!hasPhoto)} />
       </motion.span>
 
       <span className="cat-pin-stake" aria-hidden />
@@ -195,6 +228,7 @@ export function CatMarkers({
   onSelect,
   hoveredId,
   onHover,
+  admin = false,
 }: Props) {
   /* Was a module-level const off a static JSON import, which was right
      while the only cats were the seeded three. A recorded cat (data/
@@ -206,6 +240,16 @@ export function CatMarkers({
 
   const { map, isLoaded, isFlat, theme } = useMap()
   const [domMarkers, setDomMarkers] = useState<DomMarker[]>([])
+
+  /* Read plainly at render time, not in an effect: it is a cheap
+     synchronous localStorage scan over a handful of rows (data/
+     sightings.ts), not a canvas paint, and this component already
+     re-renders whenever `cats`/`territories` change, which is exactly the
+     signal every action that adds, decides or withdraws a report already
+     produces (App.tsx's onRecorded/onChanged cascade). A vote alone does
+     not touch this set: see data/sightings.ts's pendingByCat for why a
+     tally never changes who is in it. */
+  const pending = admin ? pendingByCat() : null
 
   // The pitched-mode circle layer. isFlat is deliberately in this effect's
   // deps, 2026-08-17 — reverted from a split "create once, toggle visibility
@@ -342,6 +386,7 @@ export function CatMarkers({
             cat={cat}
             active={cat.id === selectedId || cat.id === hoveredId}
             lifted={!isFlat}
+            pending={pending?.has(cat.id) ?? false}
             onClick={() => onSelect(cat.id === selectedId ? null : cat.id)}
             onMouseEnter={() => onHover(cat.id)}
             onMouseLeave={() => onHover(null)}

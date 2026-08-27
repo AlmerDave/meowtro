@@ -1,15 +1,13 @@
 import { useMemo } from 'react'
 import { motion } from 'motion/react'
-import type { FeatureCollection, Polygon } from 'geojson'
-import territories from '@/data/territories.geo.json'
+import { ringCentroid } from '@/map/centroid'
 
 /* The territory, drawn.
 
    The plate could describe a cat's range in three sentences and never once
    show it, which is what it did until this, on a project whose entire
    thesis is that a cat is a polygon and not a pin. This is that thesis
-   printed on the specimen card: the actual outer ring out of
-   territories.geo.json, the same geometry the map fills, normalised into a
+   printed on the specimen card: the actual outer ring, normalised into a
    glyph and drawn in the cat's own colour.
 
    It is real data end to end. Nothing here is illustrative: the shape is the
@@ -17,11 +15,27 @@ import territories from '@/data/territories.geo.json'
    share (map/centroid.ts), and the span is measured off the ring's own
    bounding box. A cat with a wider range gets a visibly wider glyph.
 
+   The ring itself is a prop now, not a lookup against a static import — see
+   Props' own note on `ring`. That is what lets this stay "the same geometry
+   the map fills" even after a sighting has moved a territory: the old
+   version read straight from territories.geo.json, which is the shape as
+   first surveyed and never the shape a later approval translated it to, so
+   this diagram used to freeze at whatever the cat looked like on day one
+   while the actual map moved on without it.
+
    Not a second map. No basemap, no north arrow, no interaction, the map is
    ten inches to the left and is the thing you pan. This is the diagram of
-   one shape, at a size where the shape is all that survives. */
+   one shape, at a size where the shape is all that survives.
 
-const FC = territories as FeatureCollection<Polygon>
+   2026-08-26: phase 9 added a second mark here for an open report's point
+   (dashed circle plus an orange "Reported here, awaiting review" caption),
+   on the reasoning that it was the only safe way for a visitor to see a
+   claim at all while the map's own ghost stayed admin-only. That gate is
+   gone now — every visitor sees the real ghost on the map itself
+   (map/Territories.tsx) — and the caption read as visual noise once it
+   was one of two places making the same point. Removed on user feedback
+   ("unappealing"); the plate's own lock message still says a report is
+   pending in words, this glyph is back to just drawing the shape. */
 
 /** Padding inside the 100x100 viewBox, so the stroke never clips its own box. */
 const PAD = 8
@@ -33,6 +47,7 @@ const M_PER_DEG = 111_320
 
 type Glyph = {
   d: string
+  /** ringCentroid(ring), projected to SVG space. */
   cx: number
   cy: number
   /** Widest span of the territory, in metres, rounded to something a person
@@ -40,10 +55,7 @@ type Glyph = {
   span: number
 }
 
-function build(catId: string): Glyph | null {
-  const ring = FC.features.find((f) => f.properties?.id === catId)?.geometry.coordinates[0] as
-    | [number, number][]
-    | undefined
+function build(ring: [number, number][] | undefined): Glyph | null {
   if (!ring || ring.length < 3) return null
 
   const lngs = ring.map((p) => p[0])
@@ -70,24 +82,34 @@ function build(catId: string): Glyph | null {
   const y = (lat: number) => oy - lat * scale
 
   const d = ring.map((p, i) => `${i ? 'L' : 'M'}${x(p[0]).toFixed(2)} ${y(p[1]).toFixed(2)}`).join(' ') + ' Z'
+  const [centreLng, centreLat] = ringCentroid(ring)
 
   return {
     d,
-    cx: x(lngs.reduce((a, b) => a + b, 0) / ring.length),
-    cy: y(lats.reduce((a, b) => a + b, 0) / ring.length),
+    cx: x(centreLng),
+    cy: y(centreLat),
     span: Math.round(Math.max(wideM, tallM) / 10) * 10,
   }
 }
 
 type Props = {
-  catId: string
+  /** This cat's current outer ring, resolved by the caller rather than
+      looked up here — Plate.tsx already resolves the same feature out of
+      the live (post-translateToward) territories for its own
+      describeReach, and passing that exact ring down means the diagram,
+      the "outside the known range" sentence and the actual map can never
+      disagree about which polygon "the territory" currently means.
+      Undefined the same way describeReach's own ring is: a cat with no
+      entry in the live territories yet draws nothing rather than a stale
+      shape. */
+  ring: [number, number][] | undefined
   /** Delay before the outline starts drawing, so it lands with its field
       rather than racing the stagger above it. */
   delay?: number
 }
 
-export function TerritoryGlyph({ catId, delay = 0 }: Props) {
-  const glyph = useMemo(() => build(catId), [catId])
+export function TerritoryGlyph({ ring, delay = 0 }: Props) {
+  const glyph = useMemo(() => build(ring), [ring])
   if (!glyph) return null
 
   return (

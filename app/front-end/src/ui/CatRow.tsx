@@ -1,5 +1,6 @@
 import { motion } from 'motion/react'
 import type { Cat } from '@/data/catsRepo'
+import { photoAt, THUMB_PX } from '@/data/cats.seed'
 import { spring, springSoft } from '@/motion/springs'
 
 /* One row of the cat index. Shared by the desktop rail (ui/Rail.tsx)
@@ -129,7 +130,13 @@ export function CatRow({
             layoutId={`cat-photo-${cat.id}`}
             transition={springSoft}
             className="cat-row-thumb"
-            src={cat.photo}
+            /* The slot is 2.75rem. Asking the host for THUMB_PX square
+               rather than the seeded 640x480 is the same call the landing's
+               roster chips already make (see photoAt), and it is the single
+               largest weight saving available here: twelve rows plus twelve
+               map pins were the whole 640x480 set. The pin asks for exactly
+               the same size, so the two share one download per cat. */
+            src={photoAt(cat.photo, THUMB_PX)}
             /* Decorative: the cat's name is right beside it in text, so
                announcing the photo too would only repeat it. */
             alt=""

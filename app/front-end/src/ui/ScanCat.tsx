@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { photoAt, THUMB_PX } from '@/data/cats.seed'
 import { motion } from 'motion/react'
 import { BookOpen, Camera, RotateCcw } from 'lucide-react'
 import { identify, REJECTION_TEXT, SAMPLE_SIDE, type IdentifyResult } from '@/data/identify'
@@ -205,7 +206,8 @@ export function ScanCat({ cats, onOpenRecord, onBack }: Props) {
             transition={spring}
           >
             <div className="scan-card-head">
-              <img src={matched.photo} alt="" />
+              {/* 3.25rem. The shared thumbnail again, already cached. */}
+              <img src={photoAt(matched.photo, THUMB_PX)} alt="" />
               <div>
                 <p className="scan-card-name">{matched.name}</p>
                 <p className="scan-card-plate">

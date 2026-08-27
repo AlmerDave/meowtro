@@ -20,7 +20,22 @@
      Per-page and therefore not here: <title> and the description/OG block,
      which describe the page rather than the site. -->
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<!-- viewport-fit=cover, and it is load-bearing rather than cosmetic. Every
+     surface in this app is position: fixed over a full-bleed map, and the
+     map is the content: without this the browser shrinks the layout
+     viewport to the safe area and letterboxes the city inside the notch
+     and the home indicator, which on a phone is the difference between a
+     map and a picture of a map.
+
+     It is also what switches env(safe-area-inset-*) on. Those are 0 until
+     a page opts in, so the deck's home-indicator padding, the cat panel's
+     and the map controls' were all writing 0 into their own calc()s and
+     reading as though they were spaced. tokens.css aliases the four to
+     --safe-t/r/b/l and every fixed surface in shell.css and landing.css
+     now folds the relevant one into its own offset, which is the other
+     half of this line: covering the unsafe area is only correct if the
+     CONTROLS then stay out of it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 
 <!-- Day/night, decided by the clock in Bonifacio Global City, not the
      visitor's own device. First and synchronous, before any stylesheet

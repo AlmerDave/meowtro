@@ -45,6 +45,41 @@ export function photoAt(url: string, px: number): string {
   return url.replace(/width=\d+&height=\d+/, `width=${px}&height=${px}`)
 }
 
+/** The size every SMALL rendering of a cat's photo asks for: the rail and
+    deck row's 2.75rem slot, and the map pin's 2.125rem head. 128 covers the
+    larger of the two at 3x, which is the densest phone screen anyone will
+    open this on.
+
+    One constant rather than a number at each call site, because the two
+    have to agree exactly. They are separate <img> elements pointing at the
+    same host, so a row asking for 128 and a pin asking for 96 would be two
+    downloads per cat instead of one, which is the opposite of what this
+    exists for: twelve 640x480 photographs were being fetched to paint discs
+    the size of a fingernail, roughly 600KB of page weight, and the same
+    twelve at 128 square are about a fifth of that.
+
+    The plate's hero is deliberately NOT on this. It is painted around 368px
+    wide and genuinely wants the full-size file; it carries this one as a
+    CSS background underneath itself instead (plate/Plate.tsx), so the
+    shared-element morph out of a row lands on a picture that is already
+    cached rather than on an empty frame while the large one arrives. */
+export const THUMB_PX = 128
+
+/** The picker grid's own size (ui/ReportSighting.tsx). Its cards are square
+    and run to roughly 110 CSS px on a phone, so THUMB_PX would arrive
+    visibly soft at 2x on the one screen in this app whose stated job is
+    recognition: "photographs at a size you can actually match against an
+    animal in front of you". 256 is that at 2x with room to spare, and still
+    a fraction of the seeded 640x480 that the grid used to pull twelve of
+    every time it opened.
+
+    Two sizes and no more, deliberately. Every other photo in the app is
+    painted under ~64px (the row slot, the pin, the sighting chip, the scan
+    result's head, an admin's pending thumbnail) and takes THUMB_PX; the
+    plate's hero is the only thing that takes the full file. A third size
+    would be a third cache entry per cat for no visible gain. */
+export const CARD_PX = 256
+
 export type Cat = {
   id: string
   name: string

@@ -1,9 +1,27 @@
 /* Styleguide page only. The app proper does not import this. */
 
+/* max(), not an added inset: this is a centred, max-width document rather
+   than a fixed panel, so on a wide screen the gutter is already far larger
+   than any device inset and adding one would just shift the column. max()
+   picks whichever is actually bigger, which is the gutter everywhere except
+   a notched phone held sideways. */
 .page {
   max-width: 60rem;
   margin: 0 auto;
-  padding: var(--s-16) var(--s-8) var(--s-16);
+  padding: calc(var(--s-16) + var(--safe-t)) max(var(--s-8), var(--safe-r))
+    calc(var(--s-16) + var(--safe-b)) max(var(--s-8), var(--safe-l));
+}
+
+/* This page is a document, not the app, so it gets the ordinary narrow
+   treatment the app's fixed panels do not need: less gutter (var(--s-8)
+   twice is 64px out of a 390px screen, a sixth of it spent on margin) and a
+   section head that wraps instead of crushing its own note into a column
+   three characters wide. */
+@media (max-width: 700px) {
+  .page {
+    padding: calc(var(--s-8) + var(--safe-t)) max(var(--s-4), var(--safe-r))
+      calc(var(--s-12) + var(--safe-b)) max(var(--s-4), var(--safe-l));
+  }
 }
 
 .page,
@@ -38,6 +56,7 @@ section {
 }
 .sec-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: var(--s-4);
   border-bottom: 1px solid var(--rule);
@@ -94,8 +113,29 @@ section {
    Replaces the old single-theme swatch grid. The hexes are sampled off
    :root, not typed in (Styleguide.tsx's readPalette), so a token edit shows
    up here without anyone remembering to update a list. */
+
+/* The row below is a five-column table, and a table is the one layout that
+   genuinely cannot be reflowed into a phone: the whole point of it is
+   reading three themes' values for one token ACROSS. Its natural floor is
+   about 34rem (a 7rem name column, three chips each holding a 24px swatch
+   and a seven-character hex, and a role column), so at 390px it was pushing
+   the entire document into a horizontal scroll: every other section on the
+   page moved sideways because of this one.
+
+   Given its own scroller instead, so the overflow belongs to the table
+   rather than to the page. Above 34rem of content width nothing here
+   applies, so the desktop layout is byte-identical.
+
+   overflow-x on a box forces overflow-y from visible to auto, which is
+   fine: nothing in this container is taller than it is. */
+.palette-compare {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
 .palette-head,
 .palette-row {
+  min-width: 34rem;
   display: grid;
   grid-template-columns: 7rem repeat(3, 1fr) 1.4fr;
   gap: var(--s-3);

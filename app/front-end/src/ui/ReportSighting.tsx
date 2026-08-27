@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { photoAt, CARD_PX, THUMB_PX } from '@/data/cats.seed'
 import { AnimatePresence, motion } from 'motion/react'
 import type { FeatureCollection, Polygon } from 'geojson'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
@@ -11,6 +12,7 @@ import type { Request } from '@/App'
 import { ScanCat } from '@/ui/ScanCat'
 import { useEscape } from '@/ui/escape'
 import { spring, springSoft } from '@/motion/springs'
+import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
 
 /* "I saw a cat": the one thing a visitor can contribute to the survey.
 
@@ -61,9 +63,18 @@ import { spring, springSoft } from '@/motion/springs'
    is the one thing this project has a written rule against.
 
    And as of phase 8 a sighting is a PROPOSAL. It lands `pending`, it moves
-   nothing, and a reviewer approving it is what applies it (ui/ReviewQueue).
-   That is the sentence at the 'done' step below, and it used to say the
-   opposite.
+   nothing, and a reviewer approving it is what applies it — from the
+   plate's own "Pending review" section as of phase 9 (plate/Plate.tsx),
+   not the corner panel that used to own this (map/MapCanvas.tsx has the
+   note on why). That is the sentence at the 'done' step below, and it used
+   to say the opposite.
+
+   Phase 9 also means this flow can hand back a cat that already has an
+   open report on it: ReportSighting itself does not check for that (only
+   the plate's own "I saw here" button does, see plate/Plate.tsx), so
+   picking a cat here via the floating menu still lands a second,
+   independent report rather than routing to a vote. Known, not fixed —
+   the request that shipped phase 9 was scoped to the plate's button.
 
    Why a sighting rather than "move the cat" is argued in data/sightings.ts,
    where the consequences live.
@@ -152,6 +163,13 @@ export function ReportSighting({
   const [catId, setCatId] = useState<string | null>(null)
   const [point, setPoint] = useState<[number, number] | null>(null)
   const [when, setWhen] = useState<(typeof WHEN)[number]['key']>('now')
+  /* Optional: the field this panel's own header comment used to describe as
+     "nowhere to upload a photograph to" (data/sightings.ts's note on
+     Sighting.photo). Empty string, not null, so it can sit directly in
+     addSighting's optional `photo` param without a null check at the call
+     site. */
+  const [photo, setPhoto] = useState('')
+  const [photoError, setPhotoError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   /* Where the map was looking when the picker opened. See the header: this
      is deliberately a snapshot rather than the live centre. */
@@ -234,6 +252,8 @@ export function ReportSighting({
     setCatId(null)
     setPoint(null)
     setWhen('now')
+    setPhoto('')
+    setPhotoError(null)
     setQuery('')
     setPlacing(false)
 
@@ -426,8 +446,15 @@ export function ReportSighting({
        frame because the panel is not in the DOM until this render commits.
 
        The same courtesy CatDeck already gives its own panel, for the same
-       reason. */
-    requestAnimationFrame(() => panelRef.current?.focus({ preventScroll: true }))
+       reason. Cancelled on cleanup, unlike the two rAFs in event handlers
+       above: this one is scheduled from an effect that re-runs on every new
+       request, so without it a second report queued behind a first would
+       leave the earlier frame still due to fire and steal focus back off
+       whatever the newer one had just given it to. */
+    const frame = requestAnimationFrame(() =>
+      panelRef.current?.focus({ preventScroll: true })
+    )
+    return () => cancelAnimationFrame(frame)
   }, [report, setPlacing])
 
   const choose = (id: string) => {
@@ -439,11 +466,21 @@ export function ReportSighting({
   const commit = () => {
     if (!cat || !point) return
     const minutes = WHEN.find((w) => w.key === when)?.minutesAgo ?? 0
-    const sighting = addSighting(cat.id, point, Date.now() - minutes * 60_000)
+    const sighting = addSighting(cat.id, point, Date.now() - minutes * 60_000, photo || undefined)
     if (!sighting) return
     setUndoId(sighting.id)
     setStep('done')
     onReported()
+  }
+
+  const pickPhoto = async (file: File | undefined) => {
+    if (!file) return
+    setPhotoError(null)
+    try {
+      setPhoto(await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY))
+    } catch {
+      setPhotoError('Could not read that photo. Try a different file.')
+    }
   }
 
   // The undo window closes itself. A confirmation that waits forever is a
@@ -702,7 +739,19 @@ export function ReportSighting({
                             width/height so the browser reserves the square
                             before the photo lands and a long grid does not
                             reflow as you scroll it. */}
-                        <img src={c.photo} alt="" loading="lazy" decoding="async" width={160} height={160} />
+                        {/* CARD_PX, not the seeded 640x480: this grid
+                            paints twelve photographs at once and was the
+                            single heaviest thing this panel did on open.
+                            See data/cats.seed.ts for why this one alone
+                            does not take THUMB_PX. */}
+                        <img
+                          src={photoAt(c.photo, CARD_PX)}
+                          alt=""
+                          loading="lazy"
+                          decoding="async"
+                          width={160}
+                          height={160}
+                        />
                         <span className="sight-card-name">{c.name}</span>
                         <span className="sight-card-away">
                           {Number.isFinite(away) ? `${Math.round(away)} m away` : ''}
@@ -764,7 +813,10 @@ export function ReportSighting({
                 {/* The chosen cat rides along through both remaining steps,
                     so it is never ambiguous which record is about to change. */}
                 <div className="sight-chip">
-                  <img src={cat.photo} alt="" />
+                  {/* 1.75rem in the chip, so the shared thumbnail size,
+                      which the rail and the map pin have already put in
+                      cache by the time anyone reaches this step. */}
+                  <img src={photoAt(cat.photo, THUMB_PX)} alt="" />
                   <span>{cat.name}</span>
                 </div>
 
@@ -801,6 +853,24 @@ export function ReportSighting({
 
                 {step === 'confirm' && point && (
                   <>
+                    <label className="sight-photo-field">
+                      <span className="sight-label">Photo (optional)</span>
+                      <div className="sight-photo-row">
+                        {photo && <img className="sight-photo-thumb" src={photo} alt="" />}
+                        <input
+                          className="sight-photo-file"
+                          type="file"
+                          accept="image/*"
+                          onChange={(e) => void pickPhoto(e.target.files?.[0])}
+                        />
+                      </div>
+                      {photoError && (
+                        <p className="record-error" role="alert" aria-live="polite">
+                          {photoError}
+                        </p>
+                      )}
+                    </label>
+
                     <fieldset className="sight-when">
                       <legend>When?</legend>
                       {WHEN.map((option) => (

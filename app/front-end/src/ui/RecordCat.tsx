@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import type { GeoJSONSource, MapMouseEvent } from 'maplibre-gl'
 import { MapPin, Plus, X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
+import { nearestPlaceName } from '@/map/landmark'
 import { addCat, clearRecorded, countRecorded } from '@/data/catsRepo'
 import { CAT_COLOURS, type Colour } from '@/data/cats.seed'
 import {
@@ -16,9 +17,9 @@ import {
   UNKNOWN,
   type CoatAnswers,
 } from '@/data/describeCat'
-import { SHAPES, shapeRing, type Shape } from '@/data/localCats'
+import { SHAPES, shapePreviewPoints, shapeRing, type Shape } from '@/data/localCats'
 import { addChip, BUILTIN_NOTE_CHIPS, readChips } from '@/data/noteChips'
-import { compressImage } from './imageToDataUrl'
+import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from './imageToDataUrl'
 import { spring, springSoft } from '@/motion/springs'
 
 /* Add a new cat: the panel that adds one to the survey.
@@ -71,15 +72,37 @@ const PREVIEW_LINE = 'record-preview-line'
 const MIN_RADIUS = 30
 const MAX_RADIUS = 250
 
-/** The longest edge and JPEG quality every uploaded photo is compressed
-    to, matching the seeded photos' own size (data/cats.seed.ts's CATAAS
-    helper). Not a knob a user sees, see ui/imageToDataUrl.ts's own note
-    on why this is load-bearing rather than tunable polish. */
-const PHOTO_MAX_DIM = 640
-const PHOTO_QUALITY = 0.75
+/** Not a knob a user sees; see ui/imageToDataUrl.ts's own note on
+    PHOTO_MAX_DIM/PHOTO_QUALITY for why this is load-bearing rather than
+    tunable polish. */
 const MAX_EXTRA_PHOTOS = 6
 
 const COLOURS = CAT_COLOURS
+
+/* Visual swatches for the fur colour and pattern questions (Step 2): a
+   plain text pill left an admin guessing what "Tricolor" or "Colorpoint"
+   actually look like next to "Tabby". Both maps key off the exact option
+   strings FUR_COLOURS/PATTERNS already export from data/describeCat.ts,
+   with an explicit fallback to the "don't know" swatch rather than
+   rendering nothing for a string that doesn't match, so a future option
+   added to one list without a matching class here degrades to a visible
+   placeholder instead of a silently blank pill. */
+const FUR_SWATCH_CLASS: Record<string, string> = {
+  Black: 'fur-black',
+  Grey: 'fur-grey',
+  'Orange/Ginger': 'fur-orange',
+  White: 'fur-white',
+  Brown: 'fur-brown',
+  'Calico/Mixed': 'fur-mixed',
+}
+const PATTERN_SWATCH_CLASS: Record<string, string> = {
+  Solid: 'pat-solid',
+  Tabby: 'pat-tabby',
+  Tuxedo: 'pat-tuxedo',
+  Tricolor: 'pat-tricolor',
+  Tortoiseshell: 'pat-tortoiseshell',
+  Colorpoint: 'pat-colorpoint',
+}
 
 const STEPS = ['Photo', 'Identity', 'Character & look', 'Place & review'] as const
 
@@ -98,16 +121,38 @@ const EMPTY_FORM = {
 const token = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
+/** A small SVG trace of what a territory shape actually draws, built from
+    shapePreviewPoints, the same per-shape data shapeRing uses to draw the
+    real polygon on the map. A generic circle/blob/square icon would have
+    been a second, unrelated guess at what "Notched" or "Ragged" look like;
+    this is the real outline, just too small to place on a map. */
+function ShapePreview({ shape }: { shape: Shape }) {
+  const points = shapePreviewPoints(shape)
+    .map(([x, y]) => `${(x * 9 + 11).toFixed(1)},${(y * 9 + 11).toFixed(1)}`)
+    .join(' ')
+  return (
+    <svg className="record-shape-preview" viewBox="0 0 22 22" width="22" height="22" aria-hidden>
+      <polygon points={points} />
+    </svg>
+  )
+}
+
 function SingleChoice({
   label,
   options,
   value,
   onChange,
+  swatch,
 }: {
   label: string
   options: readonly string[]
   value: string
   onChange: (value: string) => void
+  /** Renders a small visual indicator before an option's text, e.g. a
+      colour dot or a pattern-filled tile. Optional: Sex has no meaningful
+      visual for "Male"/"Female" and just omits this, same plain-text pill
+      as before. */
+  swatch?: (option: string) => React.ReactNode
 }) {
   return (
     <fieldset className="record-field record-colours">
@@ -120,6 +165,7 @@ function SingleChoice({
           data-on={String(value === option)}
           onClick={() => onChange(option)}
         >
+          {swatch?.(option)}
           {option}
         </button>
       ))}
@@ -300,8 +346,23 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
       return
     }
     setBusy(true)
+    /* The eyebrow's other half. The seeded cats each carry a real nearby
+       place ("LINE 03 · TRACK 30TH"); the form never asks for one (see
+       catsRepo.addCat's own note on not inventing a filing convention),
+       so a recorded cat used to fall straight through to a literal
+       fallback string every time. Same lookup Plate.tsx already uses for
+       a cat's own "Near X" range line, run here against the point that
+       was just placed — "Near " is stripped because the seeded convention
+       names the place directly rather than prefixing it. Null when
+       nothing named is within range (map/landmark.ts's SEARCH_RADIUS_M),
+       which leaves draft.line empty and addCat's own "FIELD ENTRY"
+       fallback fires instead. Only the place half travels down: the
+       number in front of it is catsRepo.addCat's own job, the same way it
+       already owns the plate number's count. */
+    const place = map ? nearestPlaceName(map, center)?.replace(/^Near /, '') : null
     const cat = await addCat({
       ...form,
+      line: place ? place.toUpperCase() : form.line,
       center,
       radiusM,
       extraPhotos: extraPhotos.map((photo) => photo.src),
@@ -453,12 +514,24 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                     options={FUR_COLOURS}
                     value={answers.furColour}
                     onChange={(furColour) => setAnswers((a) => ({ ...a, furColour }))}
+                    swatch={(option) => (
+                      <span
+                        className={`record-swatch-dot ${FUR_SWATCH_CLASS[option] ?? 'fur-unknown'}`}
+                        aria-hidden
+                      />
+                    )}
                   />
                   <SingleChoice
                     label="Pattern"
                     options={PATTERNS}
                     value={answers.pattern}
                     onChange={(pattern) => setAnswers((a) => ({ ...a, pattern }))}
+                    swatch={(option) => (
+                      <span
+                        className={`record-swatch-tile ${PATTERN_SWATCH_CLASS[option] ?? 'pat-unknown'}`}
+                        aria-hidden
+                      />
+                    )}
                   />
 
                   <fieldset className="record-field record-colours">
@@ -648,6 +721,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         data-on={String(form.shape === id)}
                         onClick={() => setForm({ ...form, shape: id })}
                       >
+                        <ShapePreview shape={id} />
                         {label}
                       </button>
                     ))}

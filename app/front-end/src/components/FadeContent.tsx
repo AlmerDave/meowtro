@@ -1,3 +1,24 @@
+/* PARKED. Nothing imports this file.
+
+   A React Bits scroll-reveal wrapper, pulled in during phase 4 for the
+   scroll-driven camera that was then reverted (see the build plan's
+   decision log). With no scrollable document there is no ScrollTrigger for
+   it to hang off, so it has never had anything to reveal.
+
+   Kept rather than deleted, on the same footing as plate/CatFigure.tsx,
+   plate/FigureBoundary.tsx and ui/ReviewQueue.tsx: each is a working
+   component whose one caller went away, and each is one import from being
+   back. Recorded here because it was the only one of the four with no note
+   saying so, which is how an unused file stops reading as parked and starts
+   reading as forgotten.
+
+   It costs nothing while unimported: Vite tree-shakes it out of every
+   entry, and it registers its GSAP plugin at module scope, so it cannot
+   run a timeline or open a ScrollTrigger until something actually renders
+   it. Note that motion/lenis.ts no longer starts Lenis on a page with no
+   scroll height, so anything reviving this has to give the document real
+   scroll height first, not just mount the component. */
+
 import * as React from 'react';
 import { useRef, useEffect } from 'react';
 import { gsap } from 'gsap';

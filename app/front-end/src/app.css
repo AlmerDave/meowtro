@@ -23,8 +23,22 @@
     --color-input: var(--input);
     --color-border: var(--border);
     --color-destructive: var(--destructive);
-    --color-accent-foreground: var(--accent-foreground);
-    --color-accent: var(--accent);
+    /* shadcn's `accent` is its own thing: the muted wash a ghost button
+       takes on hover. It is NOT this app's --accent, which is "the cat this
+       panel is about" (tokens.css) and is overwritten inline per cat by
+       CatRow/Plate/CatPin. Mapped straight to the underlying tokens rather
+       than through a --accent/--accent-foreground pair in the :root bridge
+       below, because that pair redefined --accent at :root AFTER tokens.css
+       had set it to --rust, and unlayered rules settle on source order:
+       every var(--accent) with no cat behind it silently resolved to --well
+       (--ink at 4%). That is the app's whole focus-ring colour, so the ring
+       on the map controls, the sighting panel, the rail's search field and
+       every control on the landing was drawn in a 4% wash of the text
+       colour: invisible, and a 2.4.7 failure. Same for --accent's other
+       chrome jobs: .record-save's fill, .record-progress's filled step,
+       .sight-card's photo frame. */
+    --color-accent-foreground: var(--rust);
+    --color-accent: var(--well);
     --color-muted-foreground: var(--muted-foreground);
     --color-muted: var(--muted);
     --color-secondary-foreground: var(--secondary-foreground);
@@ -90,8 +104,8 @@
     --secondary-foreground: var(--ink);
     --muted: var(--well);
     --muted-foreground: var(--ink-soft);
-    --accent: var(--well);
-    --accent-foreground: var(--rust);
+    /* No --accent here. See the note on --color-accent above: this name
+       belongs to tokens.css and to whichever cat a panel is showing. */
 
     /* No red. A field guide warns in the same ink it prints in. */
     --destructive: var(--rust);

@@ -31,6 +31,23 @@ html:has(.map)::-webkit-scrollbar {
   display: none; /* Chromium (Edge, Chrome, Safari) */
 }
 
+/* --- The admin banner's reserved height, phase 9 ------------------------
+   0 by default, set to the banner's real height only while App.tsx has
+   flipped `data-admin` on <body> — the same reactive-attribute shape
+   ui/ReportSighting.tsx already uses for `data-placing`. Every top-anchored
+   panel below (.rail, .plate) reads this in its own `top`/`max-height`
+   instead of a hardcoded var(--s-6), so admin mode pushes them down by
+   exactly the banner's height and nothing has two numbers that have to be
+   kept in step by hand. Zero is a true no-op: the calc() it feeds
+   evaluates to the same value these rules already had before the banner
+   existed. */
+:root {
+  --admin-banner-h: 0px;
+}
+body[data-admin='true'] {
+  --admin-banner-h: 2.25rem;
+}
+
 /* --- Map ---------------------------------------------------------------
    Two classes, deliberately. maplibre-gl.css sets `.maplibregl-map {
    position: relative }` and is injected after this file, so a plain `.map`
@@ -173,8 +190,8 @@ html:has(.map)::-webkit-scrollbar {
 .map-controls {
   position: fixed;
   z-index: 3;
-  right: var(--s-8);
-  bottom: var(--s-8);
+  right: calc(var(--s-8) + var(--safe-r));
+  bottom: calc(var(--s-8) + var(--safe-b));
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -389,6 +406,53 @@ html:has(.map)::-webkit-scrollbar {
     0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
+/* --- The pending badge, map/CatMarkers.tsx, phase 9, admin-only --------
+   --rust, the same "request somebody's attention" colour .review-count
+   already used for this before the corner panel it lived in was removed
+   (map/MapCanvas.tsx has the note). One glyph in a small round dot, not a
+   pill: at any real number of cats on screen at once, this has to read as
+   a flag, not compete with the photo it sits on. */
+.cat-pin-pending {
+  position: absolute;
+  top: -0.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  background: var(--rust);
+  color: var(--paper);
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--ink) 35%, transparent);
+  pointer-events: none;
+}
+.cat-pin[data-pending='true'] .cat-pin-head {
+  animation: pin-pulse 1.8s var(--ease-out) infinite;
+}
+/* prefers-reduced-motion collapses --dur-* tokens elsewhere in this app
+   (tokens.css); this animation is not duration-driven, so it gets its own
+   guard rather than inheriting one. */
+@media (prefers-reduced-motion: reduce) {
+  .cat-pin[data-pending='true'] .cat-pin-head {
+    animation: none;
+  }
+}
+@keyframes pin-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 2px 6px color-mix(in srgb, var(--ink) 35%, transparent),
+      0 0 0 0 color-mix(in srgb, var(--rust) 45%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 2px 6px color-mix(in srgb, var(--ink) 35%, transparent),
+      0 0 0 5px color-mix(in srgb, var(--rust) 0%, transparent);
+  }
+}
+
 /* --- Panel recipe -----------------------------------------------------
    The rail, the plate and the sheet are the same material. One place to
    change it, rather than the same six declarations copied three times as
@@ -404,6 +468,8 @@ html:has(.map)::-webkit-scrollbar {
 .map-controls,
 .record,
 .record-open,
+.review,
+.review-trigger,
 .sight,
 .sight-open,
 .sight-menu,
@@ -626,8 +692,8 @@ html:has(.map)::-webkit-scrollbar {
 .rail {
   position: fixed;
   z-index: 3;
-  top: var(--s-6);
-  left: var(--s-6);
+  top: calc(var(--s-6) + var(--admin-banner-h) + var(--safe-t));
+  left: calc(var(--s-6) + var(--safe-l));
   width: 17.5rem;
   border-radius: var(--radius);
 }
@@ -848,15 +914,78 @@ html:has(.map)::-webkit-scrollbar {
   grid-area: 1 / 1;
 }
 
-/* ponytail: no scroll here. Three cats (data/cats.seed.ts), and a scrolling
-   ancestor clips the specimen flight in both directions rather than one. If
-   the index ever outgrows the viewport, this needs overflow-y:auto and the
-   flight needs to be portalled out of the panel to survive it. */
+/* Bounded and internally scrollable. The ponytail note this replaces
+   predicted the day the index outgrew a screenful; twelve cats reached it
+   (rows ran off the bottom of the viewport with no way to reach them, no
+   scrollbar, nothing: the rail just kept growing).
+
+   The cap lives on .rail-list itself, not on .rail or .rail-panel, and
+   that placement is what keeps this working WITH .rail-panel's own
+   `height: 'auto'` Motion animation (ui/Rail.tsx) instead of fighting it:
+   Motion measures that animation's target by reading the panel's natural,
+   unconstrained height, so as long as the list's own natural height is
+   already bounded by the time Motion measures it, the panel's "auto"
+   comes out bounded too, with no flex-grow chain needed to make it so.
+
+   min(30rem, calc(100dvh - 14rem)): 30rem is roughly eight rows, plenty to
+   register "there is more" without the panel dominating the screen at any
+   normal window height. The second term is what matters on a short one:
+   14rem is the rough budget for everything else stacked around this list
+   (the top offset, the head, the search bar, the count line, a margin of
+   room), so on a genuinely short viewport the cap shrinks with it instead
+   of running the rail off the bottom of the screen, which is the exact
+   failure this rule exists to fix.
+
+   overflow-x pinned to hidden rather than left unset: CSS pairs an unset
+   overflow-x with a set overflow-y by forcing it to `auto` too, so leaving
+   it out would have made the list quietly horizontally-scrollable as well.
+
+   Does not reopen the specimen flight question the old note raised.
+   .rail-panel already clips with `overflow: hidden` (a few rules up, with
+   its own comment on exactly this), and the outbound flight already
+   tolerates that ancestor; this list sits inside that same boundary and
+   adds no new edge for it to cross. Worth a look the first time a plate is
+   opened from a scrolled-down row, since that combination is new here. */
 .rail-list {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 0 var(--s-2) var(--s-2);
+  max-height: min(30rem, calc(100dvh - 14rem - var(--safe-t) - var(--safe-b)));
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 18%, transparent) transparent;
+}
+
+/* A slim in-panel scrollbar rather than the OS default, so scrolling reads
+   as part of the glass material instead of unthemed chrome sitting on top
+   of it. Chromium's pseudo-element pair; scrollbar-width/-color above cover
+   Firefox, which has no equivalent pseudo-elements to style. */
+.rail-list::-webkit-scrollbar {
+  width: 6px;
+}
+.rail-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.rail-list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 999px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .rail-list::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--ink) 32%, transparent);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The keyboard nav's browser-native scrollIntoView is the only thing
+     this touches: a wheel or trackpad scroll is already the user's own
+     motion, not the app's, and was never affected by this property. */
+  .rail-list {
+    scroll-behavior: auto;
+  }
 }
 
 .rail-empty {
@@ -1079,12 +1208,14 @@ html:has(.map)::-webkit-scrollbar {
 .plate {
   position: fixed;
   z-index: 3;
-  top: var(--s-6);
-  right: var(--s-6);
+  top: calc(var(--s-6) + var(--admin-banner-h) + var(--safe-t));
+  right: calc(var(--s-6) + var(--safe-r));
   display: flex;
   flex-direction: column;
   width: 24rem;
-  max-height: calc(100dvh - var(--s-12));
+  max-height: calc(
+    100dvh - var(--s-12) - var(--admin-banner-h) - var(--safe-t) - var(--safe-b)
+  );
   border-radius: var(--radius);
   /* A wash of the cat's own territory colour, top-down. The only per-cat
      chrome in the card besides the accent rules. */
@@ -1522,6 +1653,125 @@ html:has(.map)::-webkit-scrollbar {
   transform: scale(0.98);
 }
 
+/* --- The lock, phase 9: replaces .plate-report while a sighting is open --
+   Same slot, same width, deliberately: this is the report button's own
+   state while an open report exists, not a second, unrelated panel. --rust
+   rather than the cat's --accent, matching the map's own "this needs a
+   look" colour instead of the record's identity colour, since the message
+   is about the review, not about the cat. */
+.plate-locked {
+  margin-top: var(--s-4);
+  padding: var(--s-3);
+  border: 1px dashed color-mix(in srgb, var(--rust) 55%, transparent);
+  border-radius: calc(var(--radius) * 0.7);
+}
+.plate-locked-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  margin: 0 0 var(--s-3);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.plate-locked-msg svg {
+  flex-shrink: 0;
+  margin-top: 0.15em;
+  color: var(--rust);
+}
+.plate-vote {
+  display: flex;
+  gap: var(--s-2);
+}
+.plate-vote-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.plate-vote-btn[data-on='true'] {
+  border-color: var(--rust);
+  background: color-mix(in srgb, var(--rust) 12%, transparent);
+  color: var(--rust);
+}
+.plate-vote-btn:active {
+  transform: scale(0.97);
+}
+
+/* --- An admin's decision list, phase 9 -----------------------------------
+   Reuses .review-yes/.review-no wholesale (still defined further down,
+   the corner panel they were written for is only unmounted, not deleted —
+   see map/MapCanvas.tsx's note): the action is the same one, approve or
+   discard a sighting, just reachable from a second place now. Everything
+   else here mirrors .admin-sighting-row's layout below, the plate's other
+   per-sighting list, so the two read as the same kind of thing. */
+.admin-pending {
+  margin-top: var(--s-4);
+}
+.admin-pending-list {
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.admin-pending-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-2);
+  border-radius: calc(var(--radius) * 0.7);
+  background: var(--well);
+}
+.admin-pending-photo {
+  flex-shrink: 0;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: calc(var(--radius) * 0.4);
+  object-fit: cover;
+}
+.admin-pending-info {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.admin-pending-point {
+  font-variant-numeric: tabular-nums;
+}
+.admin-pending-votes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.admin-pending-votes svg:last-of-type {
+  margin-left: var(--s-1);
+}
+.admin-pending-actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: var(--s-1);
+}
+
 /* --- Parked with plate/CatFigure.tsx, 2026-08-23 -----------------------
    The Photo/3D toggle these styled was removed from Plate.tsx on user
    direction. Nothing renders .plate-views, .plate-view, .plate-view-pill,
@@ -1929,7 +2179,8 @@ html:has(.map)::-webkit-scrollbar {
      The bottom pad clears the home indicator / gesture bar. env() resolves
      to 0 where there is no inset, so it costs nothing on a device without
      one and no media query is needed to tell them apart. */
-  padding: var(--s-4) var(--s-4) calc(var(--s-4) + env(safe-area-inset-bottom));
+  padding: var(--s-4) calc(var(--s-4) + var(--safe-r)) calc(var(--s-4) + var(--safe-b))
+    calc(var(--s-4) + var(--safe-l));
   /* Deliberately NOT pointer-events: none with the cards opting back in.
      That would let map taps through this band, which suits the design, but
      this element is also the scroll container for the deck, and whether a
@@ -1945,7 +2196,7 @@ html:has(.map)::-webkit-scrollbar {
   scroll-snap-type: x mandatory;
   /* Snap targets align to the padded edge, not the scroller's border edge,
      so a settled card sits on the same margin it would at rest. */
-  scroll-padding-inline-start: var(--s-4);
+  scroll-padding-inline-start: calc(var(--s-4) + var(--safe-l));
   scrollbar-width: none;
 }
 .cat-deck::-webkit-scrollbar {
@@ -2095,7 +2346,11 @@ html:has(.map)::-webkit-scrollbar {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom));
+  /* The panel spans the full width, so its own content needs clearing
+     from the landscape ear as well as the home indicator. */
+  padding-bottom: calc(var(--s-4) + var(--safe-b));
+  padding-left: var(--safe-l);
+  padding-right: var(--safe-r);
 }
 
 /* --- Below the breakpoint ----------------------------------------------
@@ -2160,8 +2415,8 @@ html:has(.map)::-webkit-scrollbar {
      a row (2.75rem slot + 2x --s-2) plus the card's and the deck's own
      padding, rounded up. */
   .map-controls {
-    right: var(--s-4);
-    bottom: calc(7.5rem + env(safe-area-inset-bottom));
+    right: calc(var(--s-4) + var(--safe-r));
+    bottom: calc(7.5rem + var(--safe-b));
   }
 }
 
@@ -2173,11 +2428,12 @@ html:has(.map)::-webkit-scrollbar {
    No material declared here: the trigger and the panel are both on the
    panel recipe above, so they are the same glass as the rail and the plate
    and follow the theme for free. */
+/* Positioning lives on .admin-controls (the wrapper both this and
+   .review-trigger sit inside, MapCanvas.tsx), not here: this button used to
+   own its own `position: fixed`, and it is what let it end up hidden behind
+   the rail the first time RecordCat was mounted. See .admin-controls for
+   where and why. */
 .record-open {
-  position: fixed;
-  z-index: 3;
-  left: var(--s-6);
-  bottom: var(--s-6);
   display: flex;
   align-items: center;
   gap: var(--s-2);
@@ -2206,17 +2462,25 @@ html:has(.map)::-webkit-scrollbar {
 .record {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
-  /* Clear of the trigger, which stays put underneath: the panel grows up
-     out of the button rather than replacing it. The origin is what makes
-     that literally true of the entrance scale, not just of the position;
-     see the same pair on .sight. */
-  transform-origin: bottom left;
-  bottom: calc(var(--s-6) + 3rem);
+  right: calc(var(--s-6) + var(--safe-r));
+  /* Not "clear of the trigger" any more, unlike before: the trigger moved
+     into .admin-controls, a flex row, so its exact rendered position
+     depends on how wide ReviewQueue's own trigger happens to be beside it,
+     which is not something a CSS rule here can read. Cleared against
+     .map-controls instead, the one other fixed panel sharing this corner:
+     its own height is var(--s-1) padding twice, five 2.25rem buttons and
+     four 1px+2px-margin dividers, which sums to 12.5rem, plus var(--s-4) of
+     breathing room above it. .review uses the same number so the two
+     panels open from the same shelf. */
+  transform-origin: bottom right;
+  bottom: calc(var(--s-8) + 12.5rem + var(--s-4) + var(--safe-b));
   display: flex;
   flex-direction: column;
   width: 19rem;
-  max-height: calc(100dvh - 12rem);
+  /* Reserves the same climb this panel's own `bottom` already spends
+     (15.5rem) plus var(--s-6) of clearance at the top of the screen, or a
+     tall record on a short viewport would grow straight off it. */
+  max-height: calc(100dvh - 17rem - var(--safe-t) - var(--safe-b));
   border-radius: var(--radius);
 }
 
@@ -2461,6 +2725,92 @@ html:has(.map)::-webkit-scrollbar {
   border-style: dashed;
 }
 
+/* --- Fur colour and pattern swatches, Step 2 ----------------------------
+   Real colour dots and pattern-filled tiles instead of a plain text pill,
+   so "Tricolor" or "Colorpoint" show what they mean rather than asking the
+   admin to already know. Fixed hex, not theme tokens: these represent an
+   actual animal's coat, the same way an uploaded photo does not retheme
+   when the app switches modes, and CAT_COLOURS' own eight tokens describe
+   a territory's paint on the map, a different fact from what the cat looks
+   like, deliberately kept separate (see cats.seed.ts's own note on why
+   sage/rust/etc. are never reused as anything but a territory colour). */
+.record-swatch-dot {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  margin-bottom: 2px;
+}
+.record-swatch-tile {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: calc(var(--radius) * 0.3);
+  border: 1px solid var(--rule);
+  margin-bottom: 2px;
+}
+
+.fur-black { background: #2a2622; }
+.fur-grey { background: #8c8880; }
+.fur-orange { background: linear-gradient(155deg, #d68a49, #b3672c); }
+.fur-white { background: #f1ece0; }
+.fur-brown { background: linear-gradient(155deg, #7c5a3c, #5a3f27); }
+.fur-mixed {
+  background:
+    radial-gradient(circle at 30% 30%, #d68a49 0 34%, transparent 35%),
+    radial-gradient(circle at 68% 62%, #2a2622 0 32%, transparent 33%),
+    #f1ece0;
+}
+.fur-unknown {
+  background: var(--well);
+  border-style: dashed;
+}
+
+.pat-solid { background: #9c8f7a; }
+.pat-tabby {
+  background: repeating-linear-gradient(58deg, #a98f6b 0 6px, #6b4a30 6px 10px);
+}
+.pat-tuxedo {
+  background:
+    radial-gradient(ellipse 60% 46% at 50% 78%, #f1ece0 0 98%, transparent 100%),
+    #2a2622;
+}
+.pat-tricolor {
+  background:
+    radial-gradient(circle at 32% 34%, #2a2622 0 30%, transparent 31%),
+    radial-gradient(circle at 68% 58%, #c67c3e 0 32%, transparent 33%),
+    #f1ece0;
+}
+.pat-tortoiseshell {
+  background:
+    radial-gradient(circle at 28% 30%, #b3672c 0 40%, transparent 41%),
+    radial-gradient(circle at 66% 70%, #4a3626 0 40%, transparent 41%),
+    radial-gradient(circle at 70% 22%, #2a2622 0 32%, transparent 33%),
+    #7c5a3c;
+}
+.pat-colorpoint {
+  background: radial-gradient(circle at 50% 50%, #e8ddc8 0 40%, #6b4a30 100%);
+}
+.pat-unknown {
+  background: var(--well);
+  border-style: dashed;
+}
+
+/* The territory shape picker's preview, Step 3: the actual polygon each
+   choice draws (data/localCats.ts's shapePreviewPoints), not a generic
+   shape glyph. --accent rather than the live colour pick: --swatch is set
+   inline per-button on the colour picker above, scoped to that element,
+   not readable from a sibling fieldset without threading the chosen
+   colour down as a second inline style, which is more machinery than a
+   small preview icon needs. */
+.record-shape-preview {
+  margin-bottom: 2px;
+}
+.record-shape-preview polygon {
+  fill: color-mix(in srgb, var(--accent) 28%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
 .record-inline-add {
   display: flex;
   gap: var(--s-2);
@@ -2582,12 +2932,21 @@ html:has(.map)::-webkit-scrollbar {
 }
 .record-save {
   flex-shrink: 0;
-  padding: var(--s-2) var(--s-3);
+  padding: var(--s-2) var(--s-4);
   border: 0;
   border-radius: 999px;
   background: var(--accent);
+  /* --shadow-lift, not the panel's own --shadow-glass: this is the one
+     filled, solid-colour control in the footer next to an outlined Back
+     button, and on the glass themes it read as flat against the map
+     showing through the panel behind it. The lift token already exists
+     for exactly this (floating elements that need to read as raised),
+     themed correctly across all three modes, so this borrows it rather
+     than inventing a one-off shadow. */
+  box-shadow: var(--shadow-lift);
   font-family: var(--font-mono);
   font-size: 0.625rem;
+  font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--paper);
@@ -2599,26 +2958,6 @@ html:has(.map)::-webkit-scrollbar {
    two would take turns winning while the pointer crossed a territory. */
 body[data-placing='true'] .maplibregl-canvas {
   cursor: crosshair !important;
-}
-
-/* Below the breakpoint the rail is gone and the deck owns the bottom of the
-   screen, so the trigger moves to the quiet top left and the panel stops
-   being a corner card and becomes a sheet with room to type in. */
-@media (max-width: 900px) {
-  .record-open {
-    top: var(--s-4);
-    bottom: auto;
-    left: var(--s-4);
-  }
-  .record {
-    transform-origin: top left;
-    top: calc(var(--s-4) + 3rem);
-    bottom: auto;
-    left: var(--s-4);
-    right: var(--s-4);
-    width: auto;
-    max-height: calc(100dvh - 12rem);
-  }
 }
 
 /* Text for screen readers only. The app had no such utility until the
@@ -2649,8 +2988,8 @@ body[data-placing='true'] .maplibregl-canvas {
 .sight-open {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
-  bottom: var(--s-6);
+  left: calc(var(--s-6) + var(--safe-l));
+  bottom: calc(var(--s-6) + var(--safe-b));
   display: grid;
   place-items: center;
   width: 2.25rem;
@@ -2691,8 +3030,8 @@ body[data-placing='true'] .maplibregl-canvas {
 .sight-menu {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
-  bottom: calc(var(--s-6) + 3rem);
+  left: calc(var(--s-6) + var(--safe-l));
+  bottom: calc(var(--s-6) + 3rem + var(--safe-b));
   transform-origin: bottom left;
   display: flex;
   flex-direction: column;
@@ -2732,7 +3071,7 @@ body[data-placing='true'] .maplibregl-canvas {
 .sight {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
+  left: calc(var(--s-6) + var(--safe-l));
   /* Grows up out of the button, which stays put underneath it. The origin
      is what makes that true rather than only stated: the panel enters on a
      scale (ReportSighting's `initial`), and a scale about the default
@@ -2741,11 +3080,11 @@ body[data-placing='true'] .maplibregl-canvas {
      the control that was pressed. Its trigger is below its bottom-left, so
      that is the corner that stays still. */
   transform-origin: bottom left;
-  bottom: calc(var(--s-6) + 3rem);
+  bottom: calc(var(--s-6) + 3rem + var(--safe-b));
   display: flex;
   flex-direction: column;
   width: 20rem;
-  max-height: calc(100dvh - 12rem);
+  max-height: calc(100dvh - 12rem - var(--safe-t) - var(--safe-b));
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -2997,6 +3336,41 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--ink-soft);
 }
 
+/* The confirm step's optional photo. Same label typography as .sight-when's
+   legend and the same row/thumb/file shape as .record-photo-row (RecordCat's
+   admin uploader) so the one visitor-facing upload control in the app looks
+   like the admin one rather than inventing a second pattern. */
+.sight-photo-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.sight-label {
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.sight-photo-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+}
+.sight-photo-thumb {
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: calc(var(--radius) * 0.4);
+  object-fit: cover;
+  border: 1px solid var(--rule);
+}
+.sight-photo-file {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+
 .sight-when {
   display: flex;
   flex-wrap: wrap;
@@ -3079,28 +3453,42 @@ body[data-placing='true'] .maplibregl-canvas {
 }
 
 /* Below the breakpoint the deck owns the bottom of the screen, so this
-   moves to the quiet top left and becomes a sheet with room for the grid. */
+   moves to the quiet top left and becomes a sheet with room for the grid.
+   Left specifically, not just "a top corner": .admin-controls claims
+   top-right down here (see its own mobile rule) for exactly the case
+   this trigger has to coexist with, admin mode, where both are mounted
+   at once. --admin-banner-h keeps this clear of the full-width admin
+   banner the same way .admin-controls' own offset does; it is always
+   mounted (not admin-gated), and the token is 0 outside admin mode, so
+   folding it in here costs nothing when there is no banner to clear. */
 @media (max-width: 900px) {
   .sight-open {
-    top: var(--s-4);
+    top: calc(var(--s-4) + var(--admin-banner-h) + var(--safe-t));
     bottom: auto;
-    left: var(--s-4);
+    left: calc(var(--s-4) + var(--safe-l));
   }
   .sight,
   .sight-menu {
     /* The trigger moves to the top-left below the breakpoint, so the corner
        the panel grows out of moves with it -- the menu is the same trigger,
        so it needs the same correction or it tries to open upward off the
-       top of the screen. */
+       top of the screen.
+
+       3.5rem, not 3rem: the offset is "the trigger's height plus a gap",
+       and .sight-open is 2.75rem down here rather than 2.25rem (see the
+       touch-target block at the bottom of this file). Left at 3rem the
+       panel would have opened flush against the button it grew out of. */
     transform-origin: top left;
-    top: calc(var(--s-4) + 3rem);
+    top: calc(var(--s-4) + var(--admin-banner-h) + 3.5rem + var(--safe-t));
     bottom: auto;
-    left: var(--s-4);
+    left: calc(var(--s-4) + var(--safe-l));
   }
   .sight {
-    right: var(--s-4);
+    right: calc(var(--s-4) + var(--safe-r));
     width: auto;
-    max-height: calc(100dvh - 14rem);
+    max-height: calc(
+      100dvh - 14rem - var(--admin-banner-h) - var(--safe-t) - var(--safe-b)
+    );
   }
 }
 
@@ -3254,6 +3642,14 @@ body[data-placing='true'] .maplibregl-canvas {
   align-items: center;
   gap: var(--s-3);
 }
+/* The text column beside the photo. A flex item's min-width defaults to its
+   own min-content, and .scan-card-plate is `white-space: nowrap`, so
+   without this the survey line's full width becomes the column's floor and
+   the ellipsis it already declares can never trigger: a long line pushed
+   the card wider than the panel instead of being cut. */
+.scan-card-head > div {
+  min-width: 0;
+}
 .scan-card-head img {
   width: 3.25rem;
   height: 3.25rem;
@@ -3403,13 +3799,13 @@ body[data-placing='true'] .maplibregl-canvas {
 .about {
   position: fixed;
   z-index: 4;
-  right: var(--s-8);
-  bottom: calc(var(--s-8) + 3rem);
+  right: calc(var(--s-8) + var(--safe-r));
+  bottom: calc(var(--s-8) + 3rem + var(--safe-b));
   transform-origin: bottom right;
   display: flex;
   flex-direction: column;
   width: 21rem;
-  max-height: calc(100dvh - 10rem);
+  max-height: calc(100dvh - 10rem - var(--safe-t) - var(--safe-b));
   border-radius: var(--radius);
   overflow: hidden;
 }
@@ -3595,16 +3991,87 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--ink-soft);
 }
 
+/* --- 8px type, below the breakpoint ------------------------------------
+   Seven rules in this file set 0.5rem. On a desktop, at reading distance,
+   an 8px tracked mono label is a legible instrument annotation and is a
+   deliberate part of the voice. On a phone held at arm's length it is not
+   text, it is texture, and four of these carry real information: which
+   cats the picker left out, how far away one is, what a scan actually
+   matched, and what the survey's three figures are counting.
+
+   Raised to 0.625rem, which is the app's own smallest widely-used step
+   (every mono caps label in the rail, the plate and the record panel is
+   already this size) rather than to some external floor. A 14px minimum
+   would be the right rule for body copy and the wrong one here: it would
+   erase the distinction between a label and a value, which is most of what
+   makes these panels read as instruments.
+
+   Mobile only. The desktop type scale is not touched. */
+@media (max-width: 900px) {
+  .record-pill small,
+  .sight-card-away,
+  .sight-hint,
+  .scan-card-plate,
+  .scan-card-facts dt,
+  .about-stats dt,
+  .about-licence {
+    font-size: 0.625rem;
+  }
+
+  /* The one of the seven that cannot simply grow: three columns share the
+     panel's width and "OBSERVATIONS" at 0.625rem with 0.14em of tracking
+     lands within a pixel or two of its column, so the three headings would
+     wrap unevenly. The tracking is what gives way, not the size, because
+     the size is the half that was failing to be readable. */
+  .about-stats dt {
+    letter-spacing: 0.08em;
+  }
+
+  /* 16px, and the only control in the app under the 24px WCAG 2.5.8 floor
+     that the 44px block at the end of this file does not cover. It stays a
+     badge rather than joining that block: a 44px delete target pinned to
+     the corner of a 48px thumbnail would cover the photograph it is
+     offering to remove. 24px is the size a photo-grid delete badge is on
+     every platform that ships one, and it is the criterion that actually
+     applies to an inline control of this kind. */
+  .record-gallery-item button {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+}
+
 /* Below the breakpoint the capsule moves and the deck owns the bottom of
    the screen, so this becomes a near-full-width sheet anchored to the same
-   corner its trigger moved to. */
+   corner its trigger moved to.
+
+   The `bottom` has to be measured from where the capsule actually IS down
+   here, not from the screen edge. It said calc(var(--s-4) + 3rem) = 4rem,
+   which is the desktop arithmetic (trigger at the very bottom, clear it by
+   one button's height) applied to a layout where the trigger is nowhere
+   near the bottom: .map-controls moves up to calc(7.5rem + safe) at this
+   same breakpoint to clear the deck, so a 4rem sheet opened straight over
+   its own capsule, covering the Info button that had just been pressed
+   along with the four controls above it, and ran its own bottom edge under
+   the deck (z-index 4 both, deck later in the DOM, deck wins).
+
+   7.5rem + 3rem is the same "clear the trigger by one button" rule the
+   desktop value expresses, just starting from the capsule's real mobile
+   offset. env() rides along for the same reason .map-controls' own rule
+   carries it, so the two stay pinned to each other on a device with an
+   inset. */
 @media (max-width: 900px) {
   .about {
-    right: var(--s-4);
-    left: var(--s-4);
-    bottom: calc(var(--s-4) + 3rem);
+    right: calc(var(--s-4) + var(--safe-r));
+    left: calc(var(--s-4) + var(--safe-l));
+    bottom: calc(7.5rem + 3.5rem + var(--safe-b));
     width: auto;
-    max-height: calc(100dvh - 8rem);
+    /* Reserves the climb above (11rem) plus var(--s-4) at the top of the
+       screen, plus both insets. 8rem was sized against the old 4rem bottom
+       and would now run the sheet off the top; the earlier 12.5rem was
+       counting --safe-b twice, once here and once inside `bottom`, which
+       on a notched phone in portrait left the sheet's top edge ten pixels
+       under the notch. Both terms, once each. */
+    max-height: calc(100dvh - 12rem - var(--safe-t) - var(--safe-b));
   }
 }
 
@@ -3691,48 +4158,123 @@ body[data-placing='true'] .maplibregl-canvas {
 /* --- Admin surfaces, phase 8 --------------------------------------------
    The record panel and the review queue, both behind ?role=admin.
 
-   Top left, and the whole point is that it is not the bottom left. That
-   corner belongs to .sight-open, the visitor's one contribution, and until
-   phase 8 the two could not collide because ui/RecordCat.tsx was written
-   and mounted nowhere. Mounting it put two triggers on the same 24px of
-   screen. Rather than nudge one of them a few rem and call it fixed, the
-   admin tools moved to their own corner: what a visitor can do and what a
-   reviewer can do are different jobs, and a person holding both roles
-   should be able to tell which one they are reaching for.
+   ## Where this actually goes, on the second try
 
-   The record panel re-anchors with its trigger. Its mobile rule already
-   proved the top-anchored variant works (see the breakpoint below); this
-   makes that the only variant. */
-.record-open,
-.review-trigger {
-  top: var(--s-6);
-  bottom: auto;
-}
+   The first version put both triggers at top-left without checking who
+   else lives there: .rail. It is a fixed panel roughly 280px wide and, with
+   twelve cats and the scroll cap added the same week, routinely 500-600px
+   tall, most of the left column on an ordinary laptop screen. Both admin
+   triggers were positioned squarely underneath it, and since App.tsx
+   mounts <Rail> as a LATER sibling of <MapCanvas> (which is where these
+   triggers render), Rail painted over them at the same z-index. Reported,
+   correctly, as "hidden": it was, completely, behind a panel that has
+   nothing to do with admin tools at all.
 
-.record-open {
-  left: calc(var(--s-6) + 6.5rem);
-}
+   Bottom-right instead, beside .map-controls, which is the one fixed panel
+   in that corner and has a size that does not grow with the survey (five
+   buttons, always). Landing there beside it rather than stacked above it
+   is the deliberate choice: it only needs .map-controls' WIDTH (2.25rem
+   button + 2x var(--s-1) padding = 2.75rem), which is fixed by five buttons
+   at a known size, rather than its HEIGHT (five buttons plus four hairline
+   dividers plus padding: arithmetic with more terms to get wrong, and the
+   kind of small compounding error that produced the top-left bug in the
+   first place).
 
-.record {
-  top: calc(var(--s-6) + 3rem);
-  bottom: auto;
-  transform-origin: top left;
-}
+   ## The wrapper
 
-.review-trigger {
+   .admin-controls (rendered in map/MapCanvas.tsx) is the ONE thing that is
+   position:fixed here; .record-open and .review-trigger are its ordinary
+   flex children. That split matters for a reason beyond tidiness: neither
+   button's rendered width is known ahead of time (one is an icon and a
+   short label, the other adds a numeric badge that changes size with the
+   queue), so two independently `position:fixed` buttons would need that
+   width measured to sit next to each other without a gap or an overlap.
+   Flexbox spaces real DOM siblings without anyone having to know their
+   size, which sidesteps the whole problem instead of solving it by
+   guessing. */
+.admin-controls {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
+  /* Clear of .map-controls' left edge (right: var(--s-8), width 2.75rem)
+     plus a gap, so the two capsules read as two separate instruments
+     rather than one that got too long. */
+  right: calc(var(--s-8) + 2.75rem + var(--s-4) + var(--safe-r));
+  bottom: calc(var(--s-8) + var(--safe-b));
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+/* --- The admin banner, phase 9 -------------------------------------------
+   Replaces a corner pill (parked reasoning below) with the thing that
+   actually answers "am I in admin mode": a full-width strip nobody can
+   land on this app and miss. The reserved-height token above (`body[data-
+   admin]`) is what lets .rail/.plate make room for it without a second
+   number to keep in sync.
+
+   Solid --ink, not the glass panel recipe every floating control above
+   uses — those are meant to read as light objects sitting over the map;
+   this is a status the map itself is currently subject to, closer to a
+   specimen tag stamped across the top of the drawer than a tool floating
+   above it. Solid is also what makes it correct in every theme with zero
+   branching: paper's --ink is near-black on cream, both glass themes'
+   --ink still reads as the strongest ink on --paper, so the same two
+   tokens stay legible everywhere tokens.css defines them.
+
+   Not --rust: see the corner pill's own retired note, still true here —
+   --rust already means "a sighting wants a decision" everywhere else on
+   screen, and admin mode being on on its own is not that. */
+.admin-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  /* The strip runs to the physical top of the screen now that the page
+     paints under the notch (head.html), so its own height grows by the
+     inset and its content is padded clear of it. --admin-banner-h stays
+     the height of the BAR rather than of the bar-plus-inset, so the
+     panels below can keep adding the two terms separately: they need the
+     inset whether or not there is a banner. */
+  height: calc(var(--admin-banner-h) + var(--safe-t));
+  padding-top: var(--safe-t);
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.admin-banner svg {
+  flex-shrink: 0;
+}
+
+/* --- Parked: the corner pill this replaced, 2026-08-26 -------------------
+   .admin-controls (map/MapCanvas.tsx) briefly carried a second admin tell,
+   a small chip beside the record button. Removed on user direction once
+   the banner above existed: two indicators for one fact is exactly the
+   kind of duplication this app's own restraint elsewhere argues against,
+   and the corner pill was also the one that had gone unnoticed in the
+   first place. No .admin-badge rule is kept parked for it, unlike
+   ReviewQueue's CSS — it was three properties, cheaper to re-add than to
+   store. */
+
+/* Material comes from the shared .rail, .record, .record-open, .review, ...
+   list a few hundred lines up; .record-open's own layout-only rule is where
+   it always lived, unchanged by any of this. This block is what
+   .review-trigger still needs beyond that shared material: its own layout
+   and its label styling, matching .record-open's rather than repeating the
+   glass properties both already inherit. */
+.review-trigger {
   display: flex;
   align-items: center;
   gap: var(--s-2);
   padding: var(--s-2) var(--s-3);
-  border: var(--panel-border);
   border-radius: var(--radius);
-  background: var(--surface-glass);
-  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
-  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
-  box-shadow: var(--shadow-glass), var(--edge-highlight);
   font-family: var(--font-mono);
   font-size: 0.625rem;
   letter-spacing: 0.14em;
@@ -3765,22 +4307,86 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--paper);
 }
 
+/* Material inherited from the shared list; see the note above
+   .review-trigger. Same shelf as .record (right: var(--s-6), the same
+   computed bottom, clearing .map-controls by the same margin), on purpose:
+   both panels grow up from roughly where .admin-controls sits, and if both
+   happen to be open at once they stack on each other rather than reading as
+   two unrelated floating cards. An admin opening both together is a real
+   but rare combination, not one worth a second reserved shelf for. */
 .review {
   position: fixed;
   z-index: 3;
-  left: var(--s-6);
-  top: calc(var(--s-6) + 3rem);
-  transform-origin: top left;
+  right: calc(var(--s-6) + var(--safe-r));
+  bottom: calc(var(--s-8) + 12.5rem + var(--s-4) + var(--safe-b));
+  transform-origin: bottom right;
   display: flex;
   flex-direction: column;
   width: 23rem;
-  max-height: calc(100dvh - 10rem);
-  border: var(--panel-border);
+  /* Matches .record's own note: reserves the 15.5rem this panel's `bottom`
+     already spends, plus var(--s-6) of clearance at the top of the screen. */
+  max-height: calc(100dvh - 17rem - var(--safe-t) - var(--safe-b));
   border-radius: var(--radius);
-  background: var(--surface-glass);
-  backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
-  -webkit-backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
-  box-shadow: var(--shadow-glass), var(--edge-highlight);
+}
+
+/* Below the breakpoint the rail is gone (App.tsx swaps it for CatDeck at
+   this same 900px, so the two switches stay in step) and the deck owns the
+   bottom of the screen, so .admin-controls moves to the quiet top left and
+   each panel stops being a corner card and becomes a sheet with room to
+   type or read in.
+
+   Placed after .admin-controls', .record's and .review's own unconditional
+   rules above (not just wrapped in a media query) on purpose: a media
+   query adds no specificity, so two same-specificity rules for the same
+   selector are settled by source order, and a later plain rule beats an
+   earlier conditional one whenever both match. Learned by getting it
+   wrong twice in the same edit: first with this block above
+   .admin-controls (its own `right`/`bottom` won on every viewport), then
+   again with it above .review specifically (same problem, one selector
+   later). .sight-open's own mobile override was never bitten by this,
+   only because it already happened to sit after its base rule.
+
+   Both panels reopen at the same spot here (top: calc(var(--s-4) + 3rem)),
+   which was already true of .record alone before .review existed. Opening
+   both at once now means they would stack on each other rather than beside
+   each other; neither is a common action next to the other on a phone, and
+   this is a case to watch for rather than one worth a mobile-only mutual
+   exclusion just to guard against. */
+@media (max-width: 900px) {
+  /* Top-right rather than top-left: .sight-open (ui/ReportSighting.tsx,
+     always mounted) also claims a top corner down here (see its own
+     mobile rule), and admin mode is the one state where both triggers
+     are on screen together. Same left/right split desktop already uses
+     (.sight-open left, .admin-controls right, one on each side of the
+     map) carried onto the top row instead of the bottom one, since the
+     deck owns the bottom below this breakpoint.
+
+     --admin-banner-h (tokens.css, set on body[data-admin='true']) is
+     folded into `top` here for the same reason .rail/.plate already do:
+     the banner is a full-width strip at the very top of the screen
+     whenever this trigger is even reachable, and a fixed var(--s-4)
+     alone would sit it under, not below, that strip. */
+  .admin-controls {
+    top: calc(var(--s-4) + var(--admin-banner-h) + var(--safe-t));
+    bottom: auto;
+    left: auto;
+    right: calc(var(--s-4) + var(--safe-r));
+  }
+  .record,
+  .review {
+    transform-origin: top right;
+    /* 3.5rem for the same reason .sight's mobile rule above says: the
+       triggers inside .admin-controls are on the 2.75rem touch floor down
+       here, so the old 3rem no longer clears them. */
+    top: calc(var(--s-4) + var(--admin-banner-h) + 3.5rem + var(--safe-t));
+    bottom: auto;
+    left: calc(var(--s-4) + var(--safe-l));
+    right: calc(var(--s-4) + var(--safe-r));
+    width: auto;
+    max-height: calc(
+      100dvh - 12rem - var(--admin-banner-h) - var(--safe-t) - var(--safe-b)
+    );
+  }
 }
 
 .review-head {
@@ -3900,8 +4506,11 @@ body[data-placing='true'] .maplibregl-canvas {
   transform: scale(0.97);
 }
 
+/* --s-6, not --s-5. The space scale is 1/2/3/4/6/8/12/16 (tokens.css) and
+   has no 5, so this declaration was invalid and dropped: the past-decisions
+   block sat flush against the queue above it with no separation at all. */
 .review-past {
-  margin-top: var(--s-5);
+  margin-top: var(--s-6);
 }
 
 /* The audit trail. Three columns and no controls: it is a record of
@@ -3940,21 +4549,28 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--ink-soft);
 }
 
-@media (max-width: 720px) {
-  .review {
-    left: var(--s-4);
-    right: var(--s-4);
-    width: auto;
-  }
+/* --- Parked: a second, contradictory breakpoint at 720px, removed --------
+   This file and App.tsx's MOBILE_QUERY share exactly one breakpoint, 900px,
+   and the note on the .record/.review mobile block above says why they have
+   to stay character-for-character identical. A 720px query underneath it was
+   a third answer to the same question, and none of its three rules did
+   anything:
 
-  .review-trigger {
-    left: var(--s-4);
-  }
+     .review          left/right/width were already set to these exact
+                      values by the 900px block, which every 720px-wide
+                      viewport also matches.
+     .review-trigger  `left` on a static element. Both admin triggers are
+                      ordinary flex children of .admin-controls (see its own
+                      note) and have been since the corner-position bug;
+                      only the wrapper is positioned, so an offset here has
+                      nothing to offset from.
+     .record-open     same, plus a 6.5rem hand-measured gap that flexbox is
+                      already spacing for it.
 
-  .record-open {
-    left: calc(var(--s-4) + 6.5rem);
-  }
-}
+   Kept as a note rather than silently deleted, because "the admin triggers
+   need their own narrow layout" is a real thing to reconsider one day, and
+   the reason these particular rules could not deliver it is worth having
+   written down. */
 
 /* --- Your unreviewed reports, on the plate -------------------------------
    The only place in the app where a non-admin sees pending data, and only
@@ -4007,4 +4623,438 @@ body[data-placing='true'] .maplibregl-canvas {
   font-family: var(--font-mono);
   font-size: var(--t-xs);
   color: var(--ink-soft);
+}
+
+/* --- Admin editing, plate/Plate.tsx -------------------------------------
+   Extends phase 8's role gate from "who may add a cat" to "who may correct
+   one". Everything here is admin-only chrome bolted onto the record, not
+   part of the record itself, which is why it borrows the plate's existing
+   voice (mono caps labels, pill buttons, the accent rules the fields
+   already use) rather than introducing a second visual language.
+
+   No new colour: destructive actions use --rust, same as .plate-copy's
+   failed state, because the palette has five colours and "delete" is not
+   a sixth. */
+
+/* Wraps a field's existing display markup plus its pencil. Plain, not a
+   motion element: the display element inside keeps whatever `variants`
+   it already had (Motion's stagger propagates through context, not DOM
+   adjacency, so a bare div in between changes nothing about that
+   animation). */
+.admin-field-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.admin-field-row > *:first-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.admin-pencil,
+.admin-edit-confirm,
+.admin-edit-cancel {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--well);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .admin-pencil:hover {
+    background: var(--surface-hover, var(--well));
+    color: var(--accent);
+  }
+}
+.admin-pencil:active,
+.admin-edit-confirm:active,
+.admin-edit-cancel:active {
+  transform: scale(0.92);
+}
+
+.admin-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+}
+.admin-edit-input {
+  flex: 1;
+  min-width: 8rem;
+  padding: var(--s-2);
+  border: 1px solid var(--rule-strong);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+  font: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  resize: vertical;
+}
+.admin-edit-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.admin-edit-confirm {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--paper);
+}
+.admin-edit-error {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: var(--t-xs);
+  color: var(--rust);
+}
+
+.admin-colour-field {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.admin-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-1);
+}
+.admin-swatch {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--swatch);
+  cursor: pointer;
+  transition: transform var(--dur-press) var(--ease-out);
+}
+.admin-swatch[data-on='true'] {
+  border-color: var(--ink);
+}
+.admin-swatch:active {
+  transform: scale(0.9);
+}
+
+/* A URL is the one field value long enough to need this. */
+.admin-photo-value {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- The strip itself: Update record / Delete --------------------------
+   Dashed top rule rather than the fields' solid one, so it reads as
+   appended to the record rather than as one more entry in it. */
+.admin-strip {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px dashed var(--rule-strong);
+}
+.admin-strip-label {
+  color: var(--rust);
+}
+.admin-actions {
+  display: flex;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+.admin-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-1);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--rule-strong);
+  border-radius: 999px;
+  background: var(--well);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.admin-btn:active {
+  transform: scale(0.97);
+}
+.admin-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.admin-btn-update[data-on='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+.admin-btn-delete {
+  border-color: color-mix(in srgb, var(--rust) 45%, transparent);
+  color: var(--rust);
+}
+@media (hover: hover) and (pointer: fine) {
+  .admin-btn-delete:hover {
+    background: color-mix(in srgb, var(--rust) 10%, transparent);
+  }
+}
+
+.admin-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+  padding: var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--rust) 40%, transparent);
+  border-radius: calc(var(--radius) * 0.6);
+  background: color-mix(in srgb, var(--rust) 8%, transparent);
+}
+.admin-confirm p {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+}
+.admin-confirm-actions {
+  display: flex;
+  gap: var(--s-2);
+}
+.admin-btn-delete-confirm {
+  border-color: var(--rust);
+  background: var(--rust);
+  color: var(--paper);
+}
+@media (hover: hover) and (pointer: fine) {
+  .admin-btn-delete-confirm:hover {
+    background: color-mix(in srgb, var(--rust) 85%, black);
+  }
+}
+
+/* --- The sighting log's own management view -----------------------------
+   Deliberately plainer than .card-stack: a row of text and three icon
+   buttons, because a list you can delete rows out of and a pile you drag
+   photos off of are two different interactions, and bolting delete buttons
+   onto the drag surface would fight it rather than extend it. */
+.admin-sightings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  margin-top: var(--s-4);
+  padding-top: var(--s-4);
+  border-top: 1px solid var(--rule);
+}
+.admin-sighting-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+.admin-sighting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-1) var(--s-2);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+}
+.admin-sighting-when {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.admin-sighting-status {
+  padding: 1px var(--s-1);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.5625rem;
+}
+.admin-sighting-controls {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+}
+.admin-sighting-controls button {
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    color var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .admin-sighting-controls button:hover:not(:disabled) {
+    background: var(--surface-hover, var(--rule));
+    color: var(--accent);
+  }
+}
+.admin-sighting-controls button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+@media (hover: hover) and (pointer: fine) {
+  /* Same specificity shape as the shared hover rule above, just scoped
+     narrower, so source order (this rule comes second) is what wins
+     rather than the two fighting on specificity. */
+  .admin-sighting-controls button.admin-sighting-delete:hover:not(:disabled) {
+    color: var(--rust);
+  }
+}
+
+/* Update record's own uploader: a file input hidden behind a label, same
+   trick as .record-gallery-add, styled as a dashed pill rather than a
+   square tile since this one stands alone rather than trailing a photo
+   grid. */
+.admin-sighting-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  align-self: flex-start;
+  padding: var(--s-1) var(--s-3);
+  border: 1px dashed var(--rule-strong);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.admin-sighting-add[data-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+.admin-sighting-add input {
+  display: none;
+}
+
+/* --- Touch targets, below the breakpoint --------------------------------
+   Placed last in the file on purpose, the same source-order reasoning the
+   .record/.review mobile block a few hundred lines up spells out: a media
+   query adds no specificity, so a conditional rule only beats an earlier
+   unconditional one for the same selector by coming after it.
+
+   Everything here is 2.75rem, which is 44px, which is the floor both
+   Apple's HIG and WCAG 2.5.5 put a control at. The app already knew the
+   number: .cat-panel-close was raised to it deliberately, and the desktop
+   .plate-close is HIDDEN below this breakpoint with a note saying 1.75rem
+   is under the touch minimum. The rest of the app's controls never got the
+   same pass, so a phone was being handed a 36px "I saw a cat" button, a
+   24px close on the sighting panel and the About sheet, and a 20px time
+   chip.
+
+   Only mobile changes, deliberately: on a desktop these are pointer targets
+   and the current sizes are the tuned ones. A 44px map-control capsule on a
+   1440px screen would be a different design decision, not a fix.
+
+   Sizes, not paddings, wherever the control is a square glyph button: these
+   are all `display: grid; place-items: center`, so the glyph stays centred
+   at any box size and nothing inside them has to be re-tuned. min-height
+   for the pills and rows, because their width is already fine and their
+   padding is what sets their rhythm. */
+@media (max-width: 900px) {
+  /* The two floating glyph buttons, one in each bottom corner on desktop
+     and one in each top corner here. .sight-open is a visitor's only way
+     into the sighting flow on this layout, so it is the single most
+     important target on the screen. The capsule grows with its buttons:
+     five at 2.75rem plus its rules and padding is 15rem tall, which is why
+     .about's own mobile `bottom` is measured off .map-controls rather than
+     off a copy of that arithmetic. */
+  .sight-open,
+  .map-control {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  /* Panel chrome: back, cancel, close. All 1.5rem, all in a header bar
+     whose height is set by the tallest thing in it, so this just makes
+     the bar taller rather than moving anything. */
+  .sight-back,
+  .sight-close,
+  .about-close,
+  .record-close,
+  .review-close {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  /* Everything a finger presses inside a panel. Pills, rows and the one
+     filled button per step. .sight-when's chips were the worst of them at
+     about 20px tall, and they are three of the four taps in a report. */
+  .sight-go,
+  .sight-place,
+  .sight-undo,
+  .sight-menu-item,
+  .sight-when button,
+  .scan-retake,
+  .scan-manual,
+  .scan-report,
+  .plate-report,
+  .plate-vote-btn,
+  .plate-copy,
+  .plate-pending-row button,
+  .record-open,
+  .review-trigger,
+  .record-back,
+  .record-save,
+  .record-clear,
+  .record-place,
+  .record-pill,
+  .record-swatch,
+  .admin-btn {
+    min-height: 2.75rem;
+  }
+
+  /* The one item in the list above that is a flex COLUMN (a label over a
+     <small>), so a taller box leaves its content stuck to the top edge
+     instead of sitting in the middle of the pill. Every other entry is
+     either a plain <button>, which centres its own content, or already a
+     row with align-items: center. */
+  .record-pill {
+    justify-content: center;
+  }
+
+  /* The map pin. Its button box is already tall enough (a 2.125rem head on
+     a stake), but only 34px wide, so the hit area is widened without
+     touching what is drawn: a transparent pseudo-element rather than a
+     bigger head, because the head's size is what makes a pin read as a
+     diagram element rather than a sticker (CatPin's own note). Horizontal
+     only, so the extra area cannot reach down over the territory the pin
+     belongs to and steal its taps. */
+  .cat-pin::before {
+    content: '';
+    position: absolute;
+    inset: 0 -5px;
+    /* Behind the head, not over it. A transparent overlay ON TOP would
+       still hit-test (which is all this needs) but it would also swallow
+       the pointerenter the head's own whileHover spring listens for, and
+       this query matches a narrow desktop window as well as a phone. Below
+       it, the strips either side of the head are still the button's, and
+       the head keeps its own events. */
+    z-index: -1;
+  }
 }

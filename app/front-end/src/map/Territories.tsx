@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react'
-import type { ExpressionSpecification, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
+import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
@@ -8,8 +8,10 @@ import {
   distanceM,
   isOwnPending,
   isSurveyed,
+  pendingByCat,
   readSightings,
   ringRadiusM,
+  translateToward,
 } from '@/data/sightings'
 import type { Cat } from '@/data/catsRepo'
 
@@ -43,6 +45,11 @@ const LINE = 'territory-line'
    sources of three points each cost nothing. */
 const GLOW_SOURCE = 'territory-glow-centroids'
 const GLOW = 'territory-glow'
+/* The pending ghost, phase 9. Its own source/pair of layers, see the effect
+   below. */
+const GHOST_SOURCE = 'territory-ghost'
+const GHOST_FILL = 'territory-ghost-fill'
+const GHOST_LINE = 'territory-ghost-line'
 
 /* --- Habitat pings -----------------------------------------------------
    Where a cat is found, said the way a field instrument would say it: a
@@ -618,6 +625,80 @@ export function Territories({
 
     map.setPaintProperty(GLOW, 'circle-color', token('--rust'))
   }, [map, isLoaded, cats, theme])
+
+  /* --- The pending ghost, phase 9 -----------------------------------------
+     Where the SELECTED cat's territory would move to if the oldest sighting
+     waiting on it were approved, dashed and half-strength beside the real
+     shape.
+
+     Selection-gated, not drawn for every pending cat at once — the first
+     version was, and at any real number of cats with open reports it drew
+     a small crowd of overlapping dashed shapes across the whole map, no
+     more readable than the badges it was supposed to explain. One at a
+     time, revealed the same way the selection glow above is: click a cat,
+     see its ghost; click elsewhere, it is gone. Two effects for the same
+     reason the glow is two mechanisms rather than one — mount once, then
+     only ever `setData`/`setLayoutProperty` on selection change, the same
+     shape map/ReportSighting.tsx's own PREVIEW source already uses for an
+     identical one-dashed-polygon-at-a-time job.
+
+     Oldest, not newest (data/sightings.ts's pendingByCat has the reasoning,
+     shared with map/CatMarkers.tsx's badge so the two can never point at
+     different reports for the same cat).
+
+     2026-08-26: used to be admin-only, on the reasoning in spec §9 that a
+     report's exact point should never reach the public map — written for a
+     future where cats and reports are real, and real coordinates could get
+     an animal hurt. Opened to every visitor now, deliberately: v1's cats are
+     fictional so there is no one to protect yet, and letting a visitor see
+     the same claim an admin reviews is the point (they can tell whether it
+     matches what they saw). Revisit this gate again before real cats or
+     real reports ever land — that is the point spec §9 was actually
+     guarding. */
+  useEffect(() => {
+    if (!map || !isLoaded) return
+
+    map.addSource(GHOST_SOURCE, { type: 'geojson', data: { type: 'FeatureCollection', features: [] } })
+    map.addLayer({
+      id: GHOST_FILL,
+      type: 'fill',
+      source: GHOST_SOURCE,
+      paint: { 'fill-color': token('--rust'), 'fill-opacity': 0.14 },
+    })
+    map.addLayer({
+      id: GHOST_LINE,
+      type: 'line',
+      source: GHOST_SOURCE,
+      layout: { 'line-join': 'round' },
+      paint: {
+        'line-color': token('--rust'),
+        'line-width': 1.5,
+        'line-dasharray': [2, 2],
+        'line-opacity': 0.85,
+      },
+    })
+
+    return () => {
+      for (const id of [GHOST_LINE, GHOST_FILL]) if (map.getLayer(id)) map.removeLayer(id)
+      if (map.getSource(GHOST_SOURCE)) map.removeSource(GHOST_SOURCE)
+    }
+  }, [map, isLoaded])
+
+  useEffect(() => {
+    if (!map) return
+    const source = map.getSource(GHOST_SOURCE) as GeoJSONSource | undefined
+    if (!source) return
+
+    const summary = selectedId ? pendingByCat().get(selectedId) : undefined
+    const feature = selectedId
+      ? territories.features.find((f) => f.properties?.id === selectedId)
+      : undefined
+
+    source.setData({
+      type: 'FeatureCollection',
+      features: feature && summary ? [translateToward(feature, summary.oldest.point)] : [],
+    })
+  }, [map, selectedId, territories])
 
   return null
 }

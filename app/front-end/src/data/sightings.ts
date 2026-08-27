@@ -5,6 +5,7 @@ import type { Feature, FeatureCollection, Polygon } from 'geojson'
    this module unloadable by node, and sightings.check.ts has to load it.
    Same reason map/liveWeather.ts imports the way it does. */
 import { centroidsById, ringCentroid } from '../map/centroid'
+import { applyOverlay, hideOverlay, patchOverlay } from './overlay'
 import baseTerritories from './territories.geo.json'
 
 /* Sightings: "I saw this cat here", the one thing a visitor can contribute.
@@ -79,12 +80,25 @@ export type Sighting = {
       actually makes today arrives without this field. A consumer that
       assumed it was there would be broken by the first real report. */
   photo?: string
-  /** An admin's manual sequencing, set by buildAdminSighting/addAdminSighting
-      below so several bootstrap photos on one new cat stack in the order
-      they were uploaded. Absent means "no opinion": a sighting without one
-      falls back to newest-first wherever this is read. Ascending, lower
-      shows first. */
+  /** An admin's manual sequencing (reorderSighting below), never when the
+      sighting happened. Absent means "no opinion": the sighting falls back
+      to newest-first, same as before this field existed. Ascending, lower
+      shows first, so promoting a photo to the front of the stack is a
+      smaller number, not a bigger one. */
   order?: number
+  /** This browser's own thumbs up/down on a PENDING sighting, phase 9.
+      Absent means "has not voted". Not an identity: there is no login, so
+      "mine" means only "cast from this browser", the same scope
+      isOwnPending already works within. */
+  myVote?: 'up' | 'down'
+  /** The corroboration tally a vote writes to. Local to this browser, same
+      as everything else this file stores: two different visitors' browsers
+      cannot see each other's tally, because there is no backend for a vote
+      cast in one to reach the other (root CLAUDE.md, "no backend"). It is
+      real data end to end within that scope, never a placeholder, it is
+      just scoped to one browser rather than to the survey. Absent until
+      the first vote lands. */
+  votes?: { up: number; down: number }
 }
 
 const STATUSES: SightingStatus[] = ['pending', 'surveyed', 'discarded']
@@ -93,7 +107,7 @@ function isSighting(value: unknown): value is Omit<Sighting, 'status'> & {
   status?: SightingStatus
 } {
   if (!value || typeof value !== 'object') return false
-  const { id, catId, point, at, photo, status, order } = value as Partial<Sighting>
+  const { id, catId, point, at, photo, status, order, myVote, votes } = value as Partial<Sighting>
   return (
     typeof id === 'string' &&
     typeof catId === 'string' &&
@@ -108,7 +122,15 @@ function isSighting(value: unknown): value is Omit<Sighting, 'status'> & {
     // unrecognised value is not: a typo'd status must not be able to make a
     // record invisible to review by matching none of the filters.
     (status === undefined || STATUSES.includes(status)) &&
-    (order === undefined || (typeof order === 'number' && Number.isFinite(order)))
+    (order === undefined || (typeof order === 'number' && Number.isFinite(order))) &&
+    (myVote === undefined || myVote === 'up' || myVote === 'down') &&
+    (votes === undefined ||
+      (typeof votes === 'object' &&
+        votes !== null &&
+        typeof votes.up === 'number' &&
+        Number.isFinite(votes.up) &&
+        typeof votes.down === 'number' &&
+        Number.isFinite(votes.down)))
   )
 }
 
@@ -280,8 +302,10 @@ const SEEDED: Sighting[] = SEEDS.flatMap((seed, index) => {
    of them into that visitor's localStorage, where they would then survive
    any future change to this file. Reads that want the whole picture call
    this; writes call readSightings and only ever touch what was stored. */
+const OVERLAY_KEY = 'meowtro.sightings.overlay.v1'
+
 export function allSightings(): Sighting[] {
-  return [...SEEDED, ...readSightings()]
+  return [...applyOverlay(OVERLAY_KEY, SEEDED, (sighting) => sighting.id), ...readSightings()]
 }
 
 function write(list: Sighting[]): boolean {
@@ -294,14 +318,24 @@ function write(list: Sighting[]): boolean {
 }
 
 /** A visitor's report. Lands `pending`: it is a submission, not a fact, and
-    nothing on the public map moves until somebody has reviewed it. */
-export function addSighting(catId: string, point: [number, number], at: number): Sighting | null {
+    nothing on the public map moves until somebody has reviewed it.
+
+    `photo` is optional and genuinely so, same as the field itself: most
+    reports still arrive without one, ui/ReportSighting.tsx's camera step
+    is a step somebody can skip. */
+export function addSighting(
+  catId: string,
+  point: [number, number],
+  at: number,
+  photo?: string
+): Sighting | null {
   const sighting: Sighting = {
     id: `${catId}-${at}-${Math.random().toString(36).slice(2, 7)}`,
     catId,
     point,
     at,
     status: 'pending',
+    ...(photo ? { photo } : {}),
   }
   return write([...readSightings(), sighting]) ? sighting : null
 }
@@ -362,6 +396,66 @@ export function removeSighting(id: string): boolean {
   return write(readSightings().filter((sighting) => sighting.id !== id))
 }
 
+/** An admin's housekeeping on the log itself, not a verdict on it: a bad or
+    duplicate record gone for good, regardless of status or where it came
+    from. Different from both neighbours above: discard keeps a pending
+    submission for the audit trail, withdraw only ever touches a visitor's
+    own. This touches anything, which is why it is gated on `admin` at the
+    UI layer (plate/Plate.tsx) rather than here, same trust boundary
+    reviewSighting already draws by only ever being reachable from behind
+    ?role=admin. */
+export function deleteSighting(id: string): boolean {
+  if (SEEDED.some((sighting) => sighting.id === id)) return hideOverlay(OVERLAY_KEY, id)
+  const stored = readSightings()
+  if (!stored.some((sighting) => sighting.id === id)) return false
+  return write(stored.filter((sighting) => sighting.id !== id))
+}
+
+function setOrder(id: string, order: number): boolean {
+  if (SEEDED.some((sighting) => sighting.id === id)) return patchOverlay(OVERLAY_KEY, id, { order })
+  const stored = readSightings()
+  const idx = stored.findIndex((sighting) => sighting.id === id)
+  if (idx < 0) return false
+  const next = [...stored]
+  next[idx] = { ...next[idx], order }
+  return write(next)
+}
+
+/** Swaps one sighting with whichever neighbour is currently next to it in
+    `sortForDisplay`'s order, up or down. Only the two rows trading places
+    get a real `order` value, seeded from the slot they are already sitting
+    in, so the first reorder on a cat's log does not have to invent a number
+    for every sighting it owns, only the two that moved.
+
+    ponytail: repeated reordering across sessions can leave two rows tied on
+    the same order number; sortForDisplay breaks a tie arbitrarily rather
+    than renumbering the whole log. Fine for a browser-local admin nudge; a
+    real backend would renumber on write. */
+export function reorderSighting(catId: string, id: string, direction: 'up' | 'down'): boolean {
+  const list = sortForDisplay(allSightings().filter((sighting) => sighting.catId === catId))
+  const from = list.findIndex((sighting) => sighting.id === id)
+  const to = direction === 'up' ? from - 1 : from + 1
+  if (from < 0 || to < 0 || to >= list.length) return false
+  const a = list[from]
+  const b = list[to]
+  return setOrder(a.id, b.order ?? to) && setOrder(b.id, a.order ?? from)
+}
+
+/** Display order for a cat's log: an admin's explicit `order` first
+    (ascending), then everything else falls in behind it newest-first, the
+    same default as before reorder existed. This is only ever about which
+    photo shows first in the stack: `latestByCat` below still reads `at`
+    for "last seen", so reordering a cat's sightings never changes what the
+    survey considers its most recent observation. */
+export function sortForDisplay(list: Sighting[]): Sighting[] {
+  return [...list].sort((a, b) => {
+    if (a.order !== undefined || b.order !== undefined) {
+      return (a.order ?? Number.POSITIVE_INFINITY) - (b.order ?? Number.POSITIVE_INFINITY)
+    }
+    return b.at - a.at
+  })
+}
+
 /** An admin's verdict. Writes the decision onto the record rather than
     removing it either way, which is what makes the audit trail possible:
     every sighting keeps who, what, where and when, and now also what was
@@ -378,6 +472,42 @@ export function reviewSighting(id: string, verdict: 'surveyed' | 'discarded'): b
   )
 }
 
+/** The pure half of voteSighting below, kept separate so it is checkable
+    under node without a localStorage to read or write (sightings.check.ts).
+
+    A toggle, not an add: pressing the thumb you already pressed withdraws
+    the vote rather than doubling it, and pressing the other one moves it
+    rather than letting both stand. One vote per browser per sighting is
+    the only shape that matches what "this browser's own tally" can
+    honestly mean (see Sighting.votes' own note). */
+export function applyVote(
+  sighting: Pick<Sighting, 'myVote' | 'votes'>,
+  direction: 'up' | 'down'
+): Pick<Sighting, 'myVote' | 'votes'> {
+  const votes = { up: sighting.votes?.up ?? 0, down: sighting.votes?.down ?? 0 }
+  if (sighting.myVote === direction) {
+    votes[direction] = Math.max(0, votes[direction] - 1)
+    return { votes, myVote: undefined }
+  }
+  if (sighting.myVote) votes[sighting.myVote] = Math.max(0, votes[sighting.myVote] - 1)
+  votes[direction] += 1
+  return { votes, myVote: direction }
+}
+
+/** A visitor's thumbs up/down on a pending sighting, locked to pending: a
+    decided sighting is either published (isSurveyed already covers it) or
+    turned down (nothing left to corroborate), so voting on one is a no-op
+    rather than an error, the same shape reviewSighting takes on an id that
+    names no stored row. */
+export function voteSighting(id: string, direction: 'up' | 'down'): boolean {
+  const stored = readSightings()
+  const idx = stored.findIndex((sighting) => sighting.id === id)
+  if (idx < 0 || stored[idx].status !== 'pending') return false
+  const list = [...stored]
+  list[idx] = { ...list[idx], ...applyVote(list[idx], direction) }
+  return write(list)
+}
+
 /** The newest sighting per cat. Older ones are kept rather than overwritten,
     because a list of observations over time is the thing this data actually
     is, and a review queue will need all of them. */
@@ -389,6 +519,39 @@ export function latestByCat(list: Sighting[] = allSightings()): Map<string, Sigh
   }
   return byCat
 }
+
+/** One cat's open review, phase 9: the oldest still-pending sighting on it
+    plus how many are waiting in total.
+
+    Oldest, not newest, and deliberately the opposite choice from
+    latestByCat above: listPending already sorts oldest first because "the
+    submission that has been waiting longest is the one somebody is still
+    waiting on an answer to", and the map's ghost territory (map/
+    Territories.tsx) and ping-badge (map/CatMarkers.tsx) anchor to the same
+    one sighting so they can never disagree about which report they mean.
+
+    One summary per cat, not one per report. A cat can collect more than one
+    pending sighting (data/catsRepo.ts locks the report button once one
+    exists, but an admin review can still be mid-flight when a second one
+    lands from before the lock), and drawing a ghost per report would fan a
+    single territory into a small crowd of overlapping shapes. `count` is
+    how the admin's plate section and the map badge say "more than one is
+    waiting" without drawing more than one. */
+export function pendingByCat(list: Sighting[] = allSightings()): Map<string, PendingSummary> {
+  const byCat = new Map<string, PendingSummary>()
+  for (const sighting of list) {
+    if (sighting.status !== 'pending') continue
+    const current = byCat.get(sighting.catId)
+    if (!current || sighting.at < current.oldest.at) {
+      byCat.set(sighting.catId, { oldest: sighting, count: (current?.count ?? 0) + 1 })
+    } else {
+      byCat.set(sighting.catId, { oldest: current.oldest, count: current.count + 1 })
+    }
+  }
+  return byCat
+}
+
+export type PendingSummary = { oldest: Sighting; count: number }
 
 /* --- Geometry ---------------------------------------------------------- */
 

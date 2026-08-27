@@ -31,6 +31,14 @@ export type CatDraft = {
   description: string
   note: string
   photo: string
+  /** Left empty by the form itself — ui/RecordCat.tsx overwrites this at
+      submit with a place name looked up against the point just placed
+      (map/landmark.ts's nearestPlaceName), the same derivation every other
+      "collected" field here gets. Just the place half ("9TH AVENUE"), not
+      the whole "LINE NN · ..." string: the number in front of it is
+      catsRepo.addCat's own job (nextLineNumber), so this stays empty when
+      nothing named is nearby enough to name and addCat's own "FIELD
+      ENTRY" fallback fires instead. */
   line: string
   colour: Cat['colour']
   shape: Shape
@@ -59,7 +67,7 @@ export type StoredCat = {
    otherwise is not a wrong cat, it is a malformed polygon thrown into
    addSource, which takes the whole map down with it and leaves a blank
    screen with a console error nobody presenting this would see coming. */
-const SHAPE_IDS = new Set<Shape>(['round', 'elongated', 'notched', 'blocky'])
+const SHAPE_IDS = new Set<Shape>(['round', 'elongated', 'notched', 'blocky', 'ragged'])
 
 export function isStored(value: unknown): value is StoredCat {
   if (!value || typeof value !== 'object') return false
@@ -132,50 +140,118 @@ const M_PER_DEG = (Math.PI * EARTH_RADIUS_M) / 180
     similar density. */
 const RING_STEPS = 48
 
-/** The four territories an admin can pick, alongside the colour. `round`
+/** The five territories an admin can pick, alongside the colour. `round`
     is exactly what this app has always drawn: a plain circle, zero
-    deformation, so a shape picker never quietly changes an existing
-    look. The other three are still `Polygon` rings built off the same
-    loop, only warped: nothing here is a "real" circle or rectangle
-    primitive any more than the seeded territories are, which are also
-    just irregular point-rings (territories.geo.json). */
-export type Shape = 'round' | 'elongated' | 'notched' | 'blocky'
+    deformation, so a shape picker never quietly changes an existing look.
+    The other four are still `Polygon` rings built off the same loop, only
+    warped, and warped by real data rather than a formula: each one is the
+    actual outline of a named cat's seeded territory (territories.geo.json),
+    normalised to a unit radius and re-sampled at this loop's own 48 angles
+    (see REAL_SHAPES below for exactly which cat and how). Nothing here is a
+    "real" circle or rectangle primitive any more than the seeded
+    territories always were; the four non-circle picks now trace the same
+    kind of irregular outline a hand survey actually produces, at whatever
+    centre and radius the admin draws, instead of a synthetic curve that
+    only looked like one. */
+export type Shape = 'round' | 'elongated' | 'notched' | 'blocky' | 'ragged'
 
 export const SHAPES: { id: Shape; label: string }[] = [
   { id: 'round', label: 'Round' },
   { id: 'elongated', label: 'Elongated' },
   { id: 'notched', label: 'Notched' },
   { id: 'blocky', label: 'Blocky' },
+  { id: 'ragged', label: 'Ragged' },
 ]
 
-/* Each entry returns a multiplier on radiusM for a given angle (radians).
-   Fixed constants, no randomness: the same shape at the same radius must
-   always draw the same outline (localCats.check.ts asserts this), and
-   "the same shape looks the same twice" is what makes a picker legible.
+/* One borrowed outline per non-round shape, traced from an actual seeded
+   territory rather than invented. Each array is that cat's real polygon
+   (territories.geo.json), centred on its own centroid, every point's
+   distance from centre divided by the mean distance (so the shape is a
+   unit-radius multiplier, reusable at any radiusM), then re-sampled at this
+   file's own 48 even angle-steps by linear interpolation between the
+   nearest two real vertices. Regenerate with:
 
-   The formulas are deliberately plain trigonometry: a small, fixed,
-   checkable function beats a library for four shapes. */
-const NOTCH_ANGLE = Math.PI / 4
-const NOTCH_WIDTH = 0.5
-const DEFORM: Record<Shape, (angle: number) => number> = {
-  round: () => 1,
-  // Two lobes opposite each other: stretched along one axis, pinched
-  // across the other, reads as "runs along a street" rather than a
-  // lopsided blob.
-  elongated: (angle) => 1 + 0.35 * Math.cos(2 * angle),
-  // A single inward pinch on one side (a Gaussian dip centred on a fixed
-  // angle), for an L-shaped block or a corner lot.
-  notched: (angle) => 1 - 0.34 * Math.exp(-((angle - NOTCH_ANGLE) ** 2) / (2 * NOTCH_WIDTH ** 2)),
-  // Four gentle lobes: not literally square (a real square ring would
-  // need far more than 48 points to look sharp-cornered rather than
-  // faceted), but reads as squared-off next to Round and Elongated.
-  blocky: (angle) => 1 + 0.18 * Math.cos(4 * angle),
+     node -e "
+       const data = require('./territories.geo.json')
+       const RING_STEPS = 48
+       function extract(id) {
+         const f = data.features.find((f) => f.properties.id === id)
+         const ring = f.geometry.coordinates[0]
+         const n = ring.length - 1
+         const pts = ring.slice(0, n)
+         const cx = pts.reduce((s, p) => s + p[0], 0) / n
+         const cy = pts.reduce((s, p) => s + p[1], 0) / n
+         const dists = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy))
+         const mean = dists.reduce((a, b) => a + b, 0) / n
+         const samples = pts
+           .map((p, i) => {
+             let angle = Math.atan2(p[1] - cy, p[0] - cx)
+             if (angle < 0) angle += 2 * Math.PI
+             return { angle, r: dists[i] / mean }
+           })
+           .sort((a, b) => a.angle - b.angle)
+         const out = []
+         for (let i = 0; i < RING_STEPS; i++) {
+           const angle = (i / RING_STEPS) * 2 * Math.PI
+           let lo = samples[samples.length - 1], hi = samples[0]
+           for (const s of samples) {
+             if (s.angle <= angle) lo = s
+             if (s.angle >= angle) { hi = s; break }
+           }
+           let loA = lo.angle, hiA = hi.angle
+           if (hiA <= loA) hiA += 2 * Math.PI
+           const a2 = angle < loA ? angle + 2 * Math.PI : angle
+           const t = hiA === loA ? 0 : (a2 - loA) / (hiA - loA)
+           out.push(Math.round((lo.r + (hi.r - lo.r) * t) * 1000) / 1000)
+         }
+         return out
+       }
+       console.log(extract('pandan'))
+     "
+
+   The four source cats were picked by computing eccentricity (max/min
+   normalised radius) and lobe count (local maxima in the normalised radius
+   sequence) for all twelve seeded territories, then choosing four with
+   distinct character rather than four that happen to look alike: pandan is
+   the smoothest of the four (5 lobes), bagyo swings hardest between two
+   points (6 lobes, widest single jump), nilad is the most faceted (9
+   lobes), and ube is the most eccentric overall. milo/biscuit/tala were
+   excluded: at ~1.03 eccentricity they are already near-circles, which
+   `round` already covers. */
+const REAL_SHAPES: Record<Exclude<Shape, 'round'>, number[]> = {
+  elongated: [
+    0.907, 0.952, 1.001, 1.044, 1.061, 1.071, 1.072, 1.057, 1.048, 1.042, 1.04, 1.013, 0.972, 0.95,
+    0.956, 0.986, 1.004, 1.018, 1.026, 0.991, 0.951, 0.914, 0.971, 1.025, 1.047, 1.055, 1.079, 1.128,
+    1.053, 0.998, 0.975, 1.025, 1.039, 1.009, 0.956, 0.911, 0.878, 0.934, 0.996, 1.053, 1.018, 0.989,
+    0.984, 0.979, 0.973, 0.965, 0.955, 0.932,
+  ],
+  notched: [
+    1.019, 1.105, 1.124, 1.084, 0.995, 0.953, 0.948, 1.007, 1.002, 0.958, 0.889, 0.901, 0.968, 0.995,
+    0.97, 0.894, 0.91, 0.962, 1.055, 1.068, 1.08, 1.098, 1.136, 1.137, 1.095, 1.06, 1.004, 0.93, 0.9,
+    0.893, 0.907, 0.98, 1.049, 1.109, 1.023, 0.975, 0.967, 0.949, 0.926, 0.897, 0.947, 0.999, 1.04,
+    1.042, 1.033, 1.015, 0.982, 0.981,
+  ],
+  blocky: [
+    1.028, 1.04, 1.048, 1.035, 0.946, 0.903, 0.931, 0.955, 0.978, 1, 1.015, 0.999, 0.946, 0.971,
+    0.983, 0.963, 0.945, 0.967, 1.046, 1.019, 0.998, 0.991, 1.052, 1.038, 0.969, 0.908, 0.949, 1.029,
+    1.09, 1.068, 1.013, 0.955, 0.93, 0.93, 0.986, 1.03, 1.057, 0.974, 0.944, 0.966, 1.073, 1.124,
+    1.083, 1.004, 0.965, 1.013, 1.064, 1.078,
+  ],
+  ragged: [
+    1.058, 0.999, 0.96, 0.946, 1.013, 1.066, 1.102, 1.034, 0.995, 0.981, 0.998, 0.985, 0.942, 1.01,
+    1.051, 1.049, 0.995, 0.942, 0.899, 0.87, 0.895, 0.998, 1.101, 1.116, 1.033, 0.982, 0.964, 0.975,
+    1.029, 1.039, 1.024, 1.002, 0.993, 0.988, 0.959, 0.998, 1.081, 1.04, 0.995, 0.945, 0.932, 0.946,
+    0.994, 1.068, 1.076, 0.984, 0.962, 0.985,
+  ],
 }
 
-/** Territory geometry for any of the four shapes: one shared loop, rounding
-    and closing rule, only the multiplier from DEFORM changes per shape, so
-    "the same shape looks the same twice" holds without four near-duplicate
-    functions.
+/** Territory geometry for any of the five shapes: one shared loop, rounding
+    and closing rule; only the per-step multiplier changes, so "the same
+    shape looks the same twice" holds without five near-duplicate functions.
+    `round` computes its multiplier (always 1); every other shape looks it
+    up by ring index from REAL_SHAPES, since a borrowed outline has no
+    continuous formula to evaluate at an arbitrary angle, only 48 real
+    samples already taken at this exact set of angles.
 
     Plain trigonometry rather than turf.js: turf is 200KB+ for a project
     that needs exactly one of its functions, and the equirectangular
@@ -188,12 +264,11 @@ export function shapeRing(shape: Shape, center: [number, number], radiusM: numbe
   const dLat = radiusM / M_PER_DEG
   const dLng = radiusM / (M_PER_DEG * Math.cos((lat * Math.PI) / 180))
   const round = (n: number) => Math.round(n * 1e6) / 1e6
-  const deform = DEFORM[shape]
 
   const ring: [number, number][] = []
   for (let i = 0; i < RING_STEPS; i++) {
     const angle = (i / RING_STEPS) * Math.PI * 2
-    const scale = deform(angle)
+    const scale = shape === 'round' ? 1 : REAL_SHAPES[shape][i]
     ring.push([
       round(lng + dLng * Math.cos(angle) * scale),
       round(lat + dLat * Math.sin(angle) * scale),
@@ -214,6 +289,26 @@ export function shapeFeature(stored: StoredCat): Feature<Polygon> {
     properties: { id: stored.cat.id, name: stored.cat.name },
     geometry: { type: 'Polygon', coordinates: [shapeRing(stored.shape, stored.center, stored.radiusM)] },
   }
+}
+
+/** The same per-shape multiplier shapeRing uses, but in a plain unit
+    circle (no lng/lat, no metres, radius 1 centred on the origin) rather
+    than projected onto the earth. shapeRing's own geometry can't be reused
+    directly for this: its output is in degrees-of-longitude/latitude at
+    whatever centre and radius the admin picked, which is meaningless as a
+    small on-screen icon. This exists so the shape picker's swatches can
+    show the *actual* borrowed outline instead of a generic placeholder
+    glyph, built from the same data shapeRing draws on the map, not a
+    second approximation of it. Callers render it as an SVG `points`
+    string sized to their own icon. */
+export function shapePreviewPoints(shape: Shape): [number, number][] {
+  const points: [number, number][] = []
+  for (let i = 0; i < RING_STEPS; i++) {
+    const angle = (i / RING_STEPS) * Math.PI * 2
+    const scale = shape === 'round' ? 1 : REAL_SHAPES[shape][i]
+    points.push([Math.cos(angle) * scale, Math.sin(angle) * scale])
+  }
+  return points
 }
 
 /** URL-safe, collision-checked by the caller. Falls back to a timestamp so a

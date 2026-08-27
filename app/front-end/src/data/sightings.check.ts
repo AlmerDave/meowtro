@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict'
 import type { FeatureCollection, Polygon } from 'geojson'
-import { allSightings, buildAdminSighting, latestByCat, translateToward } from './sightings'
+import {
+  allSightings,
+  applyVote,
+  buildAdminSighting,
+  latestByCat,
+  pendingByCat,
+  translateToward,
+  type Sighting,
+} from './sightings'
 import baseTerritories from './territories.geo.json'
 
 /* The one runnable check behind the seeded observations.
@@ -76,6 +84,73 @@ assert.ok(
   seeded.every((sighting) => sighting.photo === undefined || sighting.photo.startsWith('https://')),
   'a seeded photo is not an https URL'
 )
+
+// --- pendingByCat, phase 9 ----------------------------------------------
+// The map's ghost (map/Territories.tsx) and pending badge (map/
+// CatMarkers.tsx) both anchor to whichever sighting this function calls
+// "oldest", and the plate's own count next to "Pending review" is this
+// function's `count`. Get either one wrong and the map and the plate can
+// point at different reports for the same cat.
+
+const at = (id: string, catId: string, status: Sighting['status'], atMs: number): Sighting => ({
+  id,
+  catId,
+  point: [121.05, 14.55],
+  at: atMs,
+  status,
+})
+
+const p1 = at('p1', 'milo', 'pending', 300)
+const p2 = at('p2', 'milo', 'pending', 100) // oldest of the two on milo
+const p3 = at('p3', 'milo', 'pending', 200)
+const done = at('d1', 'milo', 'surveyed', 50)
+const other = at('p4', 'biscuit', 'pending', 10)
+
+const summary = pendingByCat([p1, p2, p3, done, other])
+
+assert.equal(summary.get('milo')?.oldest.id, 'p2', 'the oldest pending sighting did not win the anchor')
+assert.equal(summary.get('milo')?.count, 3, 'pendingByCat miscounted a cat with three open reports')
+assert.equal(summary.get('biscuit')?.count, 1, 'a different cat’s own pending report was not counted')
+assert.equal(summary.has('nobody'), false, 'a cat with nothing pending should not appear at all')
+
+// A decided sighting is not pending, however recently it was decided.
+assert.equal(
+  pendingByCat([done]).size,
+  0,
+  'a surveyed sighting was counted as pending'
+)
+
+console.log('pendingByCat: ok')
+
+// --- applyVote, phase 9 ---------------------------------------------------
+// The pure half of voteSighting, checked directly because voteSighting
+// itself degrades to a silent no-op under node (no localStorage — same
+// intended degradation sightings.check.ts already relies on above).
+
+const fresh = applyVote({}, 'up')
+assert.deepEqual(fresh, { votes: { up: 1, down: 0 }, myVote: 'up' }, 'a first vote did not register')
+
+const toggledOff = applyVote(fresh, 'up')
+assert.deepEqual(
+  toggledOff,
+  { votes: { up: 0, down: 0 }, myVote: undefined },
+  'pressing the same thumb twice should withdraw the vote, not double it'
+)
+
+const switched = applyVote(fresh, 'down')
+assert.deepEqual(
+  switched,
+  { votes: { up: 0, down: 1 }, myVote: 'down' },
+  'switching thumbs did not move the vote off the first one'
+)
+
+// A vote can never go negative, whatever state it starts from — this is
+// the guard against the up/down tally on a hand-edited or corrupted
+// localStorage entry going negative and reading as more support than "0".
+const corrupt = applyVote({ votes: { up: 0, down: 0 }, myVote: 'up' }, 'up')
+assert.equal(corrupt.votes?.up, 0, 'withdrawing a vote from an already-zeroed tally went negative')
+
+console.log('applyVote: ok')
 
 // --- buildAdminSighting, this redesign -----------------------------------
 // The pure half of addAdminSighting, checked directly because

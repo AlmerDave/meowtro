@@ -123,17 +123,34 @@ function makeDrop(width: number, height: number, spawn: boolean, fall: Fall): Dr
 export function Rain() {
   const { weather, theme } = useMap()
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  // Read inside the loop rather than in dependencies: toggling weather
-  // should not tear down and reseed the whole drop field.
-  const visibleRef = useRef(weather !== 'clear')
-  visibleRef.current = weather !== 'clear'
-  // The active row, same trick. rain -> storm changes the drop count, and
-  // resize() below already reseeds whenever the count it computes stops
-  // matching the field it has, so switching weather reseeds through the
-  // path that was already there rather than through a new one.
+  /* `clear` is the state this app spends nearly all of its life in: it is
+     what the map lands on, and most visits never touch the weather button.
+     The loop used to run anyway and early-return on a ref, which cost one
+     scheduled callback per frame forever to draw nothing, and kept the
+     browser's rendering pipeline awake on a page that was otherwise
+     completely still.
+
+     So the effect is keyed on this instead. rAF already stops itself on a
+     hidden tab; this is the other half, an idle tab that is still on
+     screen. */
+  const falling = weather !== 'clear'
+  // The active row, read through a ref rather than a dependency: rain ->
+  // storm changes the drop count, and resize() below already reseeds
+  // whenever the count it computes stops matching the field it has, so
+  // switching between the two wet rows reseeds through the path that was
+  // already there rather than by rebuilding the effect.
   const fallRef = useRef<Fall>(FALL[weather])
   fallRef.current = FALL[weather]
   const colorRef = useRef('#888')
+
+  /* The drop field, moved out of the effect and onto the component.
+     That is what lets the effect above depend on `falling` without the
+     reseed the old mount-only version was written to avoid: rain -> storm
+     -> rain no longer restarts anything (both are `falling`), and clear ->
+     rain finds the field it left behind, mid-fall, exactly where it was.
+     resize() still rebuilds it whenever the viewport or the count
+     genuinely changes, which is the only time it should. */
+  const dropsRef = useRef<Drop[]>([])
 
   // --ink-soft is a plain hex in every theme block (tokens.css), never a
   // color-mix() result, so this can go straight to canvas strokeStyle with
@@ -144,7 +161,7 @@ export function Rain() {
 
   useEffect(() => {
     const canvas = canvasRef.current
-    if (!canvas) return
+    if (!canvas || !falling) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -159,7 +176,6 @@ export function Rain() {
     // on a 3x phone screen is triple the fill work for hairline strokes
     // nobody can resolve the extra sharpness of anyway.
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5)
-    let drops: Drop[] = []
 
     const resize = () => {
       const fall = fallRef.current
@@ -169,39 +185,38 @@ export function Rain() {
         Math.min(fall.max, Math.max(fall.min, canvas.clientWidth * canvas.clientHeight * fall.density))
       )
       /* The canvas ELEMENT's width/height attributes are not enough to
-         decide "is there nothing to do here": under StrictMode, this effect
-         runs, is torn down, and runs again on the same persistent <canvas>
-         DOM node. The first run sizes the canvas and seeds `drops`; its
-         cleanup cancels the animation frame but does not (and should not)
-         reset the element's width/height. The second run's `drops` is a
-         fresh closure-local array, but its resize() then saw a canvas that
-         was ALREADY the right size and returned before ever populating it,
-         leaving the surviving effect animating an empty array forever, real
-         bug, caught by reproducing it outside the browser and confirmed
-         against the live report of "rain shows once, a reload stops
-         showing it at all." drops.length is checked alongside the pixel
-         dimensions so a second invocation that inherits a correctly-sized
-         but unseeded canvas still seeds. */
-      if (canvas.width === w && canvas.height === h && drops.length === count) return
+         decide "is there nothing to do here", and the count is checked
+         alongside them for two separate reasons.
+
+         The historical one: under StrictMode this effect runs, is torn
+         down, and runs again on the same persistent <canvas> node. The
+         field used to be a closure-local array, so the second run started
+         with an empty one while the canvas it inherited was already the
+         right size, and resize() returned before seeding it. The result
+         was a live loop animating nothing, reported as "rain shows once, a
+         reload stops showing it at all".
+
+         The field is a ref now (dropsRef, above), which retires that
+         particular failure: the second run finds the first run's drops. The
+         count check earns its place anyway, because the effect is keyed on
+         `falling` and a rain -> storm step changes the drop count without
+         changing a single pixel dimension. Without it, switching to a
+         storm would keep drawing a shower's worth of drops. */
+      if (canvas.width === w && canvas.height === h && dropsRef.current.length === count) return
       canvas.width = w
       canvas.height = h
       // Rebuilt at the new count on every resize rather than resized in
       // place: a phone rotating from portrait to landscape changes how much
       // sky is on screen, and the drop count should change with it exactly
       // as it would on first load at that size.
-      drops = Array.from({ length: count }, () => makeDrop(canvas.width, canvas.height, true, fall))
+      dropsRef.current = Array.from({ length: count }, () =>
+        makeDrop(canvas.width, canvas.height, true, fall)
+      )
     }
     resize()
     window.addEventListener('resize', resize)
 
     let lastTime = performance.now()
-    // Tracks the visible -> invisible EDGE, not the level, so the canvas is
-    // cleared exactly once when weather turns off rather than never (the
-    // bug: turning rain off left the last drawn frame's streaks painted on
-    // screen forever, since nothing downstream of the early return below
-    // ever touched the canvas again) or every idle frame (wasteful, and
-    // unnecessary once it is already empty).
-    let wasVisible = false
     let frame = requestAnimationFrame(function tick(now) {
       frame = requestAnimationFrame(tick)
       /* Real elapsed time, not an assumed 60fps. Advancing drops by a fixed
@@ -215,20 +230,9 @@ export function Rain() {
          have sent it. */
       const dt = Math.min(now - lastTime, 50) / 1000
       lastTime = now
-      // Costs only the callback itself while off: checked per frame so the
-      // toggle is instant either way, never a teardown-and-rebuild of the
-      // drop field. Note this cannot simply skip all work and leave the
-      // last frame sitting there, the way a layer with a CSS opacity
-      // transition over it could: nothing hides this canvas, so it has to
-      // clear itself on the way out. That is what the edge below is for.
-      if (!visibleRef.current) {
-        if (wasVisible) ctx.clearRect(0, 0, canvas.width, canvas.height)
-        wasVisible = false
-        return
-      }
-      wasVisible = true
       resize()
 
+      const drops = dropsRef.current
       const fall = fallRef.current
       const gust = fall.gust.reduce((sum, g) => sum + Math.sin(now * g.freq) * g.amp, 0)
       const angle = fall.wind + gust * 0.12
@@ -260,13 +264,17 @@ export function Rain() {
     return () => {
       cancelAnimationFrame(frame)
       window.removeEventListener('resize', resize)
+      /* Cleared on the way out, and this is the one thing the old
+         per-frame visibility check was genuinely buying: nothing hides
+         this canvas, so a stopped loop that left its last frame painted
+         would leave the streaks of the final frame of rain sitting over
+         the map forever. Turning the weather off has to erase the sky, not
+         only stop advancing it. */
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
     }
-    // Deliberately empty deps beyond mount: weather and theme are read
-    // through the refs above, not restarted on. Rebuilding
-    // this effect on every weather toggle would reseed the whole drop field
-    // and cost a resize + array allocation for what should be an instant
-    // show/hide.
-  }, [])
+    // theme is still read through a ref rather than listed: a theme flip
+    // only changes strokeStyle, which the next frame picks up on its own.
+  }, [falling])
 
   return <canvas className="rain" ref={canvasRef} aria-hidden="true" />
 }

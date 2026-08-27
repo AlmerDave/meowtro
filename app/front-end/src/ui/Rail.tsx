@@ -35,7 +35,7 @@ type Props = {
 
 export function Rail({ cats, selectedId, hoveredId, onSelect, onHover }: Props) {
   const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -48,7 +48,14 @@ export function Rail({ cats, selectedId, hoveredId, onSelect, onHover }: Props) 
      wagging the component. */
   const booted = useRef(false)
   useEffect(() => {
-    if (cats.length) requestAnimationFrame(() => (booted.current = true))
+    if (!cats.length) return
+    /* Cancelled on the way out. Nothing here reads state, so an orphaned
+       callback could not warn or crash, but this effect re-runs whenever
+       cats.length changes and a rail unmounted mid-frame (the breakpoint
+       crossing that swaps it for CatDeck) left a scheduled callback holding
+       the closure alive for a component that is gone. */
+    const frame = requestAnimationFrame(() => (booted.current = true))
+    return () => cancelAnimationFrame(frame)
   }, [cats.length])
 
   /* Derived, not the literal 3 this used to print. `line` is "LINE 03 ·
@@ -263,7 +270,19 @@ export function Rail({ cats, selectedId, hoveredId, onSelect, onHover }: Props) 
               </span>
             </p>
 
-            <div className="rail-list" ref={listRef} onKeyDown={onListKeyDown}>
+            {/* data-lenis-prevent: motion/lenis.ts wires Lenis globally on
+                window for the scroll-driven camera phase 4 never shipped,
+                and it is still live, still intercepting every wheel event
+                on the page even with nothing for it to drive. Every other
+                internally-scrollable panel already opts out this way
+                (Plate's body, About's body, CatDeck's, the review queue's);
+                missing it here means a mouse wheel over this list would be
+                swallowed by Lenis before the list ever saw it, since Lenis
+                calls preventDefault() by default and only skips elements
+                carrying this attribute. Trackpad and touch scroll go
+                through the same wheel/pointer path, so this is the fix for
+                all three input kinds at once, not mouse-specific. */}
+            <div className="rail-list" data-lenis-prevent ref={listRef} onKeyDown={onListKeyDown}>
               <AnimatePresence mode="popLayout">
                 {shown.map((cat, i) => (
                   <motion.div

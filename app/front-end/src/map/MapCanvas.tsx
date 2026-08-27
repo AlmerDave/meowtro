@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Map as MapLibreMap, addProtocol, prewarm, setWorkerUrl } from 'maplibre-gl'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
@@ -29,7 +29,6 @@ import { Rain } from './Rain'
 import { Storm } from './Storm'
 import { MapControls } from './MapControls'
 import { RecordCat } from '@/ui/RecordCat'
-import { ReviewQueue } from '@/ui/ReviewQueue'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
    parse, the source never loads, and nothing throws: the map just spins.
@@ -376,22 +375,45 @@ export function MapCanvas({
     return animateSky(map)
   }, [map, isLoaded, isFlat])
 
+  /* Memoised, not an object literal at the JSX below. A context value that
+     is a fresh object every render makes every consumer re-render every
+     time THIS component does, whatever the value actually says, and this
+     component re-renders on props it does not pass through the context at
+     all: `hoveredId` changes on entering and leaving a territory, and
+     `cats`/`selectedId` change on every selection. Territories, CatMarkers,
+     MapLabels, Rain, Storm, MapControls and ReportSighting all call
+     useMap(), so moving the pointer over a territory was re-rendering the
+     whole map tree, including CatMarkers' twelve portals and its
+     synchronous pendingByCat() localStorage scan.
+
+     setIsFlat/setTheme/setPlacing are React's own setters and setWeather is
+     a useCallback, so every dependency here is either state or already
+     stable: the value's identity now changes exactly when one of the ten
+     things in it does. */
+  const context = useMemo(
+    () => ({
+      map,
+      isLoaded,
+      isFlat,
+      setIsFlat,
+      theme,
+      setTheme,
+      placing,
+      setPlacing,
+      weather,
+      setWeather,
+    }),
+    /* The three bare setters are React's own and stable by contract, and
+       setWeather is a useCallback with no deps; they are listed anyway
+       rather than relied on implicitly, so this array is a complete
+       statement of the value's contents and nobody has to remember which
+       entries were left out on purpose. */
+    [map, isLoaded, isFlat, setIsFlat, theme, setTheme, placing, setPlacing, weather, setWeather]
+  )
+
   return (
     <div className="map" ref={container}>
-      <MapContext.Provider
-        value={{
-          map,
-          isLoaded,
-          isFlat,
-          setIsFlat,
-          theme,
-          setTheme,
-          placing,
-          setPlacing,
-          weather,
-          setWeather,
-        }}
-      >
+      <MapContext.Provider value={context}>
         {map && (
           <>
             <Territories
@@ -409,6 +431,7 @@ export function MapCanvas({
               onSelect={onSelect}
               hoveredId={hoveredId}
               onHover={onHover}
+              admin={admin}
             />
             {/* Before <MapLabels> on purpose: the storm's veil shares the
                 labels' z-index rung, so this order is what keeps the
@@ -452,13 +475,41 @@ export function MapCanvas({
               </div>
             )}
 
-            {/* Back on screen. Its own header comment has said since phase
-                6 that mounting it again behind the role check is all it
-                needs, and that turned out to be true: the panel writes a
-                cat, the queue reviews sightings, and neither knows about
-                the other. */}
-            {chrome && admin && <RecordCat onRecorded={onRecorded} />}
-            {chrome && admin && <ReviewQueue onReviewed={onRecorded} />}
+            {/* RecordCat is back on screen behind the role check, same as
+                since phase 6. ui/ReviewQueue.tsx is not: phase 9 replaced
+                its list-panel review with reviewing straight off the map
+                (the pulsing pin badge above, the ghost territory below, and
+                the plate's own "Pending review" section) at the admin's own
+                request that the corner panel was "too crowded and
+                unnecessary". The file itself is left alone, unimported,
+                same as plate/CatFigure.tsx after the 3D view came out
+                (Plate.tsx's own header explains that precedent) — nothing
+                here says its list-plus-audit-trail view can never come
+                back, only that nothing currently mounts it.
+
+                Once briefly carried a second "you are admin" tell, a small
+                badge beside the record button — replaced with the banner
+                across the top of the app (App.tsx, shell.css's own note on
+                it) once that existed, since two indicators for one fact is
+                the kind of duplication this app argues against everywhere
+                else, and the corner one was the one that had gone unnoticed
+                to begin with.
+
+                Wrapped rather than owning its own fixed position: the first
+                version put the trigger at a hand-picked corner (top-left)
+                without noticing the rail already lives there at full
+                height, so it rendered directly underneath it and was,
+                correctly, reported as "hidden": DOM order put Rail after
+                MapCanvas, so Rail painted over it. .admin-controls (shell.
+                css) fixes the position once, beside the map-controls
+                capsule, a corner nothing else claims — kept as a wrapper
+                rather than unwound to a single positioned button because a
+                second admin tool is likely to want the same shelf again. */}
+            {chrome && admin && (
+              <div className="admin-controls">
+                <RecordCat onRecorded={onRecorded} />
+              </div>
+            )}
 
             {chrome && (
               <ReportSighting

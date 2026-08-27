@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { photoAt, THUMB_PX } from '@/data/cats.seed'
 import { motion } from 'motion/react'
 import type { Cat } from '@/data/catsRepo'
 import { LoadingCube } from '@/ui/LoadingCube'
@@ -131,7 +132,13 @@ export function Loading({ cats, mapReady, onDone }: Props) {
       const img = new Image()
       img.onload = done
       img.onerror = done
-      img.src = cat.photo
+      /* The thumbnail URL, not the seeded one. This preload exists so the
+         first rows resolve out of cache instead of visibly filling in after
+         the curtain lifts, and a row now renders photoAt(_, THUMB_PX)
+         (ui/CatRow.tsx). Warming 640x480 would warm a file nothing on the
+         first screen asks for and leave the rows to fetch theirs anyway,
+         which is the reveal this component exists to prevent. */
+      img.src = photoAt(cat.photo, THUMB_PX)
     }
     return () => {
       live = false

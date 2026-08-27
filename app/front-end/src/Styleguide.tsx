@@ -6,6 +6,8 @@ import { Plate } from '@/plate/Plate'
 import { CatRow } from '@/ui/CatRow'
 import { CATS, CAT_COLOURS } from '@/data/cats.seed'
 import { THEMES, DEFAULT_THEME, TOGGLE_THEMES, type Theme } from '@/map/style'
+import territories from '@/data/territories.geo.json'
+import type { FeatureCollection, Polygon } from 'geojson'
 
 const PALETTE = [
   { key: '--paper', role: 'Ground / panel surface base.' },
@@ -270,7 +272,19 @@ export default function Styleguide() {
             <span className="note">spec §7 · ~420px</span>
           </div>
           <div className="plate-specimen">
-            <Plate cat={CATS[0]} onClose={() => undefined} />
+            {/* No live map here (this page is a static proof, not the app),
+                so the seed file stands in directly for the live,
+                post-translateToward territories App.tsx normally fetches —
+                this cat's shape has never had a sighting approved against
+                it, so the two are identical anyway. nearestPlaceName is
+                left unset: TerritoryGlyph already treats that as "just
+                show the size", which is the right degradation for a page
+                with no MapLibre instance to ask. */}
+            <Plate
+              cat={CATS[0]}
+              onClose={() => undefined}
+              territories={territories as FeatureCollection<Polygon>}
+            />
           </div>
         </section>
 

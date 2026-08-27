@@ -1,12 +1,42 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { motion } from 'motion/react'
-import { Check, Copy, MapPin, X } from 'lucide-react'
-import { listSightings, withdrawSighting, type Cat } from '@/data/catsRepo'
-import { describeWhen, type Sighting } from '@/data/sightings'
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Lock,
+  MapPin,
+  Pencil,
+  Plus,
+  ThumbsDown,
+  ThumbsUp,
+  Trash2,
+  X,
+} from 'lucide-react'
+import {
+  addAdminPhoto,
+  deleteCat,
+  deleteSighting,
+  listPendingForCat,
+  listSightings,
+  reorderSighting,
+  reviewSighting,
+  updateCat,
+  voteSighting,
+  withdrawSighting,
+  type Cat,
+  type CatPatch,
+} from '@/data/catsRepo'
+import type { FeatureCollection, Polygon } from 'geojson'
+import { CAT_COLOURS, photoAt, THUMB_PX, type Colour } from '@/data/cats.seed'
+import { describeWhen, distanceM, ringRadiusM, type Sighting } from '@/data/sightings'
+import { ringCentroid } from '@/map/centroid'
 import { CardStack, type StackCard } from '@/components/ui/card-stack'
 import { TerritoryGlyph } from '@/plate/TerritoryGlyph'
 import { Specular } from '@/ui/Specular'
 import { useEscape } from '@/ui/escape'
+import { compressImage, PHOTO_MAX_DIM, PHOTO_QUALITY } from '@/ui/imageToDataUrl'
 import { spring, springSoft } from '@/motion/springs'
 
 /* The specimen plate. Motion owns the enter *and the exit* — the exit
@@ -38,7 +68,16 @@ import { spring, springSoft } from '@/motion/springs'
    The hero photo is now unconditional, which is a simplification rather
    than a loss: it used to stay mounted at opacity 0 underneath the model so
    that its layoutId always had a live element to morph back into on close,
-   and with nothing to hide behind, that whole dance goes. */
+   and with nothing to hide behind, that whole dance goes.
+
+   ## Admin editing, phase 8's role gate extended to the record itself
+
+   Everything below `admin` is one component reused twice rather than
+   written twice: this file is the plate for both the desktop rail and
+   ui/CatDeck's mobile sheet (see the note in App.tsx), so a control added
+   here is already on both surfaces. Gated on the prop, not a CSS class —
+   a non-admin's DOM has no edit affordance in it to find, not merely one
+   hidden by a stylesheet. */
 
 type Props = {
   cat: Cat
@@ -47,6 +86,33 @@ type Props = {
       first: it renders perfectly well somewhere that cannot accept a
       sighting, and the button simply is not drawn. */
   onReport?: (catId: string) => void
+  /** Whether this visitor is holding the admin gate open (App.tsx's
+      useAdmin). Everything under "Admin" below is gated on this alone. */
+  admin?: boolean
+  /** Told to re-read cats and territories after an edit or delete, since
+      either can change what the rest of the app is showing: a renamed cat
+      in the rail, a corrected lastSeen, a deleted cat's territory on the
+      map. The same refresh RecordCat already triggers on a new record
+      (App.tsx's onRecorded) — editing an existing one needs exactly the
+      same door back in. */
+  onChanged?: () => void
+  /** The live territory shapes — the same FeatureCollection App.tsx already
+      fetches for the map (catsRepo's listTerritories, which applies
+      translateToward for the newest approved sighting). Read here for
+      catRing/describeReach and forwarded straight to TerritoryGlyph, so
+      the diagram, the "outside the known range" sentence and the actual
+      map can never disagree about which polygon "the territory" currently
+      means. */
+  territories: FeatureCollection<Polygon>
+  /** The live map's own answer to "what's nearest to this point", from
+      App.tsx's MapInstanceBridge — Plate sits outside <MapCanvas>'s tree
+      and cannot reach the MapLibre instance any other way. Forwarded
+      straight to TerritoryGlyph, the one place it's actually used: the
+      "N m across, near X" line under the shape is computed fresh on every
+      render off the glyph's own live centre, nothing here writes it
+      anywhere, so Plate itself has nothing to do with the result besides
+      passing the function down. */
+  nearestPlaceName?: (point: [number, number]) => string | null
 }
 
 const body = {
@@ -58,66 +124,373 @@ const line = {
   shown: { opacity: 1, y: 0, transition: spring },
 }
 
-export function Plate({ cat, onClose, onReport }: Props) {
+/** One pencil, reused for every editable field. Its mere presence in the
+    DOM is already gated by the caller (`editing &&`), so this component
+    itself carries no admin check of its own. */
+function FieldPencil({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button type="button" className="admin-pencil" aria-label={`Edit ${label}`} onClick={onClick}>
+      <Pencil size={12} />
+    </button>
+  )
+}
+
+/** The inline editor a pencil opens: an input, a save, a cancel. Its own
+    `draft` state, seeded from `value` at mount, is enough because it is
+    only ever mounted while open — closing and reopening a field is a fresh
+    mount with a fresh draft, so nothing has to reset it by hand. */
+function FieldEditor({
+  label,
+  value,
+  multiline,
+  maxLength,
+  busy,
+  error,
+  onSave,
+  onCancel,
+}: {
+  label: string
+  value: string
+  multiline?: boolean
+  maxLength: number
+  busy: boolean
+  error: string | null
+  onSave: (next: string) => void
+  onCancel: () => void
+}) {
+  const [draft, setDraft] = useState(value)
+  return (
+    <div className="admin-edit-row">
+      {multiline ? (
+        <textarea
+          className="admin-edit-input"
+          value={draft}
+          maxLength={maxLength}
+          onChange={(e) => setDraft(e.target.value)}
+          aria-label={label}
+          autoFocus
+        />
+      ) : (
+        <input
+          className="admin-edit-input"
+          value={draft}
+          maxLength={maxLength}
+          onChange={(e) => setDraft(e.target.value)}
+          aria-label={label}
+          autoFocus
+        />
+      )}
+      <button
+        type="button"
+        className="admin-edit-confirm"
+        aria-label={`Save ${label}`}
+        disabled={busy}
+        onClick={() => onSave(draft)}
+      >
+        <Check size={12} />
+      </button>
+      <button type="button" className="admin-edit-cancel" aria-label="Cancel" onClick={onCancel} disabled={busy}>
+        <X size={12} />
+      </button>
+      {error && (
+        <p className="admin-edit-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+export function Plate({
+  cat,
+  onClose,
+  onReport,
+  admin = false,
+  onChanged,
+  territories,
+  nearestPlaceName,
+}: Props) {
   /* Three states, not a boolean. Copying can genuinely fail, see the
      handler, and a button that silently does nothing is worse than one
      that says so. */
   const [copyState, setCopyState] = useState<'idle' | 'done' | 'failed'>('idle')
 
-  /* The photographs on file for this cat.
+  /* Every sighting this plate is allowed to see (catsRepo.listSightings has
+     the policy), fetched once as a flat list. Everything else the body
+     needs from it — the photo pile, "your reports", the admin's manage
+     list — is a memoized view over this one array rather than three
+     separate fetches, so a refresh after an edit only has to reload one
+     thing. `loadSightings` is exposed (not just run in an effect) because
+     the admin actions below need to re-pull it on demand. */
+  const [sightings, setSightings] = useState<Sighting[]>([])
 
-     Fetched here rather than handed down from App, and that is a choice
-     about which request a server will get rather than about convenience.
-     A plate is only ever open on one cat, so "the observations of this
-     cat" is the query, and loading every sighting of every cat up front to
-     then throw nearly all of them away would be an odd shape to hand a
-     backend. It also keeps this out of CatDeck, which renders the same
-     Plate on mobile and would otherwise have to thread a prop through for
-     a component it knows nothing about.
+  /* Every open report on this cat, oldest first, phase 9. Fetched for
+     everyone, not only admin: the visitor-facing lock below reads it too,
+     to know a report already exists and roughly where (pendingPlace,
+     above) — the exact point itself only ever reaches the map's own ghost
+     (map/Territories.tsx), not this list's own rendering. What differs by
+     `admin` is the review controls drawn from this list, not whether it
+     gets fetched (catsRepo.listPendingForCat has the same note). */
+  const [pendingForCat, setPendingForCat] = useState<Sighting[]>([])
 
-     Empty until it resolves, and empty is a real state rather than a
-     loading one: a cat with no photographs renders exactly the same as a
-     cat whose photographs have not arrived yet, which is the record minus
-     one block. There is nothing to put a spinner on. */
-  const [photos, setPhotos] = useState<StackCard[]>([])
-
-  /* This browser's own reports on this cat that nobody has reviewed yet.
-
-     They are here at all because of a deliberate exception in
-     catsRepo.listSightings: pending data reaches no public surface except
-     this one, and only ever the caller's own. The reasoning is written out
-     there. Anything pending in the result is therefore mine by
-     construction, which is why this filter needs no ownership check of its
-     own. */
-  const [mine, setMine] = useState<Sighting[]>([])
-
-  useEffect(() => {
+  const loadSightings = useCallback(() => {
     let live = true
-    listSightings(cat.id).then((sightings) => {
+    Promise.all([listSightings(cat.id), listPendingForCat(cat.id)]).then(([list, pending]) => {
       if (!live) return
-      setMine(sightings.filter((sighting) => sighting.status === 'pending'))
-      setPhotos(
-        /* flatMap rather than filter-then-map, so the absent case is
-           removed and the type narrows in one pass instead of needing an
-           assertion to promise the compiler what the filter already did. */
-        sightings.flatMap((sighting) =>
-          sighting.photo
-            ? [
-                {
-                  id: sighting.id,
-                  src: sighting.photo,
-                  alt: `${cat.name}, photographed ${describeWhen(sighting.at)}`,
-                  caption: describeWhen(sighting.at),
-                },
-              ]
-            : []
-        )
-      )
+      setSightings(list)
+      setPendingForCat(pending)
     })
     return () => {
       live = false
     }
-  }, [cat.id, cat.name])
+  }, [cat.id])
+
+  useEffect(() => loadSightings(), [loadSightings])
+
+  /* The one open report everyone anchors to — the map's ghost and badge
+     (map/Territories.tsx, map/CatMarkers.tsx) pick the same oldest one, so
+     nothing on screen ever points at two different claims for one cat. */
+  const oldestPending = pendingForCat[0] ?? null
+
+  /* The live ring, read once and shared by describeReach below and
+     TerritoryGlyph (passed down as its `ring` prop rather than looked up a
+     second time there — see that file's own note on why). `territories`
+     is the same live, post-translateToward FeatureCollection App.tsx
+     already fetches for the map, not the frozen seed file: a sighting
+     approved for this cat moves the shape both places read from the same
+     source, so the diagram and the map cannot show two different
+     territories for one cat. A cat with no entry yet (recorded but not
+     reflected in this render's snapshot) degrades to undefined, and both
+     describeReach and the glyph already treat that as "nothing drawn"
+     rather than a stale shape. */
+  const catRing = useMemo(() => {
+    const feature = territories.features.find((f) => f.properties?.id === cat.id)
+    return feature?.geometry.coordinates[0] as [number, number][] | undefined
+  }, [cat.id, territories])
+
+  /* What's actually nearest the shape's own centre, right now — computed
+     live off catRing, never written anywhere. Memoised on catRing rather
+     than recomputed inline: catRing's own identity is not a precise "this
+     cat's shape actually moved" signal (App.tsx hands down a freshly
+     fetched `territories` object on every admin action anywhere, seeded
+     cat or not, so catRing's useMemo re-runs and returns a new array on
+     each one even when this cat's own coordinates are unchanged) — but it
+     is at least scoped to real state changes rather than every render, so
+     nearestPlaceName's small scan over the map's currently-loaded
+     pois/roads tiles (map/landmark.ts) only ever repeats on an actual
+     cats/territories refetch, never on a vote cast or an unrelated field
+     opened, neither of which touch `territories` at all. Tightening this
+     further (a coordinate-based key, so it truly only reruns when THIS
+     cat's ring changes) would cost a deep-equality check to save a cheap
+     synchronous scan that only ever runs while an admin is already
+     mid-action — not worth it yet.
+
+     Deliberately not shown inside TerritoryGlyph's own caption: that
+     caption sits in a fixed-width column sized for "270 M ACROSS" and a
+     real street or landmark name can run well past it (shell.css's
+     `.territory-glyph-span` is `white-space: nowrap` in a `flex-shrink: 0`
+     box, for exactly the short caption it was written for) — rendered
+     instead in .plate-range-text below, which already wraps normally. */
+  const nearbyPlace = useMemo(() => {
+    return catRing ? nearestPlaceName?.(ringCentroid(catRing)) : undefined
+  }, [catRing, nearestPlaceName])
+
+  /* Same lookup as nearbyPlace above, asked about the pending report's own
+     point instead of the cat's territory centre — so the lock message below
+     can read "reported near Mitsukoshi BGC" instead of just "reported
+     recently", which named nothing a reader could place. Landmark name
+     only, never the coordinate itself: the same rounding-into-a-place-name
+     nearestPlaceName already does for every other on-screen mention of a
+     point (map/landmark.ts's own note on why 250m and "landmark, or
+     failing that a road" is the right precision for a sentence). */
+  const pendingPlace = useMemo(() => {
+    return oldestPending ? nearestPlaceName?.(oldestPending.point) : undefined
+  }, [oldestPending, nearestPlaceName])
+
+  /* Distance from the known range rather than a coordinate, phase 9: raw
+     lat/lng is exactly the precision an admin's own decision list should
+     not be printing, and there is no geocoder in an app built around one
+     offline .pmtiles file to turn it into a place name instead — this is
+     the "landmark, or failing that a highlight" fallback, same maths
+     ui/ReportSighting.tsx already shows a reporter before they submit. */
+  const describeReach = (point: [number, number]): string | null => {
+    if (!catRing) return null
+    const centre = ringCentroid(catRing)
+    const outside = Math.max(0, distanceM(centre, point) - ringRadiusM(catRing, centre))
+    return outside > 0 ? `${Math.round(outside)} m outside the known range` : 'Inside the known range'
+  }
+
+  /* This browser's own reports on this cat that nobody has reviewed yet.
+     They are here at all because of a deliberate exception in
+     catsRepo.listSightings: pending data reaches no public surface except
+     this one, and only ever the caller's own. */
+  const mine = useMemo(() => sightings.filter((sighting) => sighting.status === 'pending'), [sightings])
+
+  /* NOT narrowed to "not mine" below, and that took a second look to get
+     right. isOwnPending (data/sightings.ts) is true for every pending
+     sighting this browser can see at all: pending rows only ever live in
+     readSightings(), and that is also exactly what "own" is read from
+     (catsRepo.listSightings passes the same array as both). With no
+     backend and no login, this browser cannot tell "my report" apart from
+     "a report I happen to be able to see" — they are definitionally the
+     same set. Hiding the vote prompt whenever the oldest report is "mine"
+     would therefore hide it always, in the one environment anybody will
+     ever actually test this in. The prompt stays generic on purpose
+     rather than presuming a stranger made the report. */
+
+  /* The photographs on file for this cat. flatMap rather than filter-then-
+     map, so the absent case is removed and the type narrows in one pass. */
+  const photos = useMemo<StackCard[]>(
+    () =>
+      sightings.flatMap((sighting) =>
+        sighting.photo
+          ? [
+              {
+                id: sighting.id,
+                src: sighting.photo,
+                alt: `${cat.name}, photographed ${describeWhen(sighting.at)}`,
+                caption: describeWhen(sighting.at),
+              },
+            ]
+          : []
+      ),
+    [sightings, cat.name]
+  )
+
+  /* --- Admin editing -----------------------------------------------------
+     `editing` is the whole-plate mode the admin strip's "Update record"
+     opens; `openField` is which single field's inline editor is open
+     within it, one at a time. Leaving edit mode abandons whatever was
+     mid-edit rather than saving it, the same "cancel first, close second"
+     shape RecordCat's own Escape handler uses. */
+  const [editing, setEditing] = useState(false)
+  const [openField, setOpenField] = useState<string | null>(null)
+  const [savingField, setSavingField] = useState<string | null>(null)
+  const [fieldError, setFieldError] = useState<string | null>(null)
+  const [colourError, setColourError] = useState<string | null>(null)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [addingPhoto, setAddingPhoto] = useState(false)
+  const [addPhotoError, setAddPhotoError] = useState<string | null>(null)
+
+  const stopEditing = () => {
+    setEditing(false)
+    setOpenField(null)
+    setFieldError(null)
+    setConfirmingDelete(false)
+    setAddPhotoError(null)
+  }
+
+  const openFieldEditor = (id: string) => {
+    setOpenField(id)
+    setFieldError(null)
+  }
+
+  const saveField = async (id: string, patch: CatPatch) => {
+    setSavingField(id)
+    const ok = await updateCat(cat.id, patch)
+    setSavingField(null)
+    if (ok) {
+      setOpenField(null)
+      setFieldError(null)
+      onChanged?.()
+    } else {
+      setFieldError('Could not save. The field may be required.')
+    }
+  }
+
+  const saveColour = async (token: Colour) => {
+    setColourError(null)
+    const ok = await updateCat(cat.id, { colour: token })
+    if (ok) onChanged?.()
+    else setColourError('Could not save.')
+  }
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    setDeleteError(null)
+    const ok = await deleteCat(cat.id)
+    setDeleting(false)
+    if (ok) {
+      onChanged?.()
+      onClose()
+    } else {
+      setDeleteError('Could not delete. This browser may have storage turned off.')
+    }
+  }
+
+  /* Reorder only ever changes which photo leads the stack, never what the
+     survey considers "last seen" (sightings.ts's sortForDisplay says why),
+     so it only needs a local reload. Delete can remove the sighting behind
+     a cat's lastSeen, so it also tells the parent to re-derive the cats
+     list. */
+  const moveSighting = async (id: string, direction: 'up' | 'down') => {
+    if (await reorderSighting(cat.id, id, direction)) loadSightings()
+  }
+  const removeSightingRow = async (id: string) => {
+    if (await deleteSighting(id)) {
+      loadSightings()
+      onChanged?.()
+    }
+  }
+
+  /* An admin attaching a photo without waiting for a visitor to report one
+     first — the gap "Update record" used to leave: a cat recorded with only
+     its required cover photo (ui/RecordCat.tsx's own note on that field)
+     could sit with zero sightings and no way to add one short of a real
+     visitor's report. Pointed at the territory's own centre, the only
+     coordinate this surface has (same fallback describeReach above uses). */
+  const addPhoto = async (file: File | undefined) => {
+    if (!file || !catRing) return
+    setAddPhotoError(null)
+    setAddingPhoto(true)
+    try {
+      const compressed = await compressImage(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+      const ok = await addAdminPhoto(cat.id, ringCentroid(catRing), compressed)
+      if (ok) {
+        loadSightings()
+        onChanged?.()
+      } else {
+        setAddPhotoError('Could not save. This browser may have storage turned off.')
+      }
+    } catch {
+      setAddPhotoError('Could not read that photo. Try a different file.')
+    } finally {
+      setAddingPhoto(false)
+    }
+  }
+
+  /* A visitor's thumb, everyone's, phase 9. Local reload only, same reason
+     moveSighting above is: a vote changes a tally, never who is pending or
+     what the cat's record looks like elsewhere, so there is nothing for
+     onChanged to tell the rest of the app. */
+  const castVote = async (id: string, direction: 'up' | 'down') => {
+    if (await voteSighting(id, direction)) loadSightings()
+  }
+
+  /* An admin's verdict, reachable straight from the plate now rather than
+     only from the corner panel that used to own this (ui/ReviewQueue.tsx,
+     parked — see map/MapCanvas.tsx's note on why). Approving can move the
+     territory (data/catsRepo.ts's listTerritories applies the newest
+     SURVEYED sighting at read time, which this verdict may just have
+     created), so onChanged is required here, unlike the vote above.
+
+     Nothing landmark-specific happens here any more. It used to: an
+     earlier version looked up the sighting's own point on approval and
+     wrote the result into storage (catsRepo's setDerivedRange). That was
+     a write that could go stale (a cat's `range` kept whatever text was
+     written at ITS last approval, however out of date), and it duplicated
+     the "how big" figure TerritoryGlyph already owns. The glyph now reads
+     the live, translated ring itself (catRing, threaded through as its
+     `ring` prop) and asks nearestPlaceName about its own current centre on
+     every render, so approving a sighting is enough on its own — nothing
+     here has to remember to keep a second fact in sync. */
+  const decidePending = async (id: string, verdict: 'surveyed' | 'discarded') => {
+    if (!(await reviewSighting(id, verdict))) return
+    loadSightings()
+    onChanged?.()
+  }
 
   /* Escape closes. A panel this size that can only be dismissed by finding
      one small button is the single most common complaint about card UIs.
@@ -158,6 +531,28 @@ export function Plate({ cat, onClose, onReport }: Props) {
           transition={springSoft}
           className="plate-hero-photo"
           src={cat.photo}
+          /* The row's own THUMB_PX thumbnail, painted as a background
+             UNDER the full-size photograph rather than instead of it.
+
+             The row and the pin stopped fetching 640x480 (see THUMB_PX in
+             data/cats.seed.ts), which means the hero is now the first
+             request for the large file rather than a cache hit, and an
+             <img> renders nothing at all until it loads. Without this the
+             shared-element morph, which is the signature moment of this
+             app, would fly an empty frame out of the row on the first open
+             of every cat.
+
+             The small one is already in cache, because the row it flew out
+             of is what put it there, so it paints on the first frame. The
+             large one covers it the moment it arrives. Both are `cover` on
+             the same box, so the swap reads as sharpening rather than as
+             anything moving. Inline because the URL is per-cat: there is
+             nothing here a stylesheet could hold. */
+          style={{
+            backgroundImage: `url("${photoAt(cat.photo, THUMB_PX)}")`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+          }}
           alt={`${cat.name}, recorded on ${cat.line}`}
           onError={(e) => {
             e.currentTarget.style.visibility = 'hidden'
@@ -188,55 +583,201 @@ export function Plate({ cat, onClose, onReport }: Props) {
         <motion.p className="plate-eyebrow" variants={line}>
           {cat.line}
         </motion.p>
-        <motion.h2 variants={line}>{cat.name}</motion.h2>
-        <motion.p className="plate-sub" variants={line}>
-          {cat.description}
-        </motion.p>
+
+        <div className="admin-field-row">
+          <motion.h2 variants={line}>{cat.name}</motion.h2>
+          {admin && editing && openField !== 'name' && (
+            <FieldPencil label="name" onClick={() => openFieldEditor('name')} />
+          )}
+        </div>
+        {admin && editing && openField === 'name' && (
+          <FieldEditor
+            label="name"
+            value={cat.name}
+            maxLength={40}
+            busy={savingField === 'name'}
+            error={fieldError}
+            onSave={(next) => saveField('name', { name: next })}
+            onCancel={() => setOpenField(null)}
+          />
+        )}
+
+        <div className="admin-field-row">
+          <motion.p className="plate-sub" variants={line}>
+            {cat.description}
+          </motion.p>
+          {admin && editing && openField !== 'description' && (
+            <FieldPencil label="description" onClick={() => openFieldEditor('description')} />
+          )}
+        </div>
+        {admin && editing && openField === 'description' && (
+          <FieldEditor
+            label="description"
+            value={cat.description}
+            maxLength={90}
+            busy={savingField === 'description'}
+            error={fieldError}
+            onSave={(next) => saveField('description', { description: next })}
+            onCancel={() => setOpenField(null)}
+          />
+        )}
 
         {/* Range is promoted out of the field list and given the glyph,
-            because range is the only field whose value is a shape. The other
-            two are facts and stay set as facts. */}
+            because range is the only field paired with a shape. The shape
+            itself (the outline and its centre dot, TerritoryGlyph) is
+            never a pencil: it's read straight off the live polygon, plus
+            whatever sighting last translated it (catsRepo's
+            translateToward), so there is nothing there an admin could type
+            that wouldn't just make it lie about what's actually drawn on
+            the map.
+
+            2026-08-26: used to pair the shape with two lines of text — a
+            hand-authored "point A → point B" sentence (cat.range) plus this
+            nearest-place lookup underneath it in a smaller caption. Dropped
+            the hand-authored line on user feedback: two descriptions of the
+            same shape was more than a person needed, and "near X" is the one
+            that actually orients a reader standing in BGC. nearbyPlace is
+            still live-and-never-written the same way the shape is (see its
+            own useMemo above), so admin gets no pencil or lock here either —
+            there is nothing about this line an editor could ever be right
+            about. cat.range itself is untouched in the data (Rail.tsx's
+            search still reads it), just no longer shown here. */}
         <motion.div className="plate-range" variants={line}>
-          <TerritoryGlyph catId={cat.id} delay={0.3} />
+          <TerritoryGlyph ring={catRing} delay={0.3} />
           <div className="plate-range-text">
             <span className="plate-label">Range</span>
-            <span className="plate-value">{cat.range}</span>
+            {nearbyPlace && <span className="plate-value">{nearbyPlace}</span>}
           </div>
         </motion.div>
+
+        {admin && editing && (
+          <div className="plate-field admin-colour-field">
+            <span className="plate-label">Territory colour</span>
+            <div className="admin-swatches">
+              {CAT_COLOURS.map(({ token, label }) => (
+                <button
+                  key={token}
+                  type="button"
+                  className="admin-swatch"
+                  style={{ '--swatch': `var(${token})` } as React.CSSProperties}
+                  data-on={String(cat.colour === token)}
+                  aria-pressed={cat.colour === token}
+                  aria-label={label}
+                  disabled={savingField !== null}
+                  onClick={() => saveColour(token)}
+                />
+              ))}
+            </div>
+            {colourError && (
+              <p className="admin-edit-error" role="alert">
+                {colourError}
+              </p>
+            )}
+          </div>
+        )}
 
         {/* First among the fields when there is one, because it is the only
             fact on this card that changes. A visitor reported it (see
             ui/ReportSighting.tsx); everything below is the survey's own
-            record and does not move. */}
-        {cat.lastSeen && (
-          <motion.div className="plate-field" variants={line}>
-            <span className="plate-label">Last seen</span>
-            <span className="plate-value">{cat.lastSeen}</span>
-          </motion.div>
+            record and does not move — unless an admin corrects it directly,
+            which is what makes lastSeen editable at all: see catsRepo's
+            CatPatch for why a normally-derived field is on that list. */}
+        {(cat.lastSeen || (admin && editing)) && (
+          <>
+            <div className="admin-field-row">
+              <motion.div className="plate-field" variants={line}>
+                <span className="plate-label">Last seen</span>
+                <span className="plate-value">{cat.lastSeen || 'Not yet observed'}</span>
+              </motion.div>
+              {admin && editing && openField !== 'lastSeen' && (
+                <FieldPencil label="last seen" onClick={() => openFieldEditor('lastSeen')} />
+              )}
+            </div>
+            {admin && editing && openField === 'lastSeen' && (
+              <FieldEditor
+                label="last seen"
+                value={cat.lastSeen ?? ''}
+                maxLength={40}
+                busy={savingField === 'lastSeen'}
+                error={fieldError}
+                onSave={(next) => saveField('lastSeen', { lastSeen: next })}
+                onCancel={() => setOpenField(null)}
+              />
+            )}
+          </>
         )}
 
-        <motion.div className="plate-field" variants={line}>
-          <span className="plate-label">First recorded</span>
-          <span className="plate-value">{cat.firstRecorded}</span>
-        </motion.div>
-        <motion.div className="plate-field" variants={line}>
-          <span className="plate-label">Disposition</span>
-          <span className="plate-value">{cat.disposition}</span>
-        </motion.div>
-
-        {/* Last, and only when there is one. It is the one field that is a
-            sentence rather than a value, so it reads as the observation the
-            other fields were the measurements for, and it needs no styling
-            of its own: .plate-value already wraps at a readable line height.
-
-            Rendered conditionally rather than as an empty row, see the note
-            on Cat.note. An orphaned label with nothing under it reads as
-            data that failed to load rather than data that does not exist. */}
-        {cat.note && (
+        <div className="admin-field-row">
           <motion.div className="plate-field" variants={line}>
-            <span className="plate-label">Field note</span>
-            <span className="plate-value">{cat.note}</span>
+            <span className="plate-label">First recorded</span>
+            <span className="plate-value">{cat.firstRecorded}</span>
           </motion.div>
+          {admin && editing && openField !== 'firstRecorded' && (
+            <FieldPencil label="first recorded" onClick={() => openFieldEditor('firstRecorded')} />
+          )}
+        </div>
+        {admin && editing && openField === 'firstRecorded' && (
+          <FieldEditor
+            label="first recorded"
+            value={cat.firstRecorded}
+            maxLength={24}
+            busy={savingField === 'firstRecorded'}
+            error={fieldError}
+            onSave={(next) => saveField('firstRecorded', { firstRecorded: next })}
+            onCancel={() => setOpenField(null)}
+          />
+        )}
+
+        <div className="admin-field-row">
+          <motion.div className="plate-field" variants={line}>
+            <span className="plate-label">Disposition</span>
+            <span className="plate-value">{cat.disposition}</span>
+          </motion.div>
+          {admin && editing && openField !== 'disposition' && (
+            <FieldPencil label="disposition" onClick={() => openFieldEditor('disposition')} />
+          )}
+        </div>
+        {admin && editing && openField === 'disposition' && (
+          <FieldEditor
+            label="disposition"
+            value={cat.disposition}
+            maxLength={90}
+            busy={savingField === 'disposition'}
+            error={fieldError}
+            onSave={(next) => saveField('disposition', { disposition: next })}
+            onCancel={() => setOpenField(null)}
+          />
+        )}
+
+        {/* Last, and only when there is one — unless an admin is editing,
+            in which case the row stays so there is somewhere to add one.
+            Rendered conditionally otherwise, see the note on Cat.note. An
+            orphaned label with nothing under it reads as data that failed
+            to load rather than data that does not exist. */}
+        {(cat.note || (admin && editing)) && (
+          <>
+            <div className="admin-field-row">
+              <motion.div className="plate-field" variants={line}>
+                <span className="plate-label">Field note</span>
+                <span className="plate-value">{cat.note || 'Nothing recorded yet.'}</span>
+              </motion.div>
+              {admin && editing && openField !== 'note' && (
+                <FieldPencil label="field note" onClick={() => openFieldEditor('note')} />
+              )}
+            </div>
+            {admin && editing && openField === 'note' && (
+              <FieldEditor
+                label="field note"
+                value={cat.note ?? ''}
+                multiline
+                maxLength={220}
+                busy={savingField === 'note'}
+                error={fieldError}
+                onSave={(next) => saveField('note', { note: next })}
+                onCancel={() => setOpenField(null)}
+              />
+            )}
+          </>
         )}
 
         {/* What the survey has actually seen, as opposed to what it wrote
@@ -254,6 +795,81 @@ export function Plate({ cat, onClose, onReport }: Props) {
           <motion.div className="plate-sightings" variants={line}>
             <span className="plate-label">Sightings</span>
             <CardStack cards={photos} label={`Photographs of ${cat.name}`} />
+          </motion.div>
+        )}
+
+        {/* An admin's management view of the whole log, not just the
+            photographed subset the stack above shows. Additive rather than
+            a replacement for the stack: the stack's drag interaction is
+            tuned for browsing, not for a list with delete buttons on it, so
+            this is a second, plainer view rather than a rebuilt first one.
+
+            Rendered whenever editing, not gated on sightings.length any
+            more: a cat recorded with only its required cover photo and no
+            extra photos (ui/RecordCat.tsx) lands with an empty list, and
+            that used to mean this section, the only place "Update record"
+            could add a photo, never appeared at all. The list itself stays
+            conditional; the uploader below it does not. */}
+        {admin && editing && (
+          <motion.div className="admin-sightings" variants={line}>
+            <span className="plate-label">Manage sightings</span>
+            {sightings.length > 0 && (
+              <ul className="admin-sighting-list">
+                {sightings.map((sighting, i) => (
+                  <li key={sighting.id} className="admin-sighting-row">
+                    <span className="admin-sighting-when">
+                      {describeWhen(sighting.at)}
+                      {sighting.status !== 'surveyed' && (
+                        <span className="admin-sighting-status" data-status={sighting.status}>
+                          {sighting.status}
+                        </span>
+                      )}
+                    </span>
+                    <span className="admin-sighting-controls">
+                      <button
+                        type="button"
+                        aria-label="Move earlier in the stack"
+                        disabled={i === 0}
+                        onClick={() => moveSighting(sighting.id, 'up')}
+                      >
+                        <ChevronUp size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Move later in the stack"
+                        disabled={i === sightings.length - 1}
+                        onClick={() => moveSighting(sighting.id, 'down')}
+                      >
+                        <ChevronDown size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="admin-sighting-delete"
+                        aria-label="Delete this sighting"
+                        onClick={() => removeSightingRow(sighting.id)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <label className="admin-sighting-add" data-disabled={String(!catRing || addingPhoto)}>
+              <Plus size={13} />
+              {addingPhoto ? 'Adding…' : 'Add a photo'}
+              <input
+                type="file"
+                accept="image/*"
+                disabled={!catRing || addingPhoto}
+                onChange={(e) => void addPhoto(e.target.files?.[0])}
+              />
+            </label>
+            {addPhotoError && (
+              <p className="admin-edit-error" role="alert">
+                {addPhotoError}
+              </p>
+            )}
           </motion.div>
         )}
 
@@ -279,7 +895,7 @@ export function Plate({ cat, onClose, onReport }: Props) {
                   type="button"
                   onClick={() => {
                     void withdrawSighting(sighting.id).then((gone) => {
-                      if (gone) setMine((rest) => rest.filter((s) => s.id !== sighting.id))
+                      if (gone) loadSightings()
                     })
                   }}
                 >
@@ -300,16 +916,187 @@ export function Plate({ cat, onClose, onReport }: Props) {
             fields above are what the survey knows, and this is a thing to
             do about them. Outlined rather than filled, because the plate is
             a record first and an invitation second. */}
-        {onReport && (
-          <motion.button
-            type="button"
-            className="plate-report"
-            variants={line}
-            onClick={() => onReport(cat.id)}
-          >
-            <MapPin size={13} />
-            I saw {cat.name} here
-          </motion.button>
+        {/* An admin's decision list, phase 9. Reachable straight off the
+            record rather than buried behind "Update record" the way the
+            plainer sightings manager below it is: this is the thing an
+            admin most likely opened the plate to do, so it does not wait
+            on a second click to appear. Replaces ui/ReviewQueue.tsx's own
+            approve/discard controls (map/MapCanvas.tsx's note has the
+            reasoning); reuses that panel's .review-yes/.review-no pill
+            styling since the action is the same one, just relocated. */}
+        {admin && pendingForCat.length > 0 && (
+          <motion.div className="admin-pending" variants={line}>
+            <span className="plate-label admin-strip-label">
+              Pending review
+              {pendingForCat.length > 1 && ` (${pendingForCat.length})`}
+            </span>
+            <ul className="admin-pending-list">
+              {pendingForCat.map((sighting) => (
+                <li key={sighting.id} className="admin-pending-row">
+                  {sighting.photo && (
+                    <img src={sighting.photo} alt="" className="admin-pending-photo" />
+                  )}
+                  <div className="admin-pending-info">
+                    <span className="admin-pending-when">{describeWhen(sighting.at)}</span>
+                    {describeReach(sighting.point) && (
+                      <span className="admin-pending-point">{describeReach(sighting.point)}</span>
+                    )}
+                    {/* Only when somebody has actually voted: an admin
+                        reading "0 up, 0 down" on every row learns nothing a
+                        blank row would not already say. */}
+                    {sighting.votes && (sighting.votes.up > 0 || sighting.votes.down > 0) && (
+                      <span className="admin-pending-votes">
+                        <ThumbsUp size={11} aria-hidden /> {sighting.votes.up}
+                        <ThumbsDown size={11} aria-hidden /> {sighting.votes.down}
+                      </span>
+                    )}
+                  </div>
+                  <div className="admin-pending-actions">
+                    <button
+                      type="button"
+                      className="review-no"
+                      onClick={() => void decidePending(sighting.id, 'discarded')}
+                    >
+                      <X size={13} />
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="review-yes"
+                      onClick={() => void decidePending(sighting.id, 'surveyed')}
+                    >
+                      <Check size={13} />
+                      Approve
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </motion.div>
+        )}
+
+        {/* Phase 9: a cat with an open report locks out a second one rather
+            than collecting an independent point nobody will ever compare
+            against the first — that duplication is the exact thing this
+            replaces. Everyone gets this, not only admin: it is the
+            public-facing half of review becoming visible instead of silent.
+            The exact point lives on the map (map/Territories.tsx's ghost,
+            opened to every visitor 2026-08-26) and in the landmark name
+            named below (pendingPlace) — this text is the words-only version
+            of the same claim, no diagram of its own since TerritoryGlyph's
+            pending mark was removed the same day on user feedback. A vote
+            is this browser's own thumb, and only ever this browser's — see
+            Sighting.votes' own note on why that is an honest count rather
+            than a real crowd tally. */}
+        {oldestPending ? (
+          <motion.div className="plate-locked" variants={line}>
+            <p className="plate-locked-msg">
+              <Lock size={12} aria-hidden />A sighting of {cat.name} was reported
+              {pendingPlace ? ` ${pendingPlace.replace(/^Near /, 'near ')}` : ''} recently and is
+              awaiting review. Does that match what you saw?
+            </p>
+            <div className="plate-vote">
+              <button
+                type="button"
+                className="plate-vote-btn"
+                data-on={String(oldestPending.myVote === 'up')}
+                aria-pressed={oldestPending.myVote === 'up'}
+                onClick={() => void castVote(oldestPending.id, 'up')}
+              >
+                <ThumbsUp size={13} />
+                {oldestPending.votes?.up ?? 0}
+              </button>
+              <button
+                type="button"
+                className="plate-vote-btn"
+                data-on={String(oldestPending.myVote === 'down')}
+                aria-pressed={oldestPending.myVote === 'down'}
+                onClick={() => void castVote(oldestPending.id, 'down')}
+              >
+                <ThumbsDown size={13} />
+                {oldestPending.votes?.down ?? 0}
+              </button>
+            </div>
+          </motion.div>
+        ) : (
+          /* Either nothing is pending (the normal case, report offered), or
+             the only thing pending is this visitor's own report — and "Your
+             reports" above already said so, with a Withdraw button. Voting
+             on your own submission is not a real question, so this renders
+             nothing rather than a prompt with no honest answer. */
+          !oldestPending &&
+          onReport && (
+            <motion.button
+              type="button"
+              className="plate-report"
+              variants={line}
+              onClick={() => onReport(cat.id)}
+            >
+              <MapPin size={13} />
+              I saw {cat.name} here
+            </motion.button>
+          )
+        )}
+
+        {/* The admin strip: the one place on the card that is not part of
+            the record itself, which is why it sits apart from the fields
+            above rather than styled as one of them. Hidden entirely for
+            anyone not holding ?role=admin, not merely styled away. */}
+        {admin && (
+          <motion.div className="admin-strip" variants={line}>
+            <span className="plate-label admin-strip-label">Admin</span>
+            {!confirmingDelete ? (
+              <div className="admin-actions">
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-update"
+                  data-on={String(editing)}
+                  onClick={() => (editing ? stopEditing() : setEditing(true))}
+                >
+                  <Pencil size={13} />
+                  {editing ? 'Done editing' : 'Update record'}
+                </button>
+                <button
+                  type="button"
+                  className="admin-btn admin-btn-delete"
+                  onClick={() => setConfirmingDelete(true)}
+                >
+                  <Trash2 size={13} />
+                  Delete
+                </button>
+              </div>
+            ) : (
+              <div className="admin-confirm">
+                <p>
+                  Delete {cat.name}'s record? Its territory and every photograph attached to it go
+                  with it. This cannot be undone.
+                </p>
+                {deleteError && (
+                  <p className="admin-edit-error" role="alert">
+                    {deleteError}
+                  </p>
+                )}
+                <div className="admin-confirm-actions">
+                  <button
+                    type="button"
+                    className="admin-btn"
+                    onClick={() => setConfirmingDelete(false)}
+                    disabled={deleting}
+                  >
+                    Keep record
+                  </button>
+                  <button
+                    type="button"
+                    className="admin-btn admin-btn-delete-confirm"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete forever'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </motion.div>
         )}
       </motion.div>
 

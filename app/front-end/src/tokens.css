@@ -74,6 +74,30 @@
   --t-3xl: 2.441rem;
   --t-4xl: 3.052rem;
 
+  /* --- The unsafe edges, aliased once -----------------------------------
+     The notch, the home indicator, the rounded corners, the landscape ear.
+     env() is only ever non-zero when the page has asked to paint under
+     them, which is what `viewport-fit=cover` in head.html does; before
+     that meta was corrected these all resolved to 0 and every
+     safe-area rule in shell.css was inert while reading as if it were
+     doing something.
+
+     Aliased here rather than written out at each of the twenty-odd fixed
+     surfaces that need one, for the same reason every other size in this
+     app is a token: `calc(var(--s-6) + var(--safe-l))` states the
+     intention, and `env(safe-area-inset-left, 0px)` repeated twenty times
+     states the mechanism. The 0px fallback is not decoration either: a
+     browser that does not know env() at all drops the whole declaration,
+     and a dropped `left` on a position: fixed panel is a panel in the
+     wrong corner.
+
+     Not per-theme and never redefined, unlike every other token in this
+     file. They describe the device, not the design. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+
   /* Space — 8px base */
   --s-1: 0.25rem;
   --s-2: 0.5rem;

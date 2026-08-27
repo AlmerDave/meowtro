@@ -21,6 +21,26 @@ export function useLenis() {
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
 
+    /* Nothing to smooth, so nothing is started.
+
+       The app shell is a fixed, single-screen map: html, body and #root are
+       all height 100% and every surface over them is position: fixed, so
+       the document's scroll height equals its client height and there is no
+       scroll for Lenis to take over. It ran anyway, which cost two things
+       rather than one. A gsap.ticker with a listener on it holds a
+       requestAnimationFrame loop open for the life of the page, and Lenis
+       calls preventDefault() on wheel by default, so every internally
+       scrollable panel in this app needs data-lenis-prevent to get its own
+       events back. The second of those has already cost this project a
+       debugging session (see ui/Rail.tsx's note on .rail-list).
+
+       Measured rather than gated on a flag, and measured at mount rather
+       than assumed forever: the check is two property reads, and the day a
+       ScrollTrigger lands and gives the page real scroll height, this
+       starts by itself with no edit here. Every data-lenis-prevent already
+       in the tree keeps meaning what it means. */
+    if (document.documentElement.scrollHeight <= document.documentElement.clientHeight) return
+
     const lenis = new Lenis({ autoRaf: false })
     lenis.on('scroll', ScrollTrigger.update)
     const tick = (time: number) => lenis.raf(time * 1000)

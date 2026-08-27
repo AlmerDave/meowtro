@@ -190,7 +190,15 @@ body:has(.landing) {
   align-items: center;
   justify-content: space-between;
   gap: var(--s-4);
-  padding: clamp(1rem, 2cqw, 1.6rem) clamp(1.1rem, 2.4cqw, 2rem);
+  /* Padded off the physical edges, not the layout ones: head.html asks for
+     viewport-fit=cover so the city paints under the notch, which means
+     every surface on top of it has to hold itself clear. Folded into the
+     existing clamp() rather than added as a second declaration, so the
+     comfortable-width rhythm below 2cqw is unchanged where there is no
+     inset to add. */
+  padding: calc(clamp(1rem, 2cqw, 1.6rem) + var(--safe-t))
+    calc(clamp(1.1rem, 2.4cqw, 2rem) + var(--safe-r)) clamp(1rem, 2cqw, 1.6rem)
+    calc(clamp(1.1rem, 2.4cqw, 2rem) + var(--safe-l));
   transition:
     opacity var(--dur-panel) var(--ease-out),
     translate var(--dur-panel) var(--ease-move);
@@ -264,8 +272,8 @@ body:has(.landing) {
 .landing-guide {
   position: fixed;
   z-index: 5;
-  left: clamp(1rem, 2.4cqw, 2.2rem);
-  bottom: clamp(1rem, 2.4cqw, 2.2rem);
+  left: calc(clamp(1rem, 2.4cqw, 2.2rem) + var(--safe-l));
+  bottom: calc(clamp(1rem, 2.4cqw, 2.2rem) + var(--safe-b));
   width: min(400px, calc(100% - 2rem));
   display: flex;
   flex-direction: column;
@@ -457,7 +465,7 @@ body:has(.landing) {
   position: fixed;
   z-index: 5;
   left: 50%;
-  bottom: clamp(1rem, 2.4cqw, 2.2rem);
+  bottom: calc(clamp(1rem, 2.4cqw, 2.2rem) + var(--safe-b));
   transform: translateX(-50%);
   display: flex;
   align-items: center;
@@ -531,7 +539,18 @@ body:has(.landing) {
   display: flex;
   align-items: center;
   gap: var(--s-4);
-  padding: var(--s-6) var(--s-6) var(--s-6) var(--s-8);
+  /* The flush corner IS the design here, so the inset goes into the
+     padding: the ink block still runs to the physical edge of the screen
+     and only the words move in off the home indicator. Detaching the box
+     from the corner instead would leave a strip of map under it and turn
+     a bled shape into a floating one.
+
+     Only the right and bottom insets: this box is anchored to the
+     bottom-right and never touches the other two edges, so folding --safe-l
+     into its leading padding would only make it wider on a device whose
+     notch is nowhere near it. */
+  padding: var(--s-6) calc(var(--s-6) + var(--safe-r)) calc(var(--s-6) + var(--safe-b))
+    var(--s-8);
   border-top-left-radius: clamp(1.5rem, 3cqw, 3rem);
   background: var(--ink);
   color: var(--paper);
@@ -597,8 +616,8 @@ body:has(.landing) {
    Lifted clear of the Explore button, which owns the bottom-right corner
    and was running straight over it. */
 .landing .maplibregl-ctrl-bottom-right {
-  bottom: 6.5rem;
-  right: var(--s-2);
+  bottom: calc(6.5rem + var(--safe-b));
+  right: calc(var(--s-2) + var(--safe-r));
 }
 
 /* --- focus ------------------------------------------------------------- */
@@ -647,9 +666,9 @@ body:has(.landing) {
 @container landing (max-width: 1180px) {
   .reel-bar {
     left: auto;
-    right: clamp(1rem, 2.4cqw, 2.2rem);
+    right: calc(clamp(1rem, 2.4cqw, 2.2rem) + var(--safe-r));
     bottom: auto;
-    top: 5rem;
+    top: calc(5rem + var(--safe-t));
     transform: none;
   }
 
@@ -690,9 +709,9 @@ body:has(.landing) {
      no word beside it is a button whose only label is a direction. */
 
   .landing-guide {
-    left: var(--s-3);
-    right: var(--s-3);
-    bottom: var(--s-3);
+    left: calc(var(--s-3) + var(--safe-l));
+    right: calc(var(--s-3) + var(--safe-r));
+    bottom: calc(var(--s-3) + var(--safe-b));
     width: auto;
     padding: var(--s-4);
   }
@@ -712,6 +731,35 @@ body:has(.landing) {
     height: 52px;
   }
 
+  /* Stacked, not a row. Five 52px chips overlapped at -12px plus the "+7"
+     counter is a fixed 252px, and the card's own content box at 390px is
+     334px: the name and description beside them were being squeezed into
+     roughly 66px, which at --t-xs is about six characters a line. A
+     description set two words at a time is not a description.
+
+     Stacking is the whole fix and it costs nothing else: the chips keep
+     their row, the copy gets the card's full width underneath them, and
+     the desktop layout (where 400px of card leaves the copy real room
+     beside the chips) is untouched. */
+  .landing-roster {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--s-3);
+  }
+
+  /* The two remaining sub-44px targets on this page. The tick is the
+     reel's only control and was 24px tall; the pill is the door to admin
+     mode. Sized rather than padded: the tick centres its own 15x3 mark on
+     ::after, so the box can grow without the mark moving. */
+  .reel-tick {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .landing-signin {
+    min-height: 2.75rem;
+  }
+
   /* Follows the chips it is counting, or the row steps down at the end. */
   .landing-chip-more {
     width: 52px;
@@ -727,16 +775,16 @@ body:has(.landing) {
      spans the frame, so a corner is not a corner here. It takes the first
      row and the reel sits under it. */
   .landing .maplibregl-ctrl-bottom-right {
-    top: 4.4rem;
+    top: calc(4.4rem + var(--safe-t));
     bottom: auto;
-    right: var(--s-3);
-    left: var(--s-3);
+    right: calc(var(--s-3) + var(--safe-r));
+    left: calc(var(--s-3) + var(--safe-l));
   }
 
   .reel-bar {
-    top: 8.6rem;
+    top: calc(8.6rem + var(--safe-t));
     bottom: auto;
-    left: var(--s-3);
+    left: calc(var(--s-3) + var(--safe-l));
     right: auto;
     transform: none;
   }

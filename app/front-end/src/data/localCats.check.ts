@@ -19,16 +19,16 @@ for (const point of round) {
 }
 
 // A ring is a closed GeoJSON polygon boundary: first point repeats last.
-for (const shape of ['round', 'elongated', 'notched', 'blocky'] as Shape[]) {
+for (const shape of ['round', 'elongated', 'notched', 'blocky', 'ragged'] as Shape[]) {
   const ring = shapeRing(shape, CENTER, RADIUS)
   assert.deepEqual(ring[0], ring[ring.length - 1], `${shape} ring does not close`)
   assert.equal(ring.length, 49, `${shape} ring should have 48 steps plus the closing point`)
 }
 
-// The three new templates must not be circles: at least one point has to
-// sit meaningfully nearer or farther than RADIUS, or the shape picker
-// would just be three names for the same silhouette.
-for (const shape of ['elongated', 'notched', 'blocky'] as Shape[]) {
+// The four borrowed-outline templates must not be circles: at least one
+// point has to sit meaningfully nearer or farther than RADIUS, or the shape
+// picker would just be four names for the same silhouette.
+for (const shape of ['elongated', 'notched', 'blocky', 'ragged'] as Shape[]) {
   const ring = shapeRing(shape, CENTER, RADIUS)
   const distances = ring.map((point) => distanceM(CENTER, point))
   const spread = Math.max(...distances) - Math.min(...distances)
@@ -69,7 +69,7 @@ assert.equal(isStored(base), true, 'a valid StoredCat with a real shape was reje
 assert.equal(
   isStored({ ...base, shape: 'triangle' }),
   false,
-  'isStored accepted a shape that is not one of the four templates'
+  'isStored accepted a shape that is not one of the five templates'
 )
 assert.equal(isStored({ ...base, shape: undefined }), false, 'isStored accepted a missing shape')
 

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion, useDragControls } from 'motion/react'
 import { X } from 'lucide-react'
+import type { FeatureCollection, Polygon } from 'geojson'
 import type { Cat } from '@/data/catsRepo'
 import type { Request } from '@/App'
 import { CatRow } from '@/ui/CatRow'
@@ -58,9 +59,27 @@ type Props = {
   record?: Request | null
   /** Report a sighting for a cat, from its plate. */
   onReport?: (id: string) => void
+  /** Passed straight through to the plate. See plate/Plate.tsx's own Props
+      for what each does; this component has no admin business of its own,
+      it just has the only <Plate> mobile ever mounts. */
+  admin?: boolean
+  onChanged?: () => void
+  territories: FeatureCollection<Polygon>
+  nearestPlaceName?: (point: [number, number]) => string | null
 }
 
-export function CatDeck({ cats, selectedId, onSelect, onHover, record, onReport }: Props) {
+export function CatDeck({
+  cats,
+  selectedId,
+  onSelect,
+  onHover,
+  record,
+  onReport,
+  admin,
+  onChanged,
+  territories,
+  nearestPlaceName,
+}: Props) {
   /* Local, not lifted to App. Selection is shared with the map and belongs
      upstairs; "is the plate open" is this presentation's own business and
      the desktop rail has no equivalent of it, there, selection and open are
@@ -356,6 +375,10 @@ export function CatDeck({ cats, selectedId, onSelect, onHover, record, onReport 
                 <Plate
                   cat={expanded}
                   onClose={collapse}
+                  admin={admin}
+                  onChanged={onChanged}
+                  territories={territories}
+                  nearestPlaceName={nearestPlaceName}
                   onReport={
                     onReport &&
                     ((id) => {

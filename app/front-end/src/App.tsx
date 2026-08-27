@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { AnimatePresence, MotionConfig } from 'motion/react'
+import { ShieldCheck } from 'lucide-react'
+import type { Map as MapLibreMap } from 'maplibre-gl'
 import { Grain } from '@/Grain'
-import { MapCanvas } from '@/map/MapCanvas'
+import { MapCanvas, useMap } from '@/map/MapCanvas'
+import { nearestPlaceName } from '@/map/landmark'
 import { Plate } from '@/plate/Plate'
 import { useLenis } from '@/motion/lenis'
 import { springSoft } from '@/motion/springs'
@@ -10,6 +13,37 @@ import { CatDeck } from '@/ui/CatDeck'
 import { Loading } from '@/ui/Loading'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
 import type { FeatureCollection, Polygon } from 'geojson'
+
+/* The one legal way to reach the live MapLibre instance from Plate.tsx,
+   which sits outside <MapCanvas>'s own tree (App.tsx renders it as a
+   sibling) and so cannot call useMap() itself — that hook throws unless
+   it is used somewhere MapCanvas actually rendered. MapCanvas's own
+   `children` prop already exists for exactly this ("a child can drive
+   isFlat, theme and weather through useMap()"); this is the first caller
+   besides the landing's reel.
+
+   2026-08-26: used to mount only under `admin`, on the assumption that
+   findNearestPlace below was "a feature only Approve uses" — wrong once
+   the plate's own Range line and pending-sighting message started reading
+   it for every visitor (Plate.tsx's nearbyPlace/pendingPlace). Gating this
+   on admin silently broke both for a regular visitor: mapRef.current never
+   got set, so findNearestPlace always returned null and neither line ever
+   showed anything, with no error to notice. Unconditional now. */
+function MapInstanceBridge({ onMap }: { onMap: (map: MapLibreMap | null) => void }) {
+  const { map } = useMap()
+  useEffect(() => {
+    onMap(map)
+    /* Handed back on the way out. Without this the ref keeps whatever
+       instance was current when this unmounted, and MapCanvas' own cleanup
+       has by then called instance.remove(): findNearestPlace would go on
+       calling querySourceFeatures on a destroyed map rather than returning
+       null the way it already does before one exists. StrictMode reaches
+       exactly this state on every dev mount, and so does the real app if
+       MapCanvas is ever remounted. */
+    return () => onMap(null)
+  }, [map, onMap])
+  return null
+}
 
 /* 900px, rev 6 §4: the rail is 15rem and the plate 26.25rem, so with gutters
    the two collide somewhere just above 700px. 900 leaves margin rather than
@@ -191,6 +225,37 @@ export default function App() {
      sheet was still covering them, and the whole point of the reveal is that
      it reveals something arriving. */
   const admin = useAdmin()
+
+  /* Same reactive-attribute shape ui/ReportSighting.tsx already uses for
+     `data-placing`: a body-level attribute is what lets shell.css reserve
+     room for the admin banner below (.rail/.plate's `top`) without
+     threading a boolean prop through components that have no other reason
+     to know about it. `admin` never changes after mount (useAdmin's own
+     note), so this effect only ever runs once — still an effect, not a
+     bare assignment during render, for the same reason every other DOM
+     side effect in this app is one. */
+  useEffect(() => {
+    document.body.dataset.admin = String(admin)
+  }, [admin])
+
+  /* Fed by MapInstanceBridge above, not state: the plate calling this on
+     an Approve click needs today's instance, not a value captured at
+     whatever render last passed it down, and a ref is exactly "read it
+     when it's needed" without re-rendering Rail/Plate/CatDeck every time
+     the map itself mounts or unmounts. setMapInstance is its own stable
+     callback, not an inline arrow at the JSX below, so MapInstanceBridge's
+     effect depends on an identity that never changes and only re-fires
+     when `map` itself actually does — an inline arrow would give it a
+     fresh identity on every App render (a cat hovered, a selection made)
+     for no reason, since all it ever does is write one ref. */
+  const mapRef = useRef<MapLibreMap | null>(null)
+  const setMapInstance = useCallback((map: MapLibreMap | null) => {
+    mapRef.current = map
+  }, [])
+  const findNearestPlace = useCallback((point: [number, number]) => {
+    return mapRef.current ? nearestPlaceName(mapRef.current, point) : null
+  }, [])
+
   const [mapReady, setMapReady] = useState(false)
   const [opened, setOpened] = useState(false)
   const isMobile = useIsMobile()
@@ -343,8 +408,28 @@ export default function App() {
         onOpenRecord={openRecord}
         report={report}
         admin={admin}
-      />
+      >
+        <MapInstanceBridge onMap={setMapInstance} />
+      </MapCanvas>
       <Grain />
+
+      {/* The admin's tell that the gate is open, phase 9 — a corner pill
+          went unnoticed (user report), this is the replacement: a strip
+          nobody can land on the app and miss. z-index 7 (shell.css) puts
+          it above every panel and below the loading curtain (10), so it
+          is already true the moment the curtain lifts rather than a beat
+          late; the curtain covering it until then is fine, nothing else
+          is visible yet either. Unconditional on `admin` alone, not
+          `opened`: .rail/.plate read the SAME `--admin-banner-h` this
+          mounting drives (via body[data-admin], the effect above) to
+          reserve their own room, and that reservation has to be in effect
+          before they first paint, not after. */}
+      {admin && (
+        <div className="admin-banner" role="status">
+          <ShieldCheck size={13} aria-hidden />
+          Admin mode
+        </div>
+      )}
 
       {/* Above everything until the map has actually painted. A sibling of
           the map rather than a wrapper around it, deliberately: the map has
@@ -376,6 +461,10 @@ export default function App() {
           onHover={setHoveredId}
           record={record}
           onReport={startReport}
+          admin={admin}
+          onChanged={onRecorded}
+          territories={territories}
+          nearestPlaceName={findNearestPlace}
         />
       ) : (
         <>
@@ -393,7 +482,16 @@ export default function App() {
               two mounted plates would fight over it. */}
           <AnimatePresence mode="wait">
             {selected && (
-              <Plate key={selected.id} cat={selected} onClose={close} onReport={startReport} />
+              <Plate
+                key={selected.id}
+                cat={selected}
+                onClose={close}
+                onReport={startReport}
+                admin={admin}
+                onChanged={onRecorded}
+                territories={territories}
+                nearestPlaceName={findNearestPlace}
+              />
             )}
           </AnimatePresence>
         </>
