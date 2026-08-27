@@ -10,7 +10,7 @@ import { getStorage } from 'firebase/storage'
 
    VITE_* rather than plain env names: Vite only exposes prefixed vars to
    client code (anything else is a server-only secret it deliberately
-   strips), and an API key here is public by design — Firebase's real
+   strips), and an API key here is public by design: Firebase's real
    access control is Firestore/Storage Security Rules, not this key. */
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,

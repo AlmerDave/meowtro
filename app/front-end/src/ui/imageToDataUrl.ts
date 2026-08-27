@@ -1,8 +1,12 @@
-/* Turns an uploaded photo into a downscaled, re-encoded JPEG, as a data
-   URI (compressImage, unchanged call sites: RecordCat's live preview) or
-   as a Blob (compressImageToBlob, new: what data/photoUpload.ts actually
-   uploads to Storage). Both share one resize calculation so "how big does
-   this end up" can never drift between the two output shapes.
+/* Turns an uploaded photo into a downscaled, re-encoded JPEG Blob, which
+   is what data/photoUpload.ts hands to Storage.
+
+   The file name is a fossil: it once exported a data-URI version too
+   (compressImage), for when a photo's whole life was a base64 string in
+   localStorage. Phase 9 moved every caller to the Blob, and the data-URI
+   half is deleted rather than parked, unlike plate/CatFigure.tsx: that one
+   is a working feature somebody may want back, this was a storage detail
+   for a store that no longer exists.
 
    ponytail: a fixed max-dimension downscale, not a real image pipeline,
    no format negotiation, no multiple sizes generated. Upgrade to a resize
@@ -66,19 +70,13 @@ async function drawScaled(file: File, maxDim: number): Promise<HTMLCanvasElement
   return canvas
 }
 
-/** Downscales `file` so its longest edge is at most `maxDim` pixels
-    and re-encodes it as a JPEG data URI at `quality` (0-1). Rejects if
-    the file cannot be read as an image at all, the caller is expected
-    to catch this and show it as a form error. */
-export async function compressImage(file: File, maxDim: number, quality: number): Promise<string> {
-  const canvas = await drawScaled(file, maxDim)
-  return canvas.toDataURL('image/jpeg', quality)
-}
-
-/** Same downscale, encoded as a Blob instead of a data URI, what
-    data/photoUpload.ts uploads to Storage. A Blob rather than converting
-    an existing data URI back to one: canvas.toBlob is the direct route
-    and avoids a base64-decode round trip for no reason. */
+/** Downscales `file` so its longest edge is at most `maxDim` pixels and
+    re-encodes it as a JPEG Blob at `quality` (0-1), which is what
+    data/photoUpload.ts uploads to Storage. Rejects if the file cannot be
+    read as an image at all, and every caller catches that and shows it as
+    a form error. canvas.toBlob directly rather than a data URI converted
+    back into one: it is the route the platform provides, and it avoids a
+    base64 round trip for no reason. */
 export function compressImageToBlob(file: File, maxDim: number, quality: number): Promise<Blob> {
   return drawScaled(file, maxDim).then(
     (canvas) =>

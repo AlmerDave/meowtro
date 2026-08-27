@@ -331,23 +331,28 @@ export function Plate({
     return outside > 0 ? `${Math.round(outside)} m outside the known range` : 'Inside the known range'
   }
 
-  /* This browser's own reports on this cat that nobody has reviewed yet.
+  /* This visitor's own reports on this cat that nobody has reviewed yet.
      They are here at all because of a deliberate exception in
      catsRepo.listSightings: pending data reaches no public surface except
      this one, and only ever the caller's own. */
   const mine = useMemo(() => sightings.filter((sighting) => sighting.status === 'pending'), [sightings])
 
-  /* NOT narrowed to "not mine" below, and that took a second look to get
-     right. isOwnPending (data/sightings.ts) is true for every pending
-     sighting this browser can see at all: pending rows only ever live in
-     readSightings(), and that is also exactly what "own" is read from
-     (catsRepo.listSightings passes the same array as both). With no
-     backend and no login, this browser cannot tell "my report" apart from
-     "a report I happen to be able to see" — they are definitionally the
-     same set. Hiding the vote prompt whenever the oldest report is "mine"
-     would therefore hide it always, in the one environment anybody will
-     ever actually test this in. The prompt stays generic on purpose
-     rather than presuming a stranger made the report. */
+  /* Whether the one open report everything else anchors to belongs to
+     somebody else, which is the only case the vote prompt below is a real
+     question in.
+
+     This used to be unconditional, on the reasoning that "my report" and
+     "a report I can merely see" were definitionally the same set, because
+     with no login every pending row a browser could read was one it had
+     written itself. That stopped being true at phase 6, when a sighting
+     gained an authorUid, and the result was a visitor with an open report
+     seeing it listed under "Your reports, awaiting review" with a Withdraw
+     button, and then again immediately below asking whether it matched
+     what they saw. Corroborating yourself is not evidence, so their own
+     report now falls through to the branch that renders nothing extra:
+     "Your reports" above has already said the piece, and it has the one
+     control that actually applies. */
+  const someoneElsesPending = !!oldestPending && oldestPending.authorUid !== uid
 
   /* The photographs on file for this cat. flatMap rather than filter-then-
      map, so the absent case is removed and the type narrows in one pass. */
@@ -427,7 +432,7 @@ export function Plate({
       onChanged?.()
       onClose()
     } else {
-      setDeleteError('Could not delete. This browser may have storage turned off.')
+      setDeleteError('Could not delete. Check your connection and try again.')
     }
   }
 
@@ -1003,20 +1008,25 @@ export function Plate({
           </motion.div>
         )}
 
-        {/* Phase 9: a cat with an open report locks out a second one rather
-            than collecting an independent point nobody will ever compare
-            against the first — that duplication is the exact thing this
-            replaces. Everyone gets this, not only admin: it is the
-            public-facing half of review becoming visible instead of silent.
-            The exact point lives on the map (map/Territories.tsx's ghost,
-            opened to every visitor 2026-08-26) and in the landmark name
-            named below (pendingPlace) — this text is the words-only version
-            of the same claim, no diagram of its own since TerritoryGlyph's
-            pending mark was removed the same day on user feedback. A vote
-            is this browser's own thumb, and only ever this browser's — see
-            Sighting.votes' own note on why that is an honest count rather
-            than a real crowd tally. */}
-        {oldestPending ? (
+        {/* Phase 9: a cat with somebody else's open report locks out a
+            second one rather than collecting an independent point nobody
+            will ever compare against the first, which is the exact
+            duplication this replaces. Everyone signed in gets this, not
+            only admin: it is the public-facing half of review becoming
+            visible instead of silent. The exact point lives on the map
+            (map/Territories.tsx's ghost, opened to every visitor
+            2026-08-26) and in the landmark name below (pendingPlace); this
+            text is the words-only version of the same claim, with no
+            diagram of its own since TerritoryGlyph's pending mark was
+            removed the same day on user feedback. The tally under it is
+            everybody's, one vote per account (Sighting.votes' own note),
+            which is what makes asking the question worth anything.
+
+            Three outcomes, not two. Somebody else's open report gets the
+            question. This visitor's own gets nothing here, because "Your
+            reports" above already covers it (see someoneElsesPending's own
+            note). Nothing open at all gets the report button. */}
+        {someoneElsesPending && oldestPending ? (
           <motion.div className="plate-locked" variants={line}>
             <p className="plate-locked-msg">
               <Lock size={12} aria-hidden />A sighting of {cat.name} was reported
@@ -1048,10 +1058,10 @@ export function Plate({
           </motion.div>
         ) : (
           /* Either nothing is pending (the normal case, report offered), or
-             the only thing pending is this visitor's own report — and "Your
-             reports" above already said so, with a Withdraw button. Voting
-             on your own submission is not a real question, so this renders
-             nothing rather than a prompt with no honest answer. */
+             the only thing pending is this visitor's own report, which
+             "Your reports" above already said, with a Withdraw button.
+             Voting on your own submission is not a real question, so this
+             renders nothing rather than a prompt with no honest answer. */
           !oldestPending &&
           onReport && (
             <motion.button
@@ -1068,8 +1078,10 @@ export function Plate({
 
         {/* The admin strip: the one place on the card that is not part of
             the record itself, which is why it sits apart from the fields
-            above rather than styled as one of them. Hidden entirely for
-            anyone not holding ?role=admin, not merely styled away. */}
+            above rather than styled as one of them. Hidden entirely from
+            anyone the admin gate is shut for (App.tsx's useAdmin, which as
+            of phase 9 means a real Google account with an admins/{uid}
+            marker behind it), not merely styled away. */}
         {admin && (
           <motion.div className="admin-strip" variants={line}>
             <span className="plate-label admin-strip-label">Admin</span>

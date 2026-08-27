@@ -424,7 +424,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     })
     setBusy(false)
     if (!cat) {
-      setError('Could not save. This browser may have storage turned off.')
+      setError('Could not save. Check your connection and try again.')
       return
     }
     onRecorded()
@@ -839,13 +839,24 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
             </div>
 
             <div className="record-foot">
+              {/* Two corrections to the note on step 0, both from the same
+                  cause: since phase 9 a recorded cat is a document in the
+                  shared `cats` collection, not a row in one browser's
+                  storage. The note said the opposite, and the button beside
+                  it, which reads like clearing a local scratchpad, in fact
+                  deletes every admin's recorded cat for every visitor,
+                  permanently, on a single press. So the note now says who
+                  can see this, and the press now asks first: a confirm is
+                  the least this deserves, and the count in the message is
+                  what makes "clear" read as the number of records it is
+                  about to destroy. */}
               {step > 0 ? (
                 <button type="button" className="record-back" onClick={() => setStep((s) => s - 1)}>
                   Back
                 </button>
               ) : (
                 <span className="record-note">
-                  Saved in this browser only.
+                  Shared with every visitor once saved.
                   {recorded > 0 && (
                     <>
                       {' '}
@@ -853,6 +864,13 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         type="button"
                         className="record-clear"
                         onClick={() => {
+                          if (
+                            !window.confirm(
+                              `Delete all ${recorded} recorded cats, for everyone? This cannot be undone.`
+                            )
+                          ) {
+                            return
+                          }
                           void clearRecorded().then(() => {
                             setRecorded(0)
                             onRecorded()

@@ -243,6 +243,29 @@ body:has(.landing) {
   box-shadow: var(--shadow-glass), var(--edge-highlight);
 }
 
+/* The pill plus whatever it has to say about itself. A column so a failed
+   sign-in message stacks under the button rather than widening the nav
+   row, and end-aligned so the pill stays exactly where it was in the
+   corner: this wrapper is a slot around an existing control, and it must
+   not move it. */
+.landing-signin-slot {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--s-2);
+}
+
+.landing-signin-error {
+  margin: 0;
+  max-width: 14rem;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  text-align: right;
+  color: var(--rust);
+}
+
 .landing-signin-arrow {
   display: grid;
   place-items: center;

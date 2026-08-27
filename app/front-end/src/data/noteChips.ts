@@ -4,9 +4,12 @@
    pushback on why the note stays free text).
 
    Two lists. BUILTIN_NOTE_CHIPS never changes at runtime. The personal
-   list is this browser's own, saved the same way data/localCats.ts and
-   data/sightings.ts already persist their own local lists: read, validate,
-   write, degrade to empty on anything wrong rather than throwing. */
+   list is genuinely this browser's own, and stayed that way through phase
+   9 while data/catsRepo.ts and data/sightings.ts moved to Firestore: these
+   are typing shortcuts an admin builds up for themselves, not survey data,
+   so there is nobody to share them with and nothing about them worth a
+   round trip. localStorage is read, validated, written, and degrades to
+   empty on anything wrong rather than throwing. */
 
 export const BUILTIN_NOTE_CHIPS: string[] = [
   'Friendly with people',
@@ -44,9 +47,10 @@ function isChipList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string')
 }
 
-/** This browser's saved phrases. Same defensive read every other
-    localStorage-backed list in this app uses: a hand-edited or truncated
-    value degrades to "no personal phrases" rather than throwing. */
+/** This browser's saved phrases. The defensive read every localStorage
+    list in this app used to share, and now the last one left holding it:
+    a hand-edited or truncated value degrades to "no personal phrases"
+    rather than throwing. */
 export function readChips(): string[] {
   try {
     const raw = window.localStorage.getItem(KEY)

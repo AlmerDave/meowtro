@@ -19,7 +19,8 @@ in `2026-08-27-phase9-backend-implementation.md` and
 Storage replace `localStorage` behind the one seam this project keeps for
 exactly this reason: `catsRepo.ts`, whose public surface did not change.
 `?role=admin` is gone; real Google sign-in gates the admin surface on
-membership in an `admins` Firestore collection, checked in `catsRepo.ts`.
+membership in an `admins` Firestore collection, checked by `data/auth.ts`'s
+`isAdmin()` and consumed by `App.tsx`.
 `data/localCats.ts` and `data/overlay.ts` are deleted; territory geometry
 (the hand-drawn survey polygons and the warped-circle admin shapes alike)
 now lives in one place, `territoryShape.ts`. The whole project typechecks

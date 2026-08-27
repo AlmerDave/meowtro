@@ -60,9 +60,11 @@ import { signInWithGoogle, subscribeAuth } from '@/data/auth'
    ## What a visitor may and may not do
 
    Report a sighting. Not add a cat, not edit a record. Adding is an admin's
-   job (ui/RecordCat.tsx, mounted behind ?role=admin as of phase 8): an open
-   "add a cat" on a public map is unreviewed data about real animals, which
-   is the one thing this project has a written rule against.
+   job (ui/RecordCat.tsx, mounted behind App.tsx's admin gate: a real Google
+   account with an admins/{uid} marker behind it as of phase 9, a
+   ?role=admin parameter before that): an open "add a cat" on a public map
+   is unreviewed data about real animals, which is the one thing this
+   project has a written rule against.
 
    And as of phase 8 a sighting is a PROPOSAL. It lands `pending`, it moves
    nothing, and a reviewer approving it is what applies it: from the
@@ -183,6 +185,15 @@ export function ReportSighting({
      all any more, see the confirm step's sign-in prompt below. */
   const [uid, setUid] = useState<string | null>(null)
   useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
+  /* Why the sign-in button below is not a bare `void signInWithGoogle()`
+     any more: signInWithPopup rejects on all the ordinary things (a closed
+     popup, a blocked one, two presses racing each other, a dropped
+     connection), and a `void` on a rejecting promise swallows every one of
+     them. A visitor who has just filled in a report, chosen a photo and
+     tapped the map is the last person who should be left pressing a button
+     that answers with nothing. The Firebase error code stays out of it,
+     same as everywhere else here. */
+  const [signInError, setSignInError] = useState<string | null>(null)
   const panelRef = useRef<HTMLElement>(null)
 
   /* The front door. Pressing the trigger no longer commits to a step; it
@@ -929,13 +940,27 @@ export function ReportSighting({
                         Report sighting
                       </button>
                     ) : (
-                      <button
-                        type="button"
-                        className="sight-go"
-                        onClick={() => void signInWithGoogle()}
-                      >
-                        Sign in with Google to report
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          className="sight-go"
+                          onClick={async () => {
+                            setSignInError(null)
+                            try {
+                              await signInWithGoogle()
+                            } catch {
+                              setSignInError('Could not sign in. Try again.')
+                            }
+                          }}
+                        >
+                          Sign in with Google to report
+                        </button>
+                        {signInError && (
+                          <p className="record-error" role="alert" aria-live="polite">
+                            {signInError}
+                          </p>
+                        )}
+                      </>
                     )}
                   </>
                 )}

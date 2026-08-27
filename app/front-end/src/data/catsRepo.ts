@@ -21,7 +21,10 @@ import {
   isOwnPending,
   isSurveyed,
   latestByCat,
-  listAllSightings,
+  listAllSightingsForAdmin,
+  listMySightings,
+  listPublicSightings,
+  listVisibleSightings,
   myVoteFor,
   removeSighting,
   reorderSighting as reorder,
@@ -83,15 +86,31 @@ function catFromDoc(id: string, data: CatDoc): Omit<Cat, 'lastSeen'> & { lastSee
    The predicates themselves live in data/sightings.ts, because
    map/Territories.tsx has to apply the same policy synchronously from
    inside a MapLibre effect and cannot await this file. One definition of
-   "published", two callers. */
+   "published", two callers.
 
-/** What the public map is built from. */
-async function surveyedSightings(): Promise<Sighting[]> {
-  return (await listAllSightings()).filter(isSurveyed)
-}
+   Each function below fetches through the narrowest of sightings.ts' four
+   queries that answers its own question, rather than pulling the whole log
+   and filtering it here. That is a security change, not a tidy-up: the
+   unfiltered read those filters used to sit on top of is now admin-only at
+   the rule level (firestore.rules' sightings read rule), so a public path
+   that asked for it would simply fail. `isSurveyed`/`isOwnPending` still
+   run where they always did, as the second, client-side statement of the
+   same policy. */
 
-export async function listCats(): Promise<Cat[]> {
-  const [snap, sightings] = await Promise.all([getDocs(collection(db, COLLECTION)), surveyedSightings()])
+/** The cats, with "last seen" derived from the surveyed log.
+
+    `publicSightings` is the same array a caller may already have fetched
+    (App.tsx fetches it once for the whole page and hands it to both this
+    and listTerritories below). Optional rather than required so callers
+    with only one question to ask (landing/Landing.tsx wants a roster and
+    nothing else) stay a single call, and so nothing outside this file had
+    to change to get the saving. Passing it turns three round trips per
+    page load into one. */
+export async function listCats(publicSightings?: Sighting[]): Promise<Cat[]> {
+  const [snap, sightings] = await Promise.all([
+    getDocs(collection(db, COLLECTION)),
+    publicSightings ? Promise.resolve(publicSightings) : listPublicSightings(),
+  ])
   /* Surveyed only: an unreviewed report must never print "Last seen:
      Today" on the public record, the same safety line the pre-Firestore
      version drew. */
@@ -326,8 +345,13 @@ export async function deleteCat(id: string): Promise<boolean> {
    could be added at runtime: a JSON import is frozen at module evaluation,
    so a newly recorded cat would have had a marker, a rail row and a plate,
    and no territory under any of them. */
-export async function listTerritories(): Promise<FeatureCollection<Polygon>> {
-  const [snap, sightings] = await Promise.all([getDocs(collection(db, COLLECTION)), surveyedSightings()])
+export async function listTerritories(
+  publicSightings?: Sighting[]
+): Promise<FeatureCollection<Polygon>> {
+  const [snap, sightings] = await Promise.all([
+    getDocs(collection(db, COLLECTION)),
+    publicSightings ? Promise.resolve(publicSightings) : listPublicSightings(),
+  ])
   /* Surveyed only. This is the line that turns a sighting from something
      that moves the map into something that proposes to. */
   const seen = latestByCat(sightings)
@@ -363,10 +387,12 @@ export async function listSightings(catId: string, uid: string | null): Promise<
      its reader nothing they did not submit. The plate marks them, and
      offers to withdraw them.
 
-     Discarded ones are not here. They belong to the audit trail, not to a
-     cat's record: showing a visitor a turned-down report every time they
-     open that plate is a standing argument, not a log. */
-  const list = (await listAllSightings())
+     Discarded ones are not here, and now cannot be: listVisibleSightings
+     never asks for them (firestore.rules would only serve somebody their
+     own anyway). They belong to the audit trail, not to a cat's record:
+     showing a visitor a turned-down report every time they open that plate
+     is a standing argument, not a log. */
+  const list = (await listVisibleSightings(uid))
     .filter((sighting) => sighting.catId === catId)
     .filter((sighting) => isSurveyed(sighting) || isOwnPending(sighting, uid))
   return sortForDisplay(list)
@@ -376,18 +402,25 @@ export async function listSightings(catId: string, uid: string | null): Promise<
 
     Oldest first on purpose, unlike every other list in this app: a queue is
     worked from the front, and the submission that has been waiting longest
-    is the one somebody is still waiting on an answer to. */
+    is the one somebody is still waiting on an answer to.
+
+    Admin-only at the fetch, not merely at the surface that draws it:
+    listAllSightingsForAdmin is the unfiltered read, and firestore.rules
+    serves it to an admins/{uid} holder and nobody else. */
 export async function listPending(): Promise<Sighting[]> {
-  return (await listAllSightings())
+  return (await listAllSightingsForAdmin())
     .filter((sighting) => sighting.status === 'pending')
     .sort((a, b) => a.at - b.at)
 }
 
 /** Every decision that has been made, newest first: the audit trail. Both
     verdicts, because "what did we turn down" is the half of a review log
-    that is actually worth having. */
+    that is actually worth having. Admin-only at the fetch, same as
+    listPending above and for the same reason: a discarded report is the
+    one record in this app nobody but an admin may read about somebody
+    else. */
 export async function listReviewed(): Promise<Sighting[]> {
-  return (await listAllSightings())
+  return (await listAllSightingsForAdmin())
     .filter((sighting) => sighting.status !== 'pending')
     .sort((a, b) => b.at - a.at)
 }
@@ -404,10 +437,14 @@ export async function reviewSighting(id: string, verdict: 'surveyed' | 'discarde
     `uid` is checked here as well as by firestore.rules: belt and
     suspenders, same as the pre-Firestore version checked its own storage
     before trusting the caller. "Withdraw" must never become a way to
-    delete somebody else's record or an already-approved one. */
+    delete somebody else's record or an already-approved one.
+
+    Fetched from listMySightings rather than the whole log: this only ever
+    looks for the caller's own document by id, so the caller's own
+    documents are the exact right list to look in, and it is the one query
+    a non-admin can make that includes every status. */
 export async function withdrawSighting(id: string, uid: string): Promise<boolean> {
-  const all = await listAllSightings()
-  const mine = all.find((sighting) => sighting.id === id)
+  const mine = (await listMySightings(uid)).find((sighting) => sighting.id === id)
   if (!mine || mine.status !== 'pending' || mine.authorUid !== uid) return false
   return removeSighting(id)
 }
@@ -433,12 +470,21 @@ export async function reorderSighting(catId: string, id: string, direction: 'up'
     purpose. The plate's own visitor-facing lock (plate/Plate.tsx) reads the
     same list to know a report already exists, without ever rendering its
     point. What differs by caller is what gets drawn from it, not what is
-    fetched. */
+    fetched.
+
+    Signed out, this is empty rather than "the same list without votes on
+    it". Pending reports are readable only to a signed-in caller now
+    (firestore.rules; the corroboration branch), so there is no unfiltered
+    list left to fall back to, and asking for one would earn a permission
+    error rather than a shorter answer. The plate degrades correctly on
+    that: no open report visible means the "I saw this one" button is
+    offered, which is the right thing to show somebody who cannot vote
+    anyway. */
 export async function listPendingForCat(catId: string, uid: string | null): Promise<Sighting[]> {
-  const pending = (await listAllSightings())
+  if (!uid) return []
+  const pending = (await listVisibleSightings(uid))
     .filter((sighting) => sighting.catId === catId && sighting.status === 'pending')
     .sort((a, b) => a.at - b.at)
-  if (!uid) return pending
   /* Join in this viewer's own vote per sighting. A handful of extra reads
      at most: a cat rarely has more than one or two open reports at once
      (catsRepo.addSighting locks the report button once one exists), so

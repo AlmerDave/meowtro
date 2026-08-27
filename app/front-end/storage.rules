@@ -3,9 +3,25 @@ service firebase.storage {
   match /b/{bucket}/o {
     match /{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null
+
+      // create, never write. `write` covers create, overwrite and delete
+      // in one word, and every photo's Storage path is plainly visible
+      // inside its own public download URL, so a blanket `write` let any
+      // signed-in visitor replace or erase any cat's or any sighting's
+      // photograph by reading the path off the page it is shown on.
+      //
+      // Nothing legitimate loses anything by this: data/photoUpload.ts
+      // mints a fresh random path for every upload and never reaches for
+      // an existing object, so no code path in this app has ever needed
+      // update or delete permission here.
+      //
+      // The size and content-type conditions are the same two they always
+      // were: a bound on what one visitor can push into the bucket, and a
+      // refusal to host arbitrary files behind an image uploader.
+      allow create: if request.auth != null
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
     }
   }
 }

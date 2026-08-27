@@ -134,10 +134,58 @@ function fromDoc(id: string, data: Record<string, unknown>): Sighting {
   }
 }
 
-/** Every sighting the survey has ever recorded. Callers filter it down
-    (published, pending, one cat's log) the same way every filter in this
-    app already worked before phase 9; only the source changed. */
-export async function listAllSightings(): Promise<Sighting[]> {
+/* --- Reading the log ----------------------------------------------------
+
+   Four queries where there used to be one `listAllSightings`, and the split
+   is not an optimisation: it is firestore.rules' own read rule expressed in
+   TypeScript, so that every fetch this app makes is one the backend will
+   actually serve. A single unfiltered collection read now fails outright for
+   anybody but an admin, and it should: a pending report's exact point was
+   readable by a signed-out stranger for as long as that one function was the
+   only way in.
+
+   Each function below names the reader it is for. A caller picks the
+   narrowest one that answers its question, rather than fetching everything
+   and filtering afterwards, which is what let a leak hide behind a filter. */
+
+/** Every SURVEYED sighting, readable by anyone including a signed-out
+    visitor. What listCats/listTerritories need for "last seen" and the
+    territory shift, and the floor of what App.tsx ever shows. */
+export async function listPublicSightings(): Promise<Sighting[]> {
+  const db = await getDb()
+  const snap = await getDocs(query(collection(db, COLLECTION), where('status', '==', 'surveyed')))
+  return snap.docs.map((d) => fromDoc(d.id, d.data()))
+}
+
+/** Surveyed plus every open pending sighting, for a signed-in viewer.
+    A signed-out visitor gets exactly the set listPublicSightings would:
+    firestore.rules only opens pending reports to a signed-in caller, for
+    corroboration voting (any visitor may vote on any open report, the
+    design map/Territories.tsx's own note already argues for), so asking
+    for them without a uid would only earn a permission error. Never
+    includes discarded records; those are the audit trail. */
+export async function listVisibleSightings(uid: string | null): Promise<Sighting[]> {
+  const db = await getDb()
+  const statuses = uid ? ['surveyed', 'pending'] : ['surveyed']
+  const snap = await getDocs(query(collection(db, COLLECTION), where('status', 'in', statuses)))
+  return snap.docs.map((d) => fromDoc(d.id, d.data()))
+}
+
+/** This signed-in viewer's own sightings, any status, discarded included.
+    Only ever used for a count (ui/About.tsx's "yours"/"waiting"), never
+    rendered as content: firestore.rules' authorUid branch is what makes a
+    visitor's own turned-down report readable at all, and it stays that
+    narrow. Nobody sees anybody else's discarded report but an admin. */
+export async function listMySightings(uid: string): Promise<Sighting[]> {
+  const db = await getDb()
+  const snap = await getDocs(query(collection(db, COLLECTION), where('authorUid', '==', uid)))
+  return snap.docs.map((d) => fromDoc(d.id, d.data()))
+}
+
+/** Every sighting, any status, any author. Only an admin's Firestore
+    membership (the admins/{uid} doc firestore.rules checks) lets this
+    succeed; this function verifies nothing itself, the rule does. */
+export async function listAllSightingsForAdmin(): Promise<Sighting[]> {
   const db = await getDb()
   const snap = await getDocs(collection(db, COLLECTION))
   return snap.docs.map((d) => fromDoc(d.id, d.data()))

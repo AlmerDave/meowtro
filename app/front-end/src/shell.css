@@ -4253,6 +4253,31 @@ body[data-placing='true'] .maplibregl-canvas {
   flex-shrink: 0;
 }
 
+/* The way back out of a signed-in session (App.tsx). Underlined rather
+   than given a border or a fill: it sits inside a strip that is already
+   one solid block of --ink, and a second box drawn on top of it would read
+   as a badge rather than as something to press. Inherits the strip's own
+   mono/tracked/uppercase voice, so it is the same sentence, not a control
+   bolted onto it. */
+.admin-banner-out {
+  margin-left: var(--s-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+  opacity: 0.75;
+  cursor: pointer;
+}
+.admin-banner-out:hover,
+.admin-banner-out:focus-visible {
+  opacity: 1;
+}
+
 /* --- Parked: the corner pill this replaced, 2026-08-26 -------------------
    .admin-controls (map/MapCanvas.tsx) briefly carried a second admin tell,
    a small chip beside the record button. Removed on user direction once

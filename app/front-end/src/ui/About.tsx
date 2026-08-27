@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { motion } from 'motion/react'
 import { X } from 'lucide-react'
 import { useMap } from '@/map/MapCanvas'
-import { countRecorded, listCats } from '@/data/catsRepo'
-import { isSurveyed, listAllSightings } from '@/data/sightings'
+import { listCats } from '@/data/catsRepo'
+import { listMySightings, listPublicSightings } from '@/data/sightings'
 import { getCurrentUid } from '@/data/auth'
 import { useEscape } from '@/ui/escape'
 import { springSoft } from '@/motion/springs'
@@ -96,39 +96,47 @@ export function About({ onClose }: Props) {
 
   useEffect(() => {
     let live = true
-    /* All four in one Promise.all rather than the old listCats().then(...)
-       chain, which used to finish the cats half asynchronously and then
-       reach back into localStorage synchronously for the sightings half
+    /* Async all the way down rather than the old listCats().then(...) chain,
+       which used to finish the cats half asynchronously and then reach back
+       into localStorage synchronously for the sightings half
        (readSightings/allSightings): now that sightings live in Firestore
-       too, there is no synchronous half left to reach for, so this panel
-       just finishes the async chain it was already inside instead of
-       degrading partway through it. getCurrentUid is the one-shot read
-       (data/auth.ts) built for exactly this: a snapshot at the moment this
-       panel opens, not an ongoing subscription for as long as it stays
-       mounted. */
-    Promise.all([listCats(), listAllSightings(), countRecorded(), getCurrentUid()]).then(
-      ([cats, sightings, recorded, uid]) => {
+       too, there is no synchronous half left to reach for. getCurrentUid is
+       the one-shot read (data/auth.ts) built for exactly this: a snapshot at
+       the moment this panel opens, not an ongoing subscription for as long
+       as it stays mounted.
+
+       Two queries for the sightings rather than one whole-log fetch, and
+       they are two because firestore.rules says so. listPublicSightings is
+       the surveyed set anybody may read; listMySightings is this viewer's
+       own, any status, which is the only way "waiting" can be counted
+       honestly (a pending report of theirs, and a discarded one, are both
+       readable to them and to nobody else but an admin). A signed-out
+       visitor skips the second entirely: there is no "yours" to count. */
+    Promise.all([listCats(), listPublicSightings(), getCurrentUid()])
+      .then(async ([cats, publicSightings, uid]) => {
+        const mine = uid ? await listMySightings(uid) : []
         if (!live) return
-        /* "Mine" is now an authorUid match rather than a browser-local
-           readSightings() scan, same reasoning as isOwnPending's own note
-           (data/sightings.ts): everyone signs in to report as of phase 9,
-           so ownership is an account fact, not a storage fact. */
-        const mine = sightings.filter((sighting) => sighting.authorUid === uid)
         setSurvey({
           cats: cats.length,
           /* Surveyed only, matching what the map is drawn from. The count
              under "Observations" is a statement about the survey, and an
              unreviewed report is not part of it yet. */
-          observations: sightings.filter(isSurveyed).length,
-          // The visitor's own additions, both kinds counted together: from
-          // their side these are one thing, "what I put in", regardless of
-          // which store it landed in. Unreviewed ones included, because they
-          // are still theirs; the line below says how many are still waiting.
-          yours: recorded + mine.length,
+          observations: publicSightings.length,
+          /* Sighting reports only, and only this account's. It used to add
+             countRecorded() on the reasoning that a visitor's two kinds of
+             contribution are one thing from their side, which was true
+             while recorded cats lived in their own browser. They live in
+             one shared collection now, with no author on a Cat to filter
+             by (CatDoc carries `source`, never a uid), so that term was
+             counting every admin's recorded cats and calling them yours.
+             Attributing them properly needs a field on the cat document;
+             counting them wrongly needs only this line, so this line goes.
+             Unreviewed reports still count, because they are still theirs;
+             the line below says how many are waiting. */
+          yours: mine.length,
           waiting: mine.filter((sighting) => sighting.status === 'pending').length,
         })
-      }
-    )
+      })
     return () => {
       live = false
     }
@@ -169,7 +177,9 @@ export function About({ onClose }: Props) {
         </p>
 
         {/* The readout. Three numbers, and the third is the only one that
-            belongs to the person reading it. */}
+            belongs to the person reading it: the sightings this account has
+            reported, in any state, with the waiting line under it saying
+            how many have not been looked at yet. */}
         <dl className="about-stats" aria-busy={survey === null}>
           <div>
             <dt>Cats</dt>
@@ -201,9 +211,9 @@ export function About({ onClose }: Props) {
         <h3>What is real</h3>
         <p>
           The map, the streets and the weather are. The cats are not: every one of them is
-          invented, and their territories are drawn, not recorded. Anything you add stays in this
-          browser and reaches no server, and anything you report waits for review before it
-          changes the map.
+          invented, and their territories are drawn, not recorded. Anything you report is saved to
+          the survey and shared with every visitor, and it waits for review before it changes the
+          map.
         </p>
         <p className="about-rule">
           A real cat would be mapped the same way, and that is the point. A survey of live animals

@@ -23,7 +23,43 @@ service cloud.firestore {
     }
 
     match /sightings/{sightingId} {
-      allow read: if true;
+      // Four branches, one for each kind of reader, and the order they are
+      // written in is the order they are argued in.
+      //
+      // An admin sees everything, the discarded audit trail included: that
+      // log is the half of review worth keeping (data/sightings.ts's note
+      // on SightingStatus) and it is theirs to read.
+      //
+      // Anybody at all, signed out included, sees a surveyed sighting.
+      // That is the public map: territory shift, "last seen", the photo
+      // stack. Nothing here is a claim the survey has not already
+      // published itself.
+      //
+      // A SIGNED-IN visitor also sees every pending sighting, whoever
+      // filed it. That is not an oversight, it is the corroboration
+      // feature: any visitor can vote on any open report (map/
+      // Territories.tsx's ghost note, and Sighting.votes on why one vote
+      // per uid is the only honest shape). This branch is also the fix for
+      // what used to be `allow read: if true` over the whole collection,
+      // which handed a pending report's exact point to a signed-out
+      // stranger, or to anyone with the REST endpoint and no app at all.
+      // Pre-Firestore that point lived only in the reporting browser's own
+      // storage; keeping it behind a sign-in is the closest equivalent
+      // this data model has.
+      //
+      // A signed-in visitor always sees their OWN sighting whatever its
+      // status, which no branch above grants once a report has been turned
+      // down. ui/About.tsx's "yours"/"waiting" readout is what needs it,
+      // and it is safe for the reason isOwnPending already gives: the data
+      // is already theirs.
+      //
+      // What nobody except an admin can read is somebody ELSE's discarded
+      // report. A verdict on another person's submission belongs to the
+      // audit trail, not to the map.
+      allow read: if isAdmin()
+        || resource.data.status == 'surveyed'
+        || (isSignedIn() && resource.data.status == 'pending')
+        || (isSignedIn() && resource.data.authorUid == request.auth.uid);
 
       // A visitor's own report lands pending, self-attributed. An admin's
       // direct photo add (catsRepo.addAdminPhoto) lands surveyed outright,
@@ -46,8 +82,15 @@ service cloud.firestore {
       // Cloud Functions, which this phase is scoped to avoid (design doc,
       // "Platform"). Upgrade path if it ever matters: a Function that
       // recomputes `votes` from the subcollection on every write to it.
+      //
+      // `status == 'pending'` on the non-admin branch because a decided
+      // sighting has nothing left to corroborate. voteSighting's own
+      // transaction already refuses one, but that check runs in the client,
+      // and a client that skips the app entirely was free to tally votes
+      // onto a surveyed or discarded record until this line existed.
       allow update: if isAdmin()
         || (isSignedIn()
+            && resource.data.status == 'pending'
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['votes']));
 
       // Withdraw (own, still pending) or an admin's housekeeping (any).

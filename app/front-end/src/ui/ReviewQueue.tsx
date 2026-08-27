@@ -201,8 +201,9 @@ export function ReviewQueue({ onReviewed }: Props) {
             </div>
 
             <p className="review-foot">
-              Local to this browser, like everything else the survey stores. An approved sighting
-              moves its cat's territory; a discarded one stays on the record as a decision.
+              Every visitor sees these decisions, like everything else the survey stores. An
+              approved sighting moves its cat's territory; a discarded one stays on the record as
+              a decision.
             </p>
           </motion.section>
         )}

@@ -12,8 +12,8 @@ import { Rail } from '@/ui/Rail'
 import { CatDeck } from '@/ui/CatDeck'
 import { Loading } from '@/ui/Loading'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
-import { listAllSightings, type Sighting } from '@/data/sightings'
-import { isAdmin, subscribeAuth } from '@/data/auth'
+import { isSurveyed, listVisibleSightings, type Sighting } from '@/data/sightings'
+import { isAdmin, signOutUser, subscribeAuth } from '@/data/auth'
 import type { FeatureCollection, Polygon } from 'geojson'
 
 /* The one legal way to reach the live MapLibre instance from Plate.tsx,
@@ -310,30 +310,59 @@ export default function App() {
 
   /* Async from day one. See data/catsRepo.ts.
 
-     All three are read together and set together, deliberately. A cat and
-     its territory are one record split across two calls, and setting them
-     in separate passes would give the map a render where a cat has a marker
-     with no shape under it, or a shape with no cat to name it. Sightings
-     joined the same Promise.all as of phase 9: it is the same one-load,
-     one-set shape, and every existing trigger for this effect (approving or
-     discarding a sighting, adding a cat, reporting one) already means the
-     sightings log has changed too, so it refreshes for free rather than
-     needing a second loadToken. */
+     Cats and territories are read together and set together, deliberately.
+     A cat and its territory are one record split across two calls, and
+     setting them in separate passes would give the map a render where a cat
+     has a marker with no shape under it, or a shape with no cat to name it.
+     Sightings joined this effect as of phase 9, and every existing trigger
+     for it (approving or discarding a sighting, adding a cat, reporting
+     one) already means the sightings log has changed too, so it refreshes
+     for free rather than needing a second loadToken. Sightings landing a
+     beat ahead of the other two is harmless where a split between cats and
+     territories would not be: an early sightings array with no cats yet
+     draws nothing, since both map layers key off a cat that has to exist
+     first.
+
+     Sightings are fetched FIRST and the surveyed subset handed down into
+     listCats/listTerritories, rather than all three firing at once. Those
+     two derive "last seen" and the territory shift from exactly that
+     subset, and left to themselves each fetches it again: three reads of
+     the same query per page load, for one answer. The two calls still work
+     with no argument (landing/Landing.tsx calls listCats() bare), this is
+     just the caller that already has the data saying so.
+
+     `uid` is a dependency now, and has to be: listVisibleSightings returns
+     surveyed-only while signed out and surveyed-plus-pending once signed
+     in (firestore.rules opens pending reports to a signed-in caller for
+     corroboration voting). Without it a visitor who signs in this session
+     would keep the signed-out set until something else happened to bump
+     loadToken, and the map's ghost territories would stay invisible to
+     them. */
   const [loadToken, setLoadToken] = useState(0)
   useEffect(() => {
     let live = true
-    Promise.all([listCats(), listTerritories(), listAllSightings()]).then(
-      ([loadedCats, loadedTerritories, loadedSightings]) => {
-        if (!live) return
-        setCats(loadedCats)
-        setTerritories(loadedTerritories)
-        setSightings(loadedSightings)
-      }
-    )
+    listVisibleSightings(uid).then((visible) => {
+      if (!live) return
+      const publicSightings = visible.filter(isSurveyed)
+      /* The full `visible` set into state, not the public subset:
+         map/Territories.tsx's ghost outline and map/CatMarkers.tsx's
+         pending badge both read pending sightings out of this array, and
+         both are open to every signed-in visitor rather than admin alone
+         (Territories.tsx's own 2026-08-26 note). Only the derived cats and
+         territories are built from the surveyed half. */
+      setSightings(visible)
+      Promise.all([listCats(publicSightings), listTerritories(publicSightings)]).then(
+        ([loadedCats, loadedTerritories]) => {
+          if (!live) return
+          setCats(loadedCats)
+          setTerritories(loadedTerritories)
+        }
+      )
+    })
     return () => {
       live = false
     }
-  }, [loadToken])
+  }, [loadToken, uid])
 
   /* Re-reads both after a cat has been recorded (ui/RecordCat.tsx). A
      counter rather than a callback that sets the data itself: the repo is
@@ -466,10 +495,26 @@ export default function App() {
           mounting drives (via body[data-admin], the effect above) to
           reserve their own room, and that reservation has to be in effect
           before they first paint, not after. */}
+      {/* Sign out lives here, on the one surface that already says who you
+          are. Until this existed there was no way back out of a session at
+          all: signing in on a borrowed or shared machine left the admin
+          gate open on it indefinitely, with the banner announcing as much
+          to whoever picked it up next. `admin` flips itself false through
+          useAdmin's own subscription once the sign-out lands, so this
+          unmounts the strip it sits in and nothing else has to be told.
+
+          Scoped to the admin strip on purpose. A signed-in NON-admin
+          visitor still has no indicator and no way out, which is a real
+          gap and a separate piece of work: it needs a home in the app's
+          chrome that does not exist yet, whereas an admin already has
+          one. */}
       {admin && (
         <div className="admin-banner" role="status">
           <ShieldCheck size={13} aria-hidden />
           Admin mode
+          <button type="button" className="admin-banner-out" onClick={() => void signOutUser()}>
+            Sign out
+          </button>
         </div>
       )}
 

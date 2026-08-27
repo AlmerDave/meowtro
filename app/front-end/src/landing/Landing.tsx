@@ -84,6 +84,16 @@ export default function Landing() {
   const [active, setActive] = useState(0)
   const [held, setHeld] = useState(false)
   const [leaving, setLeaving] = useState(false)
+  /* Sign-in failure, said out loud. signInWithPopup rejects for four
+     ordinary reasons (the popup was closed, the browser blocked it, a
+     double-click raced a second one, the network dropped) and this button
+     used to handle none of them: the press threw an unhandled rejection
+     into the console and the page simply did nothing, which on the one
+     control that gets anybody into the app is the worst place to be
+     silent. Short and non-technical rather than the Firebase error code,
+     same as every other error string in this app: "auth/popup-blocked"
+     tells a visitor nothing they can act on. */
+  const [signInError, setSignInError] = useState<string | null>(null)
   const narrow = useNarrow()
 
   /* The reveal. landing.css styles every top-level surface as hidden under
@@ -226,19 +236,32 @@ export default function Landing() {
             reused here: signing in is not a page transition, there is
             nothing to reveal underneath it, so this navigates directly
             once the popup resolves. */}
-        <button
-          type="button"
-          className="landing-signin"
-          onClick={async () => {
-            await signInWithGoogle()
-            window.location.href = APP
-          }}
-        >
-          Sign in
-          <span className="landing-signin-arrow" aria-hidden="true">
-            <ArrowUpRight size={14} />
-          </span>
-        </button>
+        <div className="landing-signin-slot">
+          <button
+            type="button"
+            className="landing-signin"
+            onClick={async () => {
+              setSignInError(null)
+              try {
+                await signInWithGoogle()
+              } catch {
+                setSignInError('Could not sign in. Try again.')
+                return
+              }
+              window.location.href = APP
+            }}
+          >
+            Sign in
+            <span className="landing-signin-arrow" aria-hidden="true">
+              <ArrowUpRight size={14} />
+            </span>
+          </button>
+          {signInError && (
+            <p className="landing-signin-error" role="alert">
+              {signInError}
+            </p>
+          )}
+        </div>
       </header>
 
       <div className="landing-hero">
