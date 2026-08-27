@@ -29,7 +29,7 @@ export function subscribeAuth(cb: (user: User | null) => void): () => void {
 }
 
 /** Whether `uid` has an `admins/{uid}` marker doc (firestore.rules'
-    `isAdmin()`, mirrored here for the client to decide what to render —
+    `isAdmin()`, mirrored here for the client to decide what to render;
     the rules are what actually enforce it, this is only ever a read). */
 export async function isAdmin(uid: string): Promise<boolean> {
   const snap = await getDoc(doc(db, 'admins', uid))
