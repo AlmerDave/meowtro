@@ -76,15 +76,16 @@ export type Sighting = {
   authorUid: string
   /** This viewer's own vote on a pending sighting, joined in per-request
       from the sightings/{id}/votes/{myUid} subdocument (see myVoteFor);
-      no longer stored on the sighting itself, since "mine" now spans
-      every viewer, not one browser (Sighting.votes's old note explains
-      why a shared field can't hold a personal fact). */
+      no longer stored on the sighting itself, because it is a personal
+      fact and `votes` below is a shared one, and phase 9 gave every viewer
+      an account (`authorUid`) that can tell the two apart, rather than one
+      browser's storage standing in for "this viewer" as it did before. */
   myVote?: 'up' | 'down'
-  /** The corroboration tally, now shared across every visitor via the
-      Firestore transaction in voteSighting below, rather than local to one
-      browser the way it was before phase 9 (see myVote's own note above for
-      the parallel story on the personal half). Absent until the first vote
-      lands. */
+  /** The corroboration tally: everybody's up/down count on this sighting,
+      kept in sync with the personal `myVote` half above by the same
+      Firestore transaction in voteSighting below, so the two can never
+      disagree. Shared across every visitor as of phase 9, unlike `myVote`,
+      which stays personal. Absent until the first vote lands. */
   votes?: { up: number; down: number }
 }
 
@@ -162,7 +163,12 @@ export function isSurveyed(sighting: Sighting): boolean {
   return sighting.status === 'surveyed'
 }
 
-/** A visitor's report. Lands `pending`. */
+/** A visitor's report. Lands `pending`: it is a submission, not a fact, and
+    nothing on the public map moves until somebody has reviewed it.
+
+    `photo` is optional and genuinely so, same as the field itself: most
+    reports still arrive without one, ui/ReportSighting.tsx's camera step
+    is a step somebody can skip. */
 export async function addSighting(
   catId: string,
   point: [number, number],
@@ -204,10 +210,19 @@ export async function addAdminSighting(
   }
 }
 
-/** Undo/withdraw: deletes outright, same reasoning as before phase 9:
-    nothing was published and no decision was made. Security rules are the
-    real guard on "only your own, only while pending"; this still checks
-    first so a caller gets `false` rather than a thrown permission error. */
+/** Undo, and withdraw, which are the same operation at two speeds: the
+    nine-second toast and the plate's own log. One sighting by id, not "the
+    last one": by the time somebody presses undo, a concurrent report
+    (another tab, or now another device entirely, since the log lives in
+    Firestore rather than one browser's storage) could have added a
+    different one, and removing whatever happens to be last would silently
+    delete the wrong record.
+
+    Deletes outright rather than marking, same reasoning as before phase 9:
+    nothing was published and no decision was made, so there is nothing to
+    keep. Security rules are the real guard on "only your own, only while
+    pending"; this still checks first so a caller gets `false` rather than
+    a thrown permission error. */
 export async function removeSighting(id: string): Promise<boolean> {
   try {
     const db = await getDb()
@@ -237,8 +252,18 @@ async function setOrder(id: string, order: number): Promise<boolean> {
 }
 
 /** Swaps one sighting with whichever neighbour is currently next to it in
-    `sortForDisplay`'s order, up or down; unchanged logic, now reading
-    Firestore for the cat's log instead of localStorage. */
+    `sortForDisplay`'s order, up or down. Only the two rows trading places
+    get a real `order` value, seeded from the slot they are already sitting
+    in, so the first reorder on a cat's log does not have to invent a
+    number for every sighting it owns, only the two that moved. Unchanged
+    logic from before phase 9, now reading Firestore for the cat's log
+    instead of localStorage.
+
+    ponytail: repeated reordering can still leave two rows tied on the same
+    order number; sortForDisplay breaks a tie arbitrarily rather than
+    renumbering the whole log. Fine for how rarely an admin actually nudges
+    one photo ahead of another; a future write path could renumber the
+    whole log on every reorder if that ever stops being true. */
 export async function reorderSighting(
   catId: string,
   id: string,
