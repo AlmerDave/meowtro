@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Map as MapLibreMap, addProtocol, prewarm, setWorkerUrl } from 'maplibre-gl'
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import { Protocol } from 'pmtiles'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, Polygon } from 'geojson'
@@ -33,9 +32,26 @@ import { RecordCat } from '@/ui/RecordCat'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
    parse, the source never loads, and nothing throws: the map just spins.
-   Vite emits the worker out of node_modules as a local asset, so the basemap
-   stays one static file with no CDN in front of it. */
-setWorkerUrl(workerUrl)
+
+   Served from public/, not imported with `?url`, because the worker file is
+   not self-contained: it is a real ES module that statically imports a
+   ~480KB sibling, maplibre-gl-shared.mjs, which carries the actual bulk of
+   MapLibre's code. `?url` only copies the one file named in the import; it
+   does not follow that file's own imports, so the worker landed at some
+   hashed dist/assets/ URL with its sibling nowhere beside it, and its
+   `import './maplibre-gl-shared.mjs'` 404'd the instant a browser tried to
+   load it — silently, since that failure happens inside the worker's own
+   module graph, not as a MapLibre-reported error. Dev never showed this:
+   Vite's dev server serves node_modules with its real directory structure
+   intact, so the relative import resolved by accident.
+
+   public/ is a plain static folder Vite does not touch, the same reason
+   bgc.pmtiles lives there, so copying both files there together keeps them
+   exactly as adjacent as they are in node_modules/maplibre-gl/dist. This
+   copy has to be redone by hand (`cp node_modules/maplibre-gl/dist/
+   maplibre-gl-{worker,shared}.mjs public/`) whenever maplibre-gl is
+   upgraded. */
+setWorkerUrl('/maplibre-gl-worker.mjs')
 
 /* Lets a style source say `pmtiles:///bgc.pmtiles`. */
 addProtocol('pmtiles', new Protocol().tile)
