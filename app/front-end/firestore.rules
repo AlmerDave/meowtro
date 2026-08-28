@@ -19,7 +19,22 @@ service cloud.firestore {
 
     match /cats/{catId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+
+      // Admin: any field, any time. Any other signed-in caller: ONLY
+      // `pendingCount`, and only up or down by whatever a create/withdraw/
+      // review actually wrote (sightings.ts, catsRepo.ts) -- the same trust
+      // model the `votes` tally on sightings/{id} already accepts (see that
+      // block's own note): the client's arithmetic is trusted rather than
+      // re-derived, a real integrity gap closed properly only by a Cloud
+      // Function, deliberately left open for the same reason (design doc,
+      // "Platform"). A visitor who has never reported anything still needs
+      // this: pendingCount is what lets a SIGNED-OUT visitor's plate know a
+      // report already exists on a cat without ever reading the report
+      // itself, which stays behind the sightings/{id} rule above.
+      allow update: if isAdmin()
+        || (isSignedIn()
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['pendingCount']));
     }
 
     match /sightings/{sightingId} {

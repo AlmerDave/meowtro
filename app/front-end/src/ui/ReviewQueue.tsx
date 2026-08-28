@@ -80,8 +80,8 @@ export function ReviewQueue({ onReviewed }: Props) {
     if (open) void load()
   }, [open, load])
 
-  async function decide(id: string, verdict: 'surveyed' | 'discarded') {
-    if (!(await reviewSighting(id, verdict))) return
+  async function decide(id: string, catId: string, verdict: 'surveyed' | 'discarded') {
+    if (!(await reviewSighting(id, catId, verdict))) return
     await load()
     onReviewed()
   }
@@ -160,7 +160,7 @@ export function ReviewQueue({ onReviewed }: Props) {
                           <button
                             type="button"
                             className="review-no"
-                            onClick={() => void decide(sighting.id, 'discarded')}
+                            onClick={() => void decide(sighting.id, sighting.catId, 'discarded')}
                           >
                             <X size={14} />
                             Discard
@@ -168,7 +168,7 @@ export function ReviewQueue({ onReviewed }: Props) {
                           <button
                             type="button"
                             className="review-yes"
-                            onClick={() => void decide(sighting.id, 'surveyed')}
+                            onClick={() => void decide(sighting.id, sighting.catId, 'surveyed')}
                           >
                             <Check size={14} />
                             Approve

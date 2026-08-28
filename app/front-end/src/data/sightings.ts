@@ -5,11 +5,13 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   query,
   runTransaction,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
   type Firestore,
 } from 'firebase/firestore'
 /* Relative rather than through the "@/" alias, which is what every other
@@ -234,7 +236,19 @@ export async function addSighting(
     const db = await getDb()
     const ref = doc(collection(db, COLLECTION))
     const data = { catId, point, status: 'pending' as const, at, authorUid, ...(photo ? { photo } : {}) }
-    await setDoc(ref, data)
+    /* A batch, not a plain setDoc, so the new report and the cat's own
+       pendingCount land together: cats/{catId}.pendingCount is the one
+       signal a signed-out visitor's plate can read at all (firestore.rules
+       keeps the report itself behind sign-in), and a create that landed
+       without it would leave that visitor seeing an unlocked "I saw this
+       one" button while somebody else's report sat open. increment() needs
+       no prior read (unlike the vote transaction below, which has to know
+       the caller's previous vote), so a batch is the right size of tool
+       here rather than a runTransaction. */
+    const batch = writeBatch(db)
+    batch.set(ref, data)
+    batch.update(doc(db, 'cats', catId), { pendingCount: increment(1) })
+    await batch.commit()
     return fromDoc(ref.id, data)
   } catch {
     return null
@@ -276,11 +290,25 @@ export async function addAdminSighting(
     nothing was published and no decision was made, so there is nothing to
     keep. Security rules are the real guard on "only your own, only while
     pending"; this still checks first so a caller gets `false` rather than
-    a thrown permission error. */
-export async function removeSighting(id: string): Promise<boolean> {
+    a thrown permission error.
+
+    `catId`, when given, batches in the matching cats/{catId}.pendingCount
+    decrement, same reasoning as addSighting/reviewSighting's own batches:
+    a withdrawn report is one fewer thing waiting, and a signed-out
+    visitor's plate has no other way to learn that. catsRepo.withdrawSighting
+    is the one caller that ever has both a catId and a confirmed `pending`
+    status in hand at once, so it is the one caller that passes it. */
+export async function removeSighting(id: string, catId?: string): Promise<boolean> {
   try {
     const db = await getDb()
-    await deleteDoc(doc(db, COLLECTION, id))
+    if (catId) {
+      const batch = writeBatch(db)
+      batch.delete(doc(db, COLLECTION, id))
+      batch.update(doc(db, 'cats', catId), { pendingCount: increment(-1) })
+      await batch.commit()
+    } else {
+      await deleteDoc(doc(db, COLLECTION, id))
+    }
     return true
   } catch {
     return false
@@ -290,7 +318,17 @@ export async function removeSighting(id: string): Promise<boolean> {
 /** An admin's housekeeping on the log itself: any record, any status,
     gone for good. Distinct from removeSighting above only by who is
     allowed to call it: firestore.rules enforces that distinction, this
-    function is the same delete either way. */
+    function is the same delete either way.
+
+    ponytail: no `catId` passed here, so a still-pending record deleted
+    this way (rather than reviewed) leaves cats/{catId}.pendingCount one
+    too high. plate/Plate.tsx's own "Manage sightings" list, the only
+    caller, is built from catsRepo.listSightings, which never contains
+    anyone's pending row but the viewer's own (its own note) — so this
+    only reaches a pending record at all when an admin deletes a report
+    they filed themselves, straight from the gallery rather than through
+    Approve/Reject. Narrow enough to leave; thread catId + a pending check
+    through here if that stops being true. */
 export async function deleteSighting(id: string): Promise<boolean> {
   return removeSighting(id)
 }
@@ -353,11 +391,34 @@ export function sortForDisplay(list: Sighting[]): Sighting[] {
 /** An admin's verdict. Writes the decision onto the record rather than
     removing it either way, which is what makes the audit trail possible:
     every sighting keeps who, what, where and when, and now also what was
-    decided about it. */
-export async function reviewSighting(id: string, verdict: 'surveyed' | 'discarded'): Promise<boolean> {
+    decided about it.
+
+    `catId` is a second parameter rather than a read of the sighting doc's
+    own field, because every caller (ui/ReviewQueue.tsx, plate/Plate.tsx)
+    already has it in hand from the row it is deciding, and reading it back
+    here would be a round trip to learn something the caller already knows.
+    Batched with the matching pendingCount decrement, same reasoning as
+    addSighting's own batch: a verdict that landed without it would leave
+    cats/{catId}.pendingCount overcounting forever.
+
+    ponytail: no read-then-check on the sighting's own current status
+    first, so calling this twice on an already-decided sighting (a
+    double-click before a caller disables its button) would decrement
+    pendingCount an extra time. Same trust level this codebase already
+    accepts for the votes tally (this file's own note on voteSighting);
+    worth a transaction with a status read if it ever actually happens
+    rather than guarded against up front. */
+export async function reviewSighting(
+  id: string,
+  catId: string,
+  verdict: 'surveyed' | 'discarded'
+): Promise<boolean> {
   try {
     const db = await getDb()
-    await updateDoc(doc(db, COLLECTION, id), { status: verdict })
+    const batch = writeBatch(db)
+    batch.update(doc(db, COLLECTION, id), { status: verdict })
+    batch.update(doc(db, 'cats', catId), { pendingCount: increment(-1) })
+    await batch.commit()
     return true
   } catch {
     return false

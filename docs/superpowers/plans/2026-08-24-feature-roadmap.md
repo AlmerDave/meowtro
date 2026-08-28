@@ -240,10 +240,12 @@ top reads correctly at desktop width.
 ## Phase 9: the backend, done 2026-08-27
 
 Full plan and design in `2026-08-27-phase9-backend-implementation.md` and
-`../specs/2026-08-27-phase9-backend-design.md`. Not yet visually reviewed;
-see the build plan's RESUME HERE block for the full remaining checklist
-(Firebase project setup, security-rule emulator run, browser walkthrough,
-one open product question on the vote buttons).
+`../specs/2026-08-27-phase9-backend-design.md`. Fully landed and browser-
+verified as of 2026-08-28 (build plan's RESUME HERE has the closing
+notes) — Firebase project live, rules deployed, full sign-in/report/
+review/approve flow confirmed working. The one open product question this
+phase left (no "sign in to vote" prompt) became its own follow-on feature,
+also in RESUME HERE, rather than staying a loose end here.
 
 - [x] **Real API behind `catsRepo`** (the one file). Phase 8's mocked
       review becomes real moderation with no UI rewrite: Firestore

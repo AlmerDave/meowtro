@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { initializeApp, cert } from 'firebase-admin/app'
 import { getFirestore } from 'firebase-admin/firestore'
 import { CATS } from '../src/data/cats.seed'
+import { flattenRing } from '../src/data/territoryShape'
 
 /* One-time push of the twelve seed cats and their sighting history into a
    real Firestore project. Run once, by hand, after Task 2's rules are
@@ -85,7 +86,11 @@ async function main() {
        'recorded' instead. countRecorded/clearRecorded (catsRepo.ts) filter
        on this field, so a document written here without it would be
        invisible to that split rather than merely uncounted. */
-    await db.doc(`cats/${id}`).set({ ...rest, territory: feature.geometry.coordinates[0], source: 'seed' })
+    await db.doc(`cats/${id}`).set({
+      ...rest,
+      territory: flattenRing(feature.geometry.coordinates[0] as [number, number][]),
+      source: 'seed',
+    })
     console.log(`cats/${id} written`)
   }
 

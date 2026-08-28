@@ -167,12 +167,18 @@ export function ReportSighting({
   const [catId, setCatId] = useState<string | null>(null)
   const [point, setPoint] = useState<[number, number] | null>(null)
   const [when, setWhen] = useState<(typeof WHEN)[number]['key']>('now')
-  /* Optional: the field this panel's own header comment used to describe as
-     "nowhere to upload a photograph to" (data/sightings.ts's note on
-     Sighting.photo). Empty string, not null, so it can sit directly in
-     addSighting's optional `photo` param without a null check at the call
-     site. */
+  /* Optional. `photo` is a local `blob:` preview URL for the confirm
+     step's thumbnail, not a Storage URL: pickPhoto below only compresses
+     and previews, `photoBlob` is what commit() actually uploads, and only
+     right before it writes the sighting. Same reasoning as
+     ui/RecordCat.tsx's pickMainPhoto — uploading at pick time meant a
+     photo chosen and then abandoned (Back, Cancel, Escape, all real exits
+     from a step that isn't the last one) left a permanent orphan in
+     Storage with no way to delete it (storage.rules forbids client
+     delete). Empty string, not null, so `photo &&` below and close()'s
+     revoke both work without a null check. */
   const [photo, setPhoto] = useState('')
+  const [photoBlob, setPhotoBlob] = useState<Blob | null>(null)
   const [photoError, setPhotoError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   /* Where the map was looking when the picker opened. See the header: this
@@ -271,7 +277,13 @@ export function ReportSighting({
     setCatId(null)
     setPoint(null)
     setWhen('now')
+    /* Covers every exit — Cancel, Escape, and a successful commit's own
+       eventual close() via the 'done' timer — so a chosen-then-abandoned
+       photo leaks no object URL, the same way it now leaks no orphaned
+       Storage file either. */
+    if (photo) URL.revokeObjectURL(photo)
     setPhoto('')
+    setPhotoBlob(null)
     setPhotoError(null)
     setQuery('')
     setPlacing(false)
@@ -490,8 +502,20 @@ export function ReportSighting({
        a sign-in prompt in this button's place rather than letting the
        press silently do nothing. */
     if (!cat || !point || !uid) return
+    /* The one place a photo picked in this flow reaches Storage, and only
+       once the report is actually about to be written — see the note on
+       `photo` above. */
+    let photoUrl: string | undefined
+    if (photoBlob) {
+      try {
+        photoUrl = await uploadPhoto(photoBlob, 'sightings')
+      } catch {
+        setPhotoError('Could not upload that photo. Check your connection and try again.')
+        return
+      }
+    }
     const minutes = WHEN.find((w) => w.key === when)?.minutesAgo ?? 0
-    const sighting = await addSighting(cat.id, point, Date.now() - minutes * 60_000, uid, photo || undefined)
+    const sighting = await addSighting(cat.id, point, Date.now() - minutes * 60_000, uid, photoUrl)
     if (!sighting) return
     setUndoId(sighting.id)
     setStep('done')
@@ -503,9 +527,11 @@ export function ReportSighting({
     setPhotoError(null)
     try {
       const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
-      setPhoto(await uploadPhoto(blob, 'sightings'))
+      if (photo) URL.revokeObjectURL(photo)
+      setPhotoBlob(blob)
+      setPhoto(URL.createObjectURL(blob))
     } catch {
-      setPhotoError('Could not upload that photo. Check your connection and try again.')
+      setPhotoError('Could not read that photo. Try a different file.')
     }
   }
 

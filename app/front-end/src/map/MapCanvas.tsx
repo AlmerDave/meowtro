@@ -467,6 +467,7 @@ export function MapCanvas({
               onSelect={onSelect}
               hoveredId={hoveredId}
               onHover={onHover}
+              uid={uid}
               admin={admin}
             />
             {/* Before <MapLabels> on purpose: the storm's veil shares the

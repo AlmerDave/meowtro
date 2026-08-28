@@ -473,7 +473,10 @@ body[data-admin='true'] {
 .sight,
 .sight-open,
 .sight-menu,
-.about {
+.about,
+.user-chip,
+.account-menu-trigger,
+.account-menu-panel {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
@@ -1710,6 +1713,39 @@ body[data-admin='true'] {
 }
 .plate-vote-btn:active {
   transform: scale(0.97);
+}
+
+/* The signed-out half of .plate-locked: no tally to show two buttons for
+   (a signed-out client never has vote counts, only cats/{id}.pendingCount),
+   so one full-width door in where .plate-vote would sit. Same filled-rust
+   CTA recipe ui/AccountMenu.tsx's own sign-in button and ui/ReportSighting's
+   .sight-go already use, not a new one. */
+.plate-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  width: 100%;
+  padding: var(--s-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--rust);
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--paper);
+  cursor: pointer;
+}
+.plate-signin:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.plate-signin-error {
+  margin: var(--s-2) 0 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--rust);
 }
 
 /* --- An admin's decision list, phase 9 -----------------------------------
@@ -4278,6 +4314,230 @@ body[data-placing='true'] .maplibregl-canvas {
   opacity: 1;
 }
 
+/* The non-admin half of the same gap (App.tsx's own comment there): a
+   small pill rather than a second full-width strip, since it has no
+   layout to reserve (no --admin-banner-h counterpart) and top-centre is
+   free of both .rail and .plate at every width, unlike the corners either
+   of them already owns. Rounded and glass, `.rail`/`.plate`'s own recipe
+   above, so it reads as this app's chrome rather than the admin banner's
+   solid-ink one, which is deliberately a different, more official-looking
+   register (it's gating something, this is just saying who's signed in). */
+.user-chip {
+  position: fixed;
+  z-index: 5;
+  top: calc(var(--s-4) + var(--safe-t));
+  left: 50%;
+  /* width: auto here would shrink-to-fit against only the HALF of the
+     viewport to the right of that 50% mark (left is specified, right
+     isn't, so that's the available space the box gets sized against
+     before translate ever moves it) — fine on desktop where half the
+     screen is still plenty, but on a phone that's not room for "Hi,
+     Almer D…" plus "Sign out", so the button wrapped onto two lines.
+     max-content sizes to the un-shrunk row instead; .about's modal
+     centering (this same left/translate trick) sidesteps the same
+     shrink-to-fit case by giving itself an explicit width too. */
+  width: max-content;
+  max-width: calc(100vw - 2 * var(--s-4) - var(--safe-l) - var(--safe-r));
+  translate: -50% 0;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* Caps a long displayName or email local-part so it cannot push the
+   pill's sign-out control past the gap .rail and .plate leave it, the
+   same worst-case landing.css's .landing-signin-name already guards
+   against. */
+.user-chip-name {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 9rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
+.user-chip-out {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+  opacity: 0.6;
+  cursor: pointer;
+}
+.user-chip-out:hover,
+.user-chip-out:focus-visible {
+  opacity: 1;
+}
+
+/* --- The account menu -----------------------------------------------------
+   Desktop only below: stacked directly above .sight-open, same left edge,
+   same size, so the two read as one column of bottom-left controls (the
+   visitor's own corner, .sight-open's own note) rather than as two
+   unrelated triggers in two unrelated places. The mobile override, a
+   different corner entirely, lives further down past .account-menu-panel's
+   own base rule -- see that block's own note on why the ordering matters. */
+.account-menu-trigger {
+  position: fixed;
+  z-index: 3;
+  left: calc(var(--s-6) + var(--safe-l));
+  bottom: calc(var(--s-6) + 2.25rem + var(--s-2) + var(--safe-b));
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: var(--radius);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background var(--dur-ui) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-menu-trigger:hover {
+    background: var(--surface-hover);
+  }
+}
+.account-menu-trigger:active {
+  transform: scale(0.94);
+}
+
+/* Grows up out of the trigger above, same transform-origin trick .sight
+   uses for .sight-open below it: the corner both stay anchored to is their
+   shared bottom-left edge, so the panel opens away from the column rather
+   than swallowing it. */
+.account-menu-panel {
+  position: fixed;
+  z-index: 4;
+  left: calc(var(--s-6) + var(--safe-l));
+  transform-origin: bottom left;
+  bottom: calc(var(--s-6) + 2.25rem + var(--s-2) + 2.25rem + var(--s-2) + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+  width: 18rem;
+  max-width: calc(100vw - 2 * var(--s-6) - var(--safe-l) - var(--safe-r));
+  padding: var(--s-3) var(--s-4) var(--s-4);
+  border-radius: var(--radius);
+}
+
+/* Below the breakpoint, the trigger moves off the bottom-left column above
+   and over to top-right instead, the same corner .admin-controls claims
+   there when it is mounted (never at once: this only ever mounts for
+   `!admin && !user`, that only for `admin`).
+
+   THIS BLOCK MUST STAY AFTER THE BASE RULES ABOVE, not merely inside a
+   media query: `@media` adds no specificity, so a plain selector and a
+   media-querried one at the same specificity are settled by source order,
+   and whichever comes LAST in the file wins on every viewport where both
+   match — including a narrow one, where the plain rule above still
+   matches too. Placing this block earlier in the file (where it lived
+   until a live check on a real phone showed the desktop bottom-left
+   position winning at every width) meant the base rule always overrode
+   it; .admin-controls' own mobile override two sections down already
+   carries the identical warning, learned the same way, and this is the
+   second time in this file alone. */
+@media (max-width: 900px) {
+  .account-menu-trigger {
+    top: calc(var(--s-4) + var(--admin-banner-h) + var(--safe-t));
+    bottom: auto;
+    left: auto;
+    right: calc(var(--s-4) + var(--safe-r));
+  }
+  .account-menu-panel {
+    transform-origin: top right;
+    top: calc(var(--s-4) + var(--admin-banner-h) + 2.75rem + var(--s-2) + var(--safe-t));
+    bottom: auto;
+    left: calc(var(--s-4) + var(--safe-l));
+    right: calc(var(--s-4) + var(--safe-r));
+    width: auto;
+    max-width: none;
+  }
+}
+
+.account-menu-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.account-menu-eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--rust);
+}
+.account-menu-close {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background var(--dur-ui) var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .account-menu-close:hover {
+    background: var(--well);
+    color: var(--ink);
+  }
+}
+.account-menu-copy {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+/* Same recipe as .sight-go, the report panel's own one-filled-button-per-
+   step CTA: this is that same kind of button, just in a different panel. */
+.account-menu-signin {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s-2);
+  padding: var(--s-3);
+  border: 0;
+  border-radius: 999px;
+  background: var(--rust);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--paper);
+  cursor: pointer;
+}
+.account-menu-signin:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.account-menu-error {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.4;
+  color: var(--rust);
+}
+
 /* --- Parked: the corner pill this replaced, 2026-08-26 -------------------
    .admin-controls (map/MapCanvas.tsx) briefly carried a second admin tell,
    a small chip beside the record button. Removed on user direction once
@@ -5010,7 +5270,8 @@ body[data-placing='true'] .maplibregl-canvas {
      .about's own mobile `bottom` is measured off .map-controls rather than
      off a copy of that arithmetic. */
   .sight-open,
-  .map-control {
+  .map-control,
+  .account-menu-trigger {
     width: 2.75rem;
     height: 2.75rem;
   }
@@ -5022,7 +5283,8 @@ body[data-placing='true'] .maplibregl-canvas {
   .sight-close,
   .about-close,
   .record-close,
-  .review-close {
+  .review-close,
+  .account-menu-close {
     width: 2.75rem;
     height: 2.75rem;
   }
@@ -5040,6 +5302,7 @@ body[data-placing='true'] .maplibregl-canvas {
   .scan-report,
   .plate-report,
   .plate-vote-btn,
+  .plate-signin,
   .plate-copy,
   .plate-pending-row button,
   .record-open,
@@ -5050,7 +5313,8 @@ body[data-placing='true'] .maplibregl-canvas {
   .record-place,
   .record-pill,
   .record-swatch,
-  .admin-btn {
+  .admin-btn,
+  .account-menu-signin {
     min-height: 2.75rem;
   }
 

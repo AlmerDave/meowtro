@@ -217,6 +217,22 @@ export function shapePreviewPoints(shape: Shape): [number, number][] {
   return points
 }
 
+/** Firestore rejects nested arrays outright (an array of [lng, lat] pairs is
+    an array of arrays), so a ring can't be written as `shapeRing` returns
+    it. Flattened to `[lng0, lat0, lng1, lat1, ...]` for storage and paired
+    back up on read; every writer (catsRepo.addCat, scripts/migrateSeed.ts)
+    and every reader (catsRepo.listTerritories) goes through these two so
+    the encoding can't drift between them. */
+export function flattenRing(ring: [number, number][]): number[] {
+  return ring.flat()
+}
+
+export function unflattenRing(flat: number[]): [number, number][] {
+  const ring: [number, number][] = []
+  for (let i = 0; i < flat.length; i += 2) ring.push([flat[i], flat[i + 1]])
+  return ring
+}
+
 /** URL-safe, collision-checked by the caller. Falls back to a timestamp so a
     name written entirely in a non-latin script still produces an id rather
     than an empty string. */

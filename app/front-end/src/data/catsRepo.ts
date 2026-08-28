@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import type { Cat } from './cats.seed'
-import { shapeRing, slugify, type CatDraft, type Shape } from './territoryShape'
+import { flattenRing, shapeRing, slugify, unflattenRing, type CatDraft, type Shape } from './territoryShape'
 import {
   addAdminSighting,
   deleteSighting as removeAnySighting,
@@ -66,7 +66,11 @@ const COLLECTION = 'cats'
     shows on the map identically either way. */
 type CatDoc = Omit<Cat, 'id' | 'lastSeen'> & {
   lastSeen?: string
-  territory: [number, number][]
+  /** Flattened `[lng0, lat0, lng1, lat1, ...]`, not `[number, number][]`:
+      Firestore rejects a nested array outright. See territoryShape.ts's
+      flattenRing/unflattenRing, the only two places this shape is built or
+      unbuilt. */
+  territory: number[]
   source: 'seed' | 'recorded'
 }
 
@@ -191,6 +195,7 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
   let id = base
   for (let n = 2; taken.has(id); n++) id = `${base}-${n}`
 
+  const note = draft.note.trim()
   const catData: CatDoc = {
     name: name.toUpperCase(),
     plate: `PLATE ${String(existing.length + 1).padStart(2, '0')}`,
@@ -200,11 +205,14 @@ export async function addCat(draft: CatDraft): Promise<Cat | null> {
     firstRecorded: MONTH.format(new Date()),
     range: `About ${Math.round(draft.radiusM * 2)} m across, centred on the recorded point`,
     disposition: 'Not yet observed',
-    note: draft.note.trim() || undefined,
     coordinates: formatCoordinates(draft.center),
     photo: draft.photo.trim(),
-    territory: shapeRing(draft.shape, draft.center, draft.radiusM),
+    territory: flattenRing(shapeRing(draft.shape, draft.center, draft.radiusM)),
     source: 'recorded',
+    /* Firestore's setDoc rejects `undefined` field values outright (same
+       family of error the nested-array territory bug was), so a blank note
+       has to be an absent key, not a key set to undefined. */
+    ...(note ? { note } : {}),
   }
 
   try {
@@ -367,7 +375,7 @@ export async function listTerritories(
       const feature: FeatureCollection<Polygon>['features'][number] = {
         type: 'Feature',
         properties: { id: docSnap.id, name: data.name },
-        geometry: { type: 'Polygon', coordinates: [data.territory] },
+        geometry: { type: 'Polygon', coordinates: [unflattenRing(data.territory)] },
       }
       const sighting = seen.get(docSnap.id)
       return sighting ? translateToward(feature, sighting.point) : feature
@@ -426,9 +434,15 @@ export async function listReviewed(): Promise<Sighting[]> {
 }
 
 /** An admin's verdict. Approving is what makes the territory move, which
-    until now happened the instant a sighting was made. */
-export async function reviewSighting(id: string, verdict: 'surveyed' | 'discarded'): Promise<boolean> {
-  return review(id, verdict)
+    until now happened the instant a sighting was made. `catId` passes
+    straight through to sightings.ts's review, which needs it to keep
+    cats/{catId}.pendingCount in step (see that function's own note). */
+export async function reviewSighting(
+  id: string,
+  catId: string,
+  verdict: 'surveyed' | 'discarded'
+): Promise<boolean> {
+  return review(id, catId, verdict)
 }
 
 /** A visitor taking back their own unreviewed report. Deletes it: nothing
@@ -446,7 +460,7 @@ export async function reviewSighting(id: string, verdict: 'surveyed' | 'discarde
 export async function withdrawSighting(id: string, uid: string): Promise<boolean> {
   const mine = (await listMySightings(uid)).find((sighting) => sighting.id === id)
   if (!mine || mine.status !== 'pending' || mine.authorUid !== uid) return false
-  return removeSighting(id)
+  return removeSighting(id, mine.catId)
 }
 
 /** An admin cleaning up the sighting log itself: any record, any status,

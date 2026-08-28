@@ -127,9 +127,20 @@ await assertFails(sightings(anon).get())
 await assertFails(sightings(visitor).get())
 await assertSucceeds(sightings(admin).get())
 
-// Only an admin can write a cat.
+// Only an admin can write a cat...
 await assertFails(visitor.doc('cats/milo').set({ name: 'MILO 2' }))
 await assertSucceeds(admin.doc('cats/milo').set({ name: 'MILO 2' }))
+
+// ...except pendingCount, which any signed-in visitor may nudge (the same
+// trust the `votes` tally on a sighting already gets, so a signed-out
+// visitor's plate can know a report exists without ever reading it).
+await assertSucceeds(visitor.doc('cats/milo').update({ pendingCount: 1 }))
+// Riding another field in on the same write is what the rule actually
+// guards against: a visitor could otherwise smuggle any change through by
+// pairing it with a legitimate pendingCount nudge.
+await assertFails(other.doc('cats/milo').update({ pendingCount: 2, name: 'MILO 3' }))
+// Signed out cannot touch it at all.
+await assertFails(anon.doc('cats/milo').update({ pendingCount: 1 }))
 
 // A signed-in visitor can create their own pending sighting; not one
 // attributed to somebody else, and not one that skips review.

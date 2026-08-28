@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Copy,
   Lock,
+  LogIn,
   MapPin,
   Pencil,
   Plus,
@@ -29,6 +30,7 @@ import {
   type CatPatch,
 } from '@/data/catsRepo'
 import type { FeatureCollection, Polygon } from 'geojson'
+import { signInWithGoogle } from '@/data/auth'
 import { CAT_COLOURS, photoAt, THUMB_PX, type Colour } from '@/data/cats.seed'
 import { describeWhen, distanceM, ringRadiusM, type Sighting } from '@/data/sightings'
 import { ringCentroid } from '@/map/centroid'
@@ -354,6 +356,16 @@ export function Plate({
      control that actually applies. */
   const someoneElsesPending = !!oldestPending && oldestPending.authorUid !== uid
 
+  /* The signed-out counterpart to someoneElsesPending above. oldestPending
+     itself is always null here (catsRepo.listPendingForCat returns []
+     outright for a null uid, firestore.rules' own doing), so this reads
+     cats/{id}.pendingCount instead: the one fact about an open report a
+     signed-out client is allowed to have at all, a count with no point, no
+     photo and no author behind it. Locks the report button the same way
+     someoneElsesPending does, and offers signing in in place of the vote
+     prompt a signed-in stranger would see. */
+  const signedOutPending = !uid && (cat.pendingCount ?? 0) > 0
+
   /* The photographs on file for this cat. flatMap rather than filter-then-
      map, so the absent case is removed and the type narrows in one pass. */
   const photos = useMemo<StackCard[]>(
@@ -497,6 +509,28 @@ export function Plate({
     if (await voteSighting(id, uid ?? '', direction)) loadSightings()
   }
 
+  /* The signed-out lock's own door in, same try/catch-and-message shape
+     ui/ReportSighting.tsx's inline sign-in prompt already uses (signInError
+     there is this file's own signInError, not shared state: two unrelated
+     prompts, two unrelated failures). No setSignInBusy(false) on success
+     is not a bug here either: subscribeAuth firing flips App.tsx's `uid`
+     from null, which re-renders this plate with signedOutPending now
+     false, unmounting this whole branch before the button could matter
+     again. */
+  const [signInBusy, setSignInBusy] = useState(false)
+  const [signInError, setSignInError] = useState<string | null>(null)
+  const signIn = async () => {
+    setSignInError(null)
+    setSignInBusy(true)
+    try {
+      await signInWithGoogle()
+    } catch {
+      setSignInError('Could not sign in. Try again.')
+    } finally {
+      setSignInBusy(false)
+    }
+  }
+
   /* An admin's verdict, reachable straight from the plate now rather than
      only from the corner panel that used to own this (ui/ReviewQueue.tsx,
      parked — see map/MapCanvas.tsx's note on why). Approving can move the
@@ -515,7 +549,7 @@ export function Plate({
      every render, so approving a sighting is enough on its own — nothing
      here has to remember to keep a second fact in sync. */
   const decidePending = async (id: string, verdict: 'surveyed' | 'discarded') => {
-    if (!(await reviewSighting(id, verdict))) return
+    if (!(await reviewSighting(id, cat.id, verdict))) return
     loadSightings()
     onChanged?.()
   }
@@ -1022,10 +1056,17 @@ export function Plate({
             everybody's, one vote per account (Sighting.votes' own note),
             which is what makes asking the question worth anything.
 
-            Three outcomes, not two. Somebody else's open report gets the
-            question. This visitor's own gets nothing here, because "Your
-            reports" above already covers it (see someoneElsesPending's own
-            note). Nothing open at all gets the report button. */}
+            Four outcomes now, not three. Somebody else's open report, seen
+            signed in, gets the question and the tally (below). This
+            visitor's own gets nothing here, because "Your reports" above
+            already covers it (see someoneElsesPending's own note). Signed
+            out, with cat.pendingCount saying a report exists that
+            listPendingForCat cannot hand this viewer the details of
+            (firestore.rules keeps a pending report behind sign-in, spec
+            §9), gets a lock with no place name, no photo and no tally, none
+            of which reached this client, plus the door in rather than the
+            question. Nothing open at all, either way, gets the report
+            button. */}
         {someoneElsesPending && oldestPending ? (
           <motion.div className="plate-locked" variants={line}>
             <p className="plate-locked-msg">
@@ -1055,6 +1096,27 @@ export function Plate({
                 {oldestPending.votes?.down ?? 0}
               </button>
             </div>
+          </motion.div>
+        ) : signedOutPending ? (
+          <motion.div className="plate-locked" variants={line}>
+            <p className="plate-locked-msg">
+              <Lock size={12} aria-hidden />A sighting of {cat.name} is awaiting review. Sign in to
+              see it and vote.
+            </p>
+            <button
+              type="button"
+              className="plate-signin"
+              disabled={signInBusy}
+              onClick={() => void signIn()}
+            >
+              <LogIn size={13} />
+              {signInBusy ? 'Signing in…' : 'Sign in with Google'}
+            </button>
+            {signInError && (
+              <p className="plate-signin-error" role="alert">
+                {signInError}
+              </p>
+            )}
           </motion.div>
         ) : (
           /* Either nothing is pending (the normal case, report offered), or

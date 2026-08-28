@@ -11,9 +11,10 @@ import { springSoft } from '@/motion/springs'
 import { Rail } from '@/ui/Rail'
 import { CatDeck } from '@/ui/CatDeck'
 import { Loading } from '@/ui/Loading'
+import { AccountMenu } from '@/ui/AccountMenu'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
 import { isSurveyed, listVisibleSightings, type Sighting } from '@/data/sightings'
-import { isAdmin, signOutUser, subscribeAuth } from '@/data/auth'
+import { greetingName, isAdmin, signOutUser, subscribeAuth, type User } from '@/data/auth'
 import type { FeatureCollection, Polygon } from 'geojson'
 
 /* The one legal way to reach the live MapLibre instance from Plate.tsx,
@@ -143,6 +144,16 @@ function useUid(): string | null {
   return uid
 }
 
+/* The signed-in visitor's whole auth object, not just the uid useUid
+   already tracks: the admin-banner greeting below needs a name to show,
+   which lives on the User, so it gets its own small subscription rather
+   than widening useUid's contract for every other caller of it. */
+function useUser(): User | null {
+  const [user, setUser] = useState<User | null>(null)
+  useEffect(() => subscribeAuth(setUser), [])
+  return user
+}
+
 function useUrlSelection() {
   /* The ?cat= this page was opened with, read once. A ref because it is a
      starting condition that gets consumed, not a source of truth: once the
@@ -256,6 +267,7 @@ export default function App() {
      it reveals something arriving. */
   const admin = useAdmin()
   const uid = useUid()
+  const user = useUser()
 
   /* Same reactive-attribute shape ui/ReportSighting.tsx already uses for
      `data-placing`: a body-level attribute is what lets shell.css reserve
@@ -517,6 +529,31 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* The gap the admin banner's own comment names: a signed-in
+          non-admin had no indicator and no way out. A small top-centre
+          pill rather than a second full-width strip, on purpose: unlike
+          the banner it doesn't reserve layout room (`admin` and this are
+          mutually exclusive, so `.rail`/`.plate` never have to clear both
+          at once), and top-centre is the one spot `.rail` (top-left) and
+          `.plate` (top-right, desktop only, whenever a cat is selected)
+          both leave alone at every width, including below 900px where
+          neither is even mounted (CatDeck owns the bottom instead). */}
+      {!admin && user && (
+        <div className="user-chip" role="status">
+          <span className="user-chip-name">Hi, {greetingName(user)}</span>
+          <button type="button" className="user-chip-out" onClick={() => void signOutUser()}>
+            Sign out
+          </button>
+        </div>
+      )}
+
+      {/* The signed-out mirror of the user-chip above, same slot: whichever
+          of the two applies, something in this exact spot answers "who am
+          I here". AccountMenu unmounts itself the moment a sign-in
+          succeeds (subscribeAuth flips `user` from null), so there is
+          never a moment both are on screen. */}
+      {!admin && !user && <AccountMenu />}
 
       {/* Above everything until the map has actually painted. A sibling of
           the map rather than a wrapper around it, deliberately: the map has

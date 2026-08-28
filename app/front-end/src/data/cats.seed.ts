@@ -119,6 +119,21 @@ export type Cat = {
       CatRow's onError. Moving these into public/ later is a data-only edit
       here, which is the point of typing it as a URL. */
   photo: string
+  /** How many pending sightings this cat currently has, kept in sync by
+      catsRepo/sightings.ts wherever one is created, approved, discarded or
+      withdrawn. Never sourced from the seed: absent here, like `lastSeen`,
+      and present only once Firestore has written it (catsRepo.ts).
+
+      Exists for exactly one reader: plate/Plate.tsx's signed-out lock,
+      which cannot read the pending sighting itself (firestore.rules keeps
+      an unreviewed report's point behind sign-in, spec §9) but still needs
+      to know "is there one at all" to lock out a duplicate report and
+      point a visitor at signing in to vote. A count rather than a boolean
+      because a cat can collect more than one open report at once
+      (sightings.ts's pendingByCat has the same note), and a boolean
+      toggled on create/resolve would read "nothing pending" the moment the
+      first of two was resolved, while a second one was still open. */
+  pendingCount?: number
 }
 
 /* Twelve cats. It was three, on the reasoning that three proves the overlap

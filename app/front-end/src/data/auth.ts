@@ -49,4 +49,12 @@ export function getCurrentUid(): Promise<string | null> {
   })
 }
 
+/** What a "Hi, ___" greeting says: the Google account's own display name,
+    or the local part of its email when there isn't one (a handful of
+    Google Workspace accounts skip displayName). 'there' only if neither
+    is set, which real Google sign-ins don't leave both empty. */
+export function greetingName(user: User): string {
+  return user.displayName?.trim() || user.email?.split('@')[0] || 'there'
+}
+
 export type { User }

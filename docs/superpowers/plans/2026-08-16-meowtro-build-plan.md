@@ -13,58 +13,51 @@
 
 ## RESUME HERE
 
-**Last completed:** phase 9, the backend, 2026-08-27. Full plan and design
-in `2026-08-27-phase9-backend-implementation.md` and
-`2026-08-27-phase9-backend-design.md`. Firestore, Firebase Auth, and Cloud
-Storage replace `localStorage` behind the one seam this project keeps for
-exactly this reason: `catsRepo.ts`, whose public surface did not change.
-`?role=admin` is gone; real Google sign-in gates the admin surface on
-membership in an `admins` Firestore collection, checked by `data/auth.ts`'s
-`isAdmin()` and consumed by `App.tsx`.
-`data/localCats.ts` and `data/overlay.ts` are deleted; territory geometry
-(the hand-drawn survey polygons and the warped-circle admin shapes alike)
-now lives in one place, `territoryShape.ts`. The whole project typechecks
-clean (`npx tsc -b`, zero errors).
+**Last completed:** the corroboration-visibility feature, 2026-08-28, built
+on top of phase 9 (the backend, 2026-08-27 — full plan and design in
+`2026-08-27-phase9-backend-implementation.md` and
+`2026-08-27-phase9-backend-design.md`). Phase 9 itself is now fully landed:
+a real Firebase project exists, `.env.local` is filled, `firestore.rules` /
+`storage.rules` are deployed, and the full sign-in → report → review →
+approve flow has been run and confirmed working in a real browser, closing
+out all three of what used to be phase 9's own open items (the fourth,
+below, turned into this session's feature rather than staying a loose
+end). The whole project still typechecks clean (`npx tsc -b`, zero
+errors).
 
-**Four things stand between this and calling phase 9 fully landed:**
+**What this session added, closing the vote-visibility question phase 9
+left open:** a signed-out visitor used to have no way to discover that a
+cat already had an open report, and no prompt to sign in and corroborate
+it — `catsRepo.listPendingForCat` correctly hides the report itself from a
+signed-out client (spec §9: an unreviewed point stays behind sign-in), but
+nothing stood in for it. Built:
 
-1. **No real Firebase project exists yet.** `.env.local` was never filled
-   in with real credentials in this environment. Before any of this code
-   can run: create a Firebase project, enable Firestore, Storage, and
-   Google sign-in under Authentication, fill in `.env.local` from Task 1's
-   `.env.local.example`, deploy the security rules
-   (`firebase deploy --only firestore:rules,storage`), generate a service
-   account key, and run `npm run seed:firebase` once to populate the 12
-   cats and 30 seeded sightings. Note: this plan's own prose says "29 seed
-   sightings" in a couple of places; that is wrong. The real count, in the
-   script and in its console output, is 30.
-2. **The Firestore/Storage security rules were never run against the
-   local emulator.** This machine has no Java runtime, which the emulator
-   needs. The rules were checked by two independent close readings (every
-   test assertion traced by hand against the rule logic) but never
-   actually executed. Run `npm run test:rules` once Java is available,
-   before trusting the rules in production.
-3. **The full sign-in, report, review, approve flow has never run in a
-   real browser.** Every task's automated verification was `npx tsc -b`
-   (now clean project-wide) plus the individual `*.check.ts` scripts;
-   nothing in this implementation process opened a browser, matching this
-   project's own convention that visual gates are closed by the user from
-   a screenshot, not a self-launched browser. Still needed: `npm run dev`,
-   sign in with a real Google account, confirm the admin banner appears
-   (once that account is added as a document in the `admins` collection),
-   add a cat with a photo and confirm it uploads to Storage and the
-   resulting URL renders, report a sighting from a second account (and
-   from a signed-out one, to confirm the sign-in gate), approve it from
-   the review queue, and confirm the territory moves.
-4. **One open product question, not a bug.** `Plate.tsx`'s vote buttons
-   on a pending sighting work identically whether or not the viewer is
-   signed in; a signed-out vote is rejected server-side by the Firestore
-   rules with no error shown in the UI. Reporting a sighting has an
-   explicit "sign in to report" prompt; voting has no equivalent "sign in
-   to vote" prompt. This matches the plan's own literal design (it never
-   specified a sign-in gate on voting), so it is not an implementation
-   defect, but it is worth the user's attention as a UX choice they may
-   want to revisit.
+- **`cats/{id}.pendingCount`** — a public, coarse count (not the report
+  itself) kept in sync by `addSighting`/`reviewSighting`/`withdrawSighting`
+  via `writeBatch`, with a narrow `firestore.rules` permission letting any
+  signed-in author patch that one field, mirroring the trust model the
+  `votes` tally on a sighting already used. New assertions in
+  `tests/rules.test.mjs`.
+- **`Plate.tsx`'s third lock branch** — signed out, on a cat with
+  `pendingCount > 0`: a generic locked message (no place, photo or tally,
+  none of which reach a signed-out client) plus an inline "Sign in with
+  Google" button, same busy/error shape `ReportSighting.tsx` already uses.
+- **`ui/AccountMenu.tsx`** — the sign-in entry point `app.html` never had
+  outside the report flow: a person-glyph trigger + panel, stacked above
+  `ReportSighting.tsx`'s own trigger on desktop, top-right on mobile
+  (`.admin-controls`' own corner, never contended since one is admin-only
+  and the other only mounts signed-out).
+- **`CatMarkers.tsx`'s pending badge** widened from admin-only to
+  `admin || uid` (any signed-in visitor), with copy that now differs by
+  who is looking.
+
+**Not yet visually reviewed** — this is real chrome, not just data
+plumbing, and needs your eyes: the badge (signed-in non-admin, both
+copies), the plate's signed-out lock and sign-in button, and AccountMenu
+at both the desktop bottom-left stack and the mobile top-right corner (a
+CSS cascade ordering bug put the mobile rule after a same-specificity
+base rule that always won regardless of viewport; fixed, but only checked
+by re-reading the served CSS, not by eyes on a phone).
 
 Before that: phase 8, roles and review, 2026-08-25. The full
 write-up including the four design decisions is in the feature roadmap.

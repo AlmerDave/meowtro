@@ -72,14 +72,27 @@ type Props = {
   onSelect: (id: string | null) => void
   hoveredId: string | null
   onHover: (id: string | null) => void
+  /** The signed-in visitor's own uid, or null while signed out. Gates the
+      pulsing "open report" badge below alongside `admin`: `sightings` is
+      already `listVisibleSightings(uid)` (App.tsx), so a signed-out
+      visitor's copy of it carries no pending rows and the badge stays
+      correctly dark for them without any extra filtering here.
+
+      2026-08-28: widened from admin-only. The original reasoning (the map
+      stays an admin-only surface for this feature end to end) stopped
+      matching the rest of the app the moment map/Territories.tsx's ghost
+      territory opened the same "a report is open here" fact to every
+      visitor (see that file's own 2026-08-26 note) — that shape is a
+      strictly more revealing hint than this badge's plain boolean, so
+      leaving only the badge behind the admin gate was inconsistent, not
+      safer. Corroboration (any signed-in visitor may vote on any open
+      report, sightings.ts's own note) needs a way for a visitor to
+      discover a report exists at all; this is that way. */
+  uid: string | null
   /** Whether this visitor is holding the admin gate open (App.tsx's
-      useAdmin). Gates the pulsing "needs review" badge below — the badge
-      itself names nothing a regular visitor cannot already see (a cat
-      already has a public pin here), but the map is the one surface this
-      feature keeps admin-only end to end: the plate's own locked-report
-      note (plate/Plate.tsx) is the public-facing half of phase 9, and it
-      never renders a coordinate either. Defaults to false, matching every
-      other admin-gated prop in this app. */
+      useAdmin). Still distinct from `uid` above: an admin sees the same
+      badge a signed-in visitor does, but CatPin's label names the verdict
+      action only an admin actually has. */
   admin?: boolean
 }
 
@@ -90,6 +103,10 @@ type PinProps = {
   lifted: boolean
   /** This cat has at least one sighting waiting on a verdict. */
   pending: boolean
+  /** Only changes the pending label below: an admin can act on a report
+      (approve/discard, in the review queue), a visitor can only vote on
+      one, so the two get told a different thing about the same badge. */
+  admin: boolean
   onClick: () => void
   onMouseEnter: () => void
   onMouseLeave: () => void
@@ -147,7 +164,7 @@ type PinProps = {
    target this small that made mouseup land on the bare map instead, so the
    native click fired on an ancestor and onClick never ran. The button box
    never moves. Only what is inside it does. */
-function CatPin({ cat, active, lifted, pending, onClick, onMouseEnter, onMouseLeave }: PinProps) {
+function CatPin({ cat, active, lifted, pending, admin, onClick, onMouseEnter, onMouseLeave }: PinProps) {
   /* null while the photo is still in flight, so the glyph is not flashed up
      and then replaced a moment later on every marker at once. */
   const [hasPhoto, setHasPhoto] = useState<boolean | null>(null)
@@ -180,7 +197,13 @@ function CatPin({ cat, active, lifted, pending, onClick, onMouseEnter, onMouseLe
       /* The cat's own territory token themes the whole marker, straight out
          of the data, exactly as the rail row and the plate do. */
       style={{ '--accent': `var(${cat.colour})` } as React.CSSProperties}
-      aria-label={pending ? `${cat.name}, a sighting is awaiting review` : cat.name}
+      aria-label={
+        pending
+          ? admin
+            ? `${cat.name}, a sighting is awaiting review`
+            : `${cat.name}, an open sighting needs confirming`
+          : cat.name
+      }
       onClick={onClick}
       /* Pointer events with a type check, not onMouseEnter/onMouseLeave. A
          touch tap synthesises a mouseenter but does not reliably synthesise
@@ -233,6 +256,7 @@ export function CatMarkers({
   onSelect,
   hoveredId,
   onHover,
+  uid,
   admin = false,
 }: Props) {
   /* Was a module-level const off a static JSON import, which was right
@@ -256,7 +280,7 @@ export function CatMarkers({
      replaced, and still correctly re-run on the same trigger. A vote alone
      does not touch this set: see data/sightings.ts's pendingByCat for why
      a tally never changes who is in it. */
-  const pending = admin ? pendingByCat(sightings) : null
+  const pending = admin || uid ? pendingByCat(sightings) : null
 
   // The pitched-mode circle layer. isFlat is deliberately in this effect's
   // deps, 2026-08-17 — reverted from a split "create once, toggle visibility
@@ -394,6 +418,7 @@ export function CatMarkers({
             active={cat.id === selectedId || cat.id === hoveredId}
             lifted={!isFlat}
             pending={pending?.has(cat.id) ?? false}
+            admin={admin}
             onClick={() => onSelect(cat.id === selectedId ? null : cat.id)}
             onMouseEnter={() => onHover(cat.id)}
             onMouseLeave={() => onHover(null)}

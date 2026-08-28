@@ -6,7 +6,7 @@ import { MapCanvas } from '@/map/MapCanvas'
 import { listCats, type Cat } from '@/data/catsRepo'
 import type { Sighting } from '@/data/sightings'
 import { photoAt } from '@/data/cats.seed'
-import { signInWithGoogle } from '@/data/auth'
+import { greetingName, signInWithGoogle, subscribeAuth, type User } from '@/data/auth'
 import { Reel } from './Reel'
 
 /* The front door.
@@ -94,6 +94,11 @@ export default function Landing() {
      same as every other error string in this app: "auth/popup-blocked"
      tells a visitor nothing they can act on. */
   const [signInError, setSignInError] = useState<string | null>(null)
+  /* Returning-visitor state for the signin slot below: a persisted Google
+     session means the button has nothing left to do (popups aren't free)
+     except say who's signed in and offer the same way into the app. */
+  const [user, setUser] = useState<User | null>(null)
+  useEffect(() => subscribeAuth(setUser), [])
   const narrow = useNarrow()
 
   /* The reveal. landing.css styles every top-level surface as hidden under
@@ -237,25 +242,40 @@ export default function Landing() {
             nothing to reveal underneath it, so this navigates directly
             once the popup resolves. */}
         <div className="landing-signin-slot">
-          <button
-            type="button"
-            className="landing-signin"
-            onClick={async () => {
-              setSignInError(null)
-              try {
-                await signInWithGoogle()
-              } catch {
-                setSignInError('Could not sign in. Try again.')
-                return
-              }
-              window.location.href = APP
-            }}
-          >
-            Sign in
-            <span className="landing-signin-arrow" aria-hidden="true">
-              <ArrowUpRight size={14} />
-            </span>
-          </button>
+          {user ? (
+            /* Already signed in (a persisted session, not a fresh popup):
+               the button's job shrinks to "take me in", so it navigates
+               straight there instead of round-tripping through Google
+               again. Same pill, same arrow, so this reads as the one
+               control settling into its other state rather than a second
+               control appearing. */
+            <a className="landing-signin" href={APP} onClick={explore}>
+              <span className="landing-signin-name">Hi, {greetingName(user)}</span>
+              <span className="landing-signin-arrow" aria-hidden="true">
+                <ArrowUpRight size={14} />
+              </span>
+            </a>
+          ) : (
+            <button
+              type="button"
+              className="landing-signin"
+              onClick={async () => {
+                setSignInError(null)
+                try {
+                  await signInWithGoogle()
+                } catch {
+                  setSignInError('Could not sign in. Try again.')
+                  return
+                }
+                window.location.href = APP
+              }}
+            >
+              Sign in
+              <span className="landing-signin-arrow" aria-hidden="true">
+                <ArrowUpRight size={14} />
+              </span>
+            </button>
+          )}
           {signInError && (
             <p className="landing-signin-error" role="alert">
               {signInError}

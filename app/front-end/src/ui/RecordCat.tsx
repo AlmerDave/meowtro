@@ -108,7 +108,10 @@ const PATTERN_SWATCH_CLASS: Record<string, string> = {
 
 const STEPS = ['Photo', 'Identity', 'Character & look', 'Place & review'] as const
 
-type ExtraPhoto = { id: string; src: string }
+/** `src` is a local `blob:` object URL for the live thumbnail, not a
+    Storage URL — see the note above pickMainPhoto on why upload is
+    deferred to submit time. `blob` is what actually gets uploaded then. */
+type ExtraPhoto = { id: string; blob: Blob; src: string }
 
 const EMPTY_FORM = {
   name: '',
@@ -199,28 +202,40 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
      actual writer, not whoever held the gate open when the panel opened. */
   const [uid, setUid] = useState<string | null>(null)
   useEffect(() => subscribeAuth((user) => setUid(user?.uid ?? null)), [])
-  /* A count of uploads currently in flight, not a boolean: the main photo
-     and the extra-photos gallery are two independent pickers on the same
-     screen (pickMainPhoto/pickExtraPhotos below), each reachable while the
-     other is still mid-upload, and pickExtraPhotos itself fires several
-     uploads at once via Promise.all. A boolean set true-then-false around
-     each call would have the last upload to *start* clear it the moment
-     it, alone, finishes, even while its siblings are still running, which
-     is exactly the silently-dropped-photo bug a review caught here. The
-     count only reaches zero once every upload that started has actually
-     finished (its own `finally` decrements it), so "uploading" is simply
-     `photosUploading > 0`. The old compressImage path resolved to a local
-     data URI, instant enough that nothing needed to track "still working"
-     between pick and preview at all; a real Storage upload is a round
-     trip that can visibly take a moment on a slow connection, and
-     Next/Add cat must not be pressable while a photo the submit is about
-     to send is still only partially there. */
-  const [photosUploading, setPhotosUploading] = useState(0)
-  const photoUploading = photosUploading > 0
+  /* The compressed Blob behind form.photo's preview URL, kept out of `form`
+     because it is never one of CatDraft's fields itself — submit() uploads
+     it and puts the resulting Storage URL in the draft instead. See the
+     note above pickMainPhoto for why upload waits until then. */
+  const [mainPhotoBlob, setMainPhotoBlob] = useState<Blob | null>(null)
+  /* A count of compressions currently in flight, not a boolean: the main
+     photo and the extra-photos gallery are two independent pickers on the
+     same screen (pickMainPhoto/pickExtraPhotos below), each reachable
+     while the other is still mid-compress, and pickExtraPhotos itself
+     compresses several files at once via Promise.all. A boolean set
+     true-then-false around each call would have the last one to *start*
+     clear it the moment it, alone, finishes, even while its siblings are
+     still running, which is exactly the silently-dropped-photo bug a
+     review caught here (back when this counted uploads rather than
+     compressions). The count only reaches zero once every compression
+     that started has actually finished (its own `finally` decrements it),
+     so "processing" is simply `photosProcessing > 0`. Decoding and
+     redrawing a large phone photo to canvas is not instant, and Next/Add
+     cat must not be pressable while a photo the submit is about to read
+     is still only partially compressed. */
+  const [photosProcessing, setPhotosProcessing] = useState(0)
+  const photoProcessing = photosProcessing > 0
 
   const reset = () => {
+    /* Every preview is a blob: object URL, never uploaded to Storage until
+       submit actually ran (see pickMainPhoto's note). Revoking them here
+       covers every exit — cancel, Escape, and a successful submit's own
+       close() — so an abandoned or finished wizard leaks no object URLs,
+       the same way it now leaks no orphaned Storage files either. */
+    if (form.photo) URL.revokeObjectURL(form.photo)
+    for (const photo of extraPhotos) URL.revokeObjectURL(photo.src)
     setStep(0)
     setForm(EMPTY_FORM)
+    setMainPhotoBlob(null)
     setExtraPhotos([])
     setAnswers(EMPTY_ANSWERS)
     setCustomMark('')
@@ -330,26 +345,30 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     }
   }, [map, open, center, radiusM, form.shape, form.colour])
 
-  /* Both pickers now upload to Storage rather than keeping a local data
-     URI: form.photo/extraPhotos hold a real https://firebasestorage...
-     URL from the moment a file is chosen, the same thing addCat writes
-     straight into the cat's record, so there is no separate "promote the
-     preview to a real photo" step at submit time the way there never was
-     before. The trade is that the thumbnail no longer appears the instant
-     a file is picked; photoUploading covers that gap by disabling the
-     step's advance button until the round trip finishes. */
+  /* Pickers compress and preview locally; neither one touches Storage.
+     Uploading here, at pick time, used to mean every file chosen became a
+     permanent Storage object immediately, whether or not the wizard was
+     ever finished — a cancelled panel, a re-picked photo, or (as found
+     2026-08-28) a save that failed after upload all left orphans behind,
+     with no way to clean them up (storage.rules forbids client delete on
+     purpose). Uploading is now deferred to submit(), the one place that is
+     about to write the cat doc, so nothing reaches Storage unless a save
+     is actually happening. The trade: a save that fails *after* its
+     uploads succeed can still leave an orphan, but that is now the rare
+     case instead of the common one. */
   const pickMainPhoto = async (file: File | undefined) => {
     if (!file) return
     setError(null)
-    setPhotosUploading((n) => n + 1)
+    setPhotosProcessing((n) => n + 1)
     try {
       const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
-      const url = await uploadPhoto(blob, 'cats')
-      setForm((f) => ({ ...f, photo: url }))
+      if (form.photo) URL.revokeObjectURL(form.photo)
+      setMainPhotoBlob(blob)
+      setForm((f) => ({ ...f, photo: URL.createObjectURL(blob) }))
     } catch {
-      setError('Could not upload that photo. Check your connection and try again.')
+      setError('Could not read that photo. Try a different file.')
     } finally {
-      setPhotosUploading((n) => n - 1)
+      setPhotosProcessing((n) => n - 1)
     }
   }
 
@@ -360,28 +379,33 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     const picked = Array.from(files).slice(0, room)
     try {
       /* Each photo in the batch counts itself in and out of
-         photosUploading individually, not the Promise.all as a whole:
-         Storage upload times vary per file, and the count must stay above
-         zero for as long as ANY of them is still running, not just until
-         the fastest one resolves. */
-      const urls = await Promise.all(
+         photosProcessing individually, not the Promise.all as a whole:
+         compress time varies per file, and the count must stay above zero
+         for as long as ANY of them is still running, not just until the
+         fastest one resolves. */
+      const compressed = await Promise.all(
         picked.map(async (file) => {
-          setPhotosUploading((n) => n + 1)
+          setPhotosProcessing((n) => n + 1)
           try {
-            return await uploadPhoto(await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY), 'cats')
+            const blob = await compressImageToBlob(file, PHOTO_MAX_DIM, PHOTO_QUALITY)
+            return { blob, src: URL.createObjectURL(blob) }
           } finally {
-            setPhotosUploading((n) => n - 1)
+            setPhotosProcessing((n) => n - 1)
           }
         })
       )
-      setExtraPhotos((prev) => [...prev, ...urls.map((src, i) => ({ id: `${Date.now()}-${i}`, src }))])
+      setExtraPhotos((prev) => [...prev, ...compressed.map((photo, i) => ({ id: `${Date.now()}-${i}`, ...photo }))])
     } catch {
-      setError('Could not upload one of those photos. Try again.')
+      setError('Could not read one of those photos. Try again.')
     }
   }
 
   const removeExtraPhoto = (id: string) => {
-    setExtraPhotos((prev) => prev.filter((photo) => photo.id !== id))
+    setExtraPhotos((prev) => {
+      const removed = prev.find((photo) => photo.id === id)
+      if (removed) URL.revokeObjectURL(removed.src)
+      return prev.filter((photo) => photo.id !== id)
+    })
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -395,7 +419,32 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
       setError('Place the territory on the map first.')
       return
     }
+    /* canAdvance already keeps step 0 from being left without a main
+       photo, so this only ever fires if that guard was somehow bypassed;
+       kept as the actual gate rather than trusting the UI path, the same
+       reason center's own check above exists. */
+    if (!mainPhotoBlob) {
+      setError('Add a photo first.')
+      return
+    }
     setBusy(true)
+    /* The one place any of this reaches Storage, and only once we are
+       actually about to write the cat doc — see the note above
+       pickMainPhoto. A failure here is reported separately from a
+       Firestore failure below: this one means nothing was saved and
+       nothing (beyond this upload itself) was written anywhere. */
+    let photoUrl: string
+    let extraUrls: string[]
+    try {
+      ;[photoUrl, extraUrls] = await Promise.all([
+        uploadPhoto(mainPhotoBlob, 'cats'),
+        Promise.all(extraPhotos.map((photo) => uploadPhoto(photo.blob, 'cats'))),
+      ])
+    } catch {
+      setBusy(false)
+      setError('Could not upload the photos. Check your connection and try again.')
+      return
+    }
     /* The eyebrow's other half. The seeded cats each carry a real nearby
        place ("LINE 03 · TRACK 30TH"); the form never asks for one (see
        catsRepo.addCat's own note on not inventing a filing convention),
@@ -412,10 +461,11 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     const place = map ? nearestPlaceName(map, center)?.replace(/^Near /, '') : null
     const cat = await addCat({
       ...form,
+      photo: photoUrl,
       line: place ? place.toUpperCase() : form.line,
       center,
       radiusM,
-      extraPhotos: extraPhotos.map((photo) => photo.src),
+      extraPhotos: extraUrls,
       /* RecordCat only ever mounts behind App.tsx's admin gate, so uid is
          non-null in practice by the time this form is reachable; the
          fallback empty string is here only so a stale/expired session
@@ -431,7 +481,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
     close()
   }
 
-  const canAdvance = step === 0 ? !!form.photo : step === 1 ? !!form.name.trim() && !!form.description : true
+  const canAdvance = step === 0 ? !!mainPhotoBlob : step === 1 ? !!form.name.trim() && !!form.description : true
   const isLastStep = step === STEPS.length - 1
 
   return (
@@ -512,7 +562,7 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                         className="record-file"
                         type="file"
                         accept="image/*"
-                        required={!form.photo}
+                        required={!mainPhotoBlob}
                         onChange={(e) => pickMainPhoto(e.target.files?.[0])}
                       />
                     </div>
@@ -884,17 +934,17 @@ export function RecordCat({ onRecorded }: { onRecorded: () => void }) {
                 </span>
               )}
               {isLastStep ? (
-                <button type="submit" className="record-save" disabled={busy || photoUploading}>
+                <button type="submit" className="record-save" disabled={busy || photoProcessing}>
                   {busy ? 'Saving…' : 'Add cat'}
                 </button>
               ) : (
                 <button
                   type="button"
                   className="record-save"
-                  disabled={!canAdvance || photoUploading}
+                  disabled={!canAdvance || photoProcessing}
                   onClick={() => setStep((s) => s + 1)}
                 >
-                  {photoUploading ? 'Uploading…' : 'Next'}
+                  {photoProcessing ? 'Processing…' : 'Next'}
                 </button>
               )}
             </div>

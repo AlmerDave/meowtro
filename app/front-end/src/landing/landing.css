@@ -267,6 +267,18 @@ body:has(.landing) {
   color: var(--rust);
 }
 
+/* Caps a long displayName or email local-part so it cannot widen the pill
+   past the nav row's room next to the brand mark, worst-case on the
+   narrow layout where the two sit closest together. */
+.landing-signin-name {
+  display: inline-block;
+  overflow: hidden;
+  max-width: 9rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+
 .landing-signin-arrow {
   display: grid;
   place-items: center;
