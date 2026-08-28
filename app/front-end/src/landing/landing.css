@@ -231,6 +231,7 @@ body:has(.landing) {
   padding: var(--s-2) var(--s-2) var(--s-2) var(--s-4);
   border: var(--panel-border);
   border-radius: 999px;
+  cursor: pointer;
   font-family: var(--font-display);
   font-size: var(--t-sm);
   font-weight: 500;
