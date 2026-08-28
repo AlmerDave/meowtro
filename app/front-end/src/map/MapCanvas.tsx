@@ -299,6 +299,29 @@ export function MapCanvas({
     instance.touchZoomRotate.disableRotation()
     instance.keyboard.disableRotation()
 
+    /* `compact: true` above does not mean "starts collapsed" — MapLibre's
+       AttributionControl adds both `maplibregl-compact` and
+       `maplibregl-compact-show` on init, so every visitor sees the full
+       OSM/Protomaps/cat/weather credit line before ever touching the (i)
+       button. There is no constructor option for the collapsed start state.
+
+       It cannot be undone right here, though: onAdd runs before the source
+       has any attribution to show, so `_updateCompact()` sees an empty
+       control and skips adding the classes entirely (attribution_control.ts)
+       — they only appear once the style/source data resolves, on whatever
+       later tick that happens to land on. A MutationObserver catches that
+       exact moment instead of guessing a delay, undoes it once, and gets out
+       of the way — a visitor who taps the (i) button afterwards must still
+       be able to open it and have it stay open. */
+    const attrib = container.current.querySelector('.maplibregl-ctrl-attrib')
+    const attribObserver = new MutationObserver(() => {
+      if (attrib?.classList.contains('maplibregl-compact-show')) {
+        attrib.classList.remove('maplibregl-compact-show')
+        attribObserver.disconnect()
+      }
+    })
+    if (attrib) attribObserver.observe(attrib, { attributes: true, attributeFilter: ['class'] })
+
     const onLoad = () => setIsLoaded(true)
     instance.on('load', onLoad)
 
@@ -329,6 +352,7 @@ export function MapCanvas({
     setMap(instance)
 
     return () => {
+      attribObserver.disconnect()
       instance.off('load', onLoad)
       instance.off('idle', onIdleOnce)
       instance.off('error', onError)

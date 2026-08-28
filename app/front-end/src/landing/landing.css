@@ -497,6 +497,12 @@ body:has(.landing) {
 
 /* --- the reel control (rendered by landing/Reel.tsx) -------------------- */
 
+/* No glass panel behind this one, unlike every other control on the page
+   (2026-08-28: it was reading as its own boxy chrome competing with the
+   nav/guide/CTA panels for attention, on a control that only exists to
+   demo the map, not to be noticed itself). The ticks stay real 44px
+   buttons (below) so the control is still there and still tappable — only
+   the background/border/blur/shadow that drew a box around them is gone. */
 .reel-bar {
   position: fixed;
   z-index: 5;
@@ -506,13 +512,6 @@ body:has(.landing) {
   display: flex;
   align-items: center;
   gap: var(--s-3);
-  padding: var(--s-2) var(--s-3);
-  border: var(--panel-border);
-  border-radius: 999px;
-  background: var(--surface-glass);
-  backdrop-filter: blur(var(--blur-glass));
-  -webkit-backdrop-filter: blur(var(--blur-glass));
-  box-shadow: var(--shadow-glass), var(--edge-highlight);
   transition: opacity var(--dur-panel) var(--ease-out);
 }
 
@@ -715,20 +714,22 @@ body:has(.landing) {
 
 @container landing (max-width: 620px) {
   .landing-wordmark {
-    /* Same reasoning as the base rule: capped by height too, or a landscape
-       phone (short and wide, same shape problem as a laptop) grows the
-       word straight into the stacked card below it. */
-    font-size: min(17cqw, 15vh);
+    /* Shrunk from 17cqw/15vh (2026-08-28: the word alone was reading as
+       most of the screen on a phone, with the actual map — the entire
+       point of the page — squeezed into a thin band above the card. Same
+       height cap as before, just a lower ceiling on both axes, so a
+       landscape phone still can't grow the word into the card below it. */
+    font-size: min(13cqw, 11vh);
   }
 
-  /* The mobile card runs shorter than the desktop one (~260-290px against
+  /* The mobile card runs shorter than the desktop one (~220-250px against
      the guide's own bottom offset, vs. the desktop rule's ~320px), so the
      same 340px reserve here would eat further into the hero than this
      card actually needs — and .landing-hero also holds the CTA button in
      this layout (see .landing-hero-cta), which needs its own room inside
      whatever is left.
 
-     min(260px, 32vh), not a flat 260px: a flat reserve on a genuinely
+     min(210px, 26vh), not a flat 210px: a flat reserve on a genuinely
      short viewport — a phone held sideways, ~375px tall — ate a third of
      the whole screen and pushed the wordmark's top edge off-screen, a
      worse defect than the overlap it was fixing. Scaling the reserve down
@@ -736,7 +737,7 @@ body:has(.landing) {
      still touch it in that one extreme case, which is the lesser of the
      two problems and the case this page is least likely to be opened in. */
   .landing-hero {
-    padding-bottom: min(260px, 32vh);
+    padding-bottom: min(210px, 26vh);
   }
 
   /* The word used to be hidden here, leaving the arrow alone, to hold the
@@ -749,16 +750,28 @@ body:has(.landing) {
     right: calc(var(--s-3) + var(--safe-r));
     bottom: calc(var(--s-3) + var(--safe-b));
     width: auto;
-    padding: var(--s-4);
+    padding: var(--s-3);
+  }
+
+  /* The card's own internal gaps, tightened from the desktop rule's s-3/s-4
+     spacing: this is the biggest single surface on the phone layout, and
+     every margin trimmed here is map that shows instead. */
+  .landing-eyebrow {
+    margin-bottom: var(--s-2);
   }
 
   .landing-lede {
+    margin-bottom: var(--s-2);
     font-size: var(--t-lg);
   }
 
   .landing-note {
     font-size: var(--t-xs);
-    margin-bottom: var(--s-4);
+    margin-bottom: var(--s-3);
+  }
+
+  .landing-rule {
+    margin-bottom: var(--s-3);
   }
 
   /* Over the 44px touch floor. 46px was passing on a technicality. */
@@ -780,7 +793,7 @@ body:has(.landing) {
   .landing-roster {
     flex-direction: column;
     align-items: stretch;
-    gap: var(--s-3);
+    gap: var(--s-2);
   }
 
   /* The two remaining sub-44px targets on this page. The tick is the
@@ -802,23 +815,26 @@ body:has(.landing) {
     height: 52px;
   }
 
-  /* Stacked under the nav, not measured up from the bottom: the guide
+  /* Pinned under the nav, not measured up from the bottom: the guide
      panel's height depends on its copy, so anything anchored to the bottom
      collides the moment the text changes.
 
-     Stacked rather than put in opposite corners, which was the first
-     attempt: MapLibre's attribution wraps to two lines at this width and
-     spans the frame, so a corner is not a corner here. It takes the first
-     row and the reel sits under it. */
+     Opposite corners, mirroring the brand/sign-in row above. This used to
+     be a single row with the credits stacked full-width over the reel,
+     which was the fix for MapLibre's attribution wrapping to two lines and
+     spanning the frame at this width — but that was a symptom of the
+     control starting pre-expanded (see MapCanvas.tsx), not of compact mode
+     itself. Collapsed, it is a single small (i) pill with no text to wrap,
+     so it fits its own corner and the reel no longer has to wait below it. */
   .landing .maplibregl-ctrl-bottom-right {
     top: calc(4.4rem + var(--safe-t));
     bottom: auto;
     right: calc(var(--s-3) + var(--safe-r));
-    left: calc(var(--s-3) + var(--safe-l));
+    left: auto;
   }
 
   .reel-bar {
-    top: calc(8.6rem + var(--safe-t));
+    top: calc(4.4rem + var(--safe-t));
     bottom: auto;
     left: calc(var(--s-3) + var(--safe-l));
     right: auto;
