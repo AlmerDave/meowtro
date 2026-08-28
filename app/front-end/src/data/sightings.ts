@@ -103,20 +103,26 @@ const COLLECTION = 'sightings'
    script never calls any of them (it exercises only applyVote and
    pendingByCat, both below), so firebase.ts is never loaded under node.
 
-   The path is routed through a plain `string`-typed local rather than
-   written as `import('../firebase')` directly for a third, purely
-   type-checking reason: tsc resolves and type-checks a dynamic import's
-   target whenever the specifier is a string literal, static or not, so a
-   literal here would pull firebase.ts's `import.meta.env` straight back
-   into this check's compile even though nothing would ever call the
-   import at runtime. Widening the specifier to `string` is what tells tsc
-   it cannot know which module this resolves to, so it leaves the target
-   file out of the program entirely; the app itself still gets the exact
-   same runtime import Vite would code-split on. */
+   The specifier is cast `as string` rather than passed as a bare
+   `import('../firebase')` for a third, purely type-checking reason: tsc
+   resolves and type-checks a dynamic import's target whenever the
+   specifier is a string literal, static or not, so an uncast literal here
+   would pull firebase.ts's `import.meta.env` straight back into this
+   check's compile even though nothing would ever call the import at
+   runtime. The cast is what tells tsc it cannot know which module this
+   resolves to, so it leaves the target file out of the program entirely.
+   Crucially the specifier is still a literal in the emitted JS, since a
+   TypeScript cast carries no runtime code — Vite's bundler sees the same
+   `import('../firebase')` a static import would produce and code-splits
+   it into a real chunk. Routing it through a `string`-typed local instead,
+   as this used to do, hid that literal from Vite too: the browser then
+   resolved the import at its own runtime, relative to wherever the
+   bundler happened to place the calling chunk, which 404s the moment
+   production output isn't sitting next to a file literally named
+   "firebase" (it never is — Vite hashes and flattens build output). */
 let dbPromise: Promise<Firestore> | undefined
 function getDb(): Promise<Firestore> {
-  const firebaseModulePath: string = '../firebase'
-  if (!dbPromise) dbPromise = import(firebaseModulePath).then((m) => (m as { db: Firestore }).db)
+  if (!dbPromise) dbPromise = import('../firebase' as string).then((m) => (m as { db: Firestore }).db)
   return dbPromise
 }
 
