@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { CloudLightning, CloudRain, CloudSun, Info, Maximize, Moon, Sun } from 'lucide-react'
+import { ArrowRight, CloudLightning, CloudRain, CloudSun, Info, Maximize, Moon, Sun } from 'lucide-react'
 import { About } from '@/ui/About'
 import { spring } from '@/motion/springs'
 import { DEFAULT_ZOOM, useMap, WEATHERS, type Weather } from './MapCanvas'
@@ -56,6 +56,30 @@ const WEATHER_LABEL: Record<Weather, string> = {
   storm: 'Storm',
 }
 
+const HINT_KEY = 'meowtro.hint3d.v1'
+
+/** Whether this browser has already been shown the first-visit 3D hint.
+    The same defensive localStorage read every one-shot flag in this app
+    uses (data/noteChips.ts's own note on it): a browser that blocks
+    storage just sees the hint every visit, which is a smaller failure than
+    the hint never earning its keep at all. */
+function hasSeenHint(): boolean {
+  try {
+    return window.localStorage.getItem(HINT_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function markHintSeen(): void {
+  try {
+    window.localStorage.setItem(HINT_KEY, '1')
+  } catch {
+    // Private mode or a full quota: the hint shows again next visit, the
+    // same failure mode as never having remembered it at all.
+  }
+}
+
 type Props = {
   /* Only to clear it. The capsule has no idea which cat is selected and
      does not want one: passing selectedId in would make this component
@@ -69,6 +93,46 @@ export function MapControls({ onSelect }: Props) {
      lives in this capsule and a panel cannot own the control that mounts
      it. Same arrangement the sighting panel has with its own trigger. */
   const [aboutOpen, setAboutOpen] = useState(false)
+
+  /* Points at the 3D button the first time this browser ever sees the
+     capsule — it is the one control here nobody would find by guessing,
+     since the other three read as an ordinary settings row and this one
+     changes the whole scene. A spotlight rather than the data-tip label
+     the other buttons use: most of this survey's traffic is a phone, and
+     that label only shows under `@media (hover: hover)` (shell.css), so a
+     touch visitor would never trigger it on their own — this needs
+     something that announces itself instead of waiting to be found.
+
+     markHintSeen() lives inside the `show` timeout, not at the top of the
+     effect, and that placement is load-bearing under StrictMode (main.tsx):
+     dev mounts every component twice, mount-cleanup-mount, synchronously.
+     Marking it seen up front meant the first, throwaway mount wrote the
+     flag and was cleaned up before its timer ever fired, so the second,
+     kept mount's own hasSeenHint() check already read true and bailed out
+     before scheduling anything — the hint could never actually show in
+     dev. Nested inside the timeout, the throwaway mount's timer is cleared
+     before it fires, so only a mount that survives long enough to actually
+     display the hint ever marks it seen. */
+  const hintButtonRef = useRef<HTMLButtonElement>(null)
+  const [spot, setSpot] = useState<{ cx: number; cy: number; r: number } | null>(null)
+  useEffect(() => {
+    if (hasSeenHint()) return
+    const show = setTimeout(() => {
+      const rect = hintButtonRef.current?.getBoundingClientRect()
+      if (!rect) return
+      markHintSeen()
+      setSpot({
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2,
+        r: Math.max(rect.width, rect.height) / 2 + 10,
+      })
+    }, 900)
+    const hide = setTimeout(() => setSpot(null), 6000)
+    return () => {
+      clearTimeout(show)
+      clearTimeout(hide)
+    }
+  }, [])
 
   if (!map) return null
 
@@ -140,6 +204,7 @@ export function MapControls({ onSelect }: Props) {
       <span className="map-control-rule" aria-hidden />
 
       <motion.button
+        ref={hintButtonRef}
         type="button"
         className="map-control map-control-text"
         data-tip={isFlat ? '3D view' : 'Flat view'}
@@ -148,7 +213,10 @@ export function MapControls({ onSelect }: Props) {
         transition={spring}
         // State only. MapCanvas owns the camera that goes with it, so the
         // landing's reel gets the same pitch change without this button.
-        onClick={() => setIsFlat(!isFlat)}
+        onClick={() => {
+          setSpot(null)
+          setIsFlat(!isFlat)
+        }}
       >
         <AnimatePresence mode="popLayout" initial={false}>
           <motion.span
@@ -250,6 +318,63 @@ export function MapControls({ onSelect }: Props) {
         <Info size={16} />
       </motion.button>
     </motion.div>
+
+    {/* The first-visit 3D hint: a spotlight, not a tooltip. The rest of the
+        screen dims via one oversized box-shadow on a transparent circle
+        sized to the button (the standard CSS spotlight trick — a shadow
+        never participates in hit-testing, so it cannot be clicked, only
+        seen), rather than a portal, a canvas mask or a library. Both
+        pieces are `pointer-events: none`: the circle so the real button
+        underneath still receives the click that both plays the 3D view
+        and clears `spot` (its own onClick above), and the callout so it
+        never sits between a visitor and anything it is merely pointing
+        at. Positioned in JS, once, off the button's own measured rect
+        (hintButtonRef) rather than in CSS, because nothing here can know
+        the capsule's screen position — it depends on the safe-area inset
+        and which corner shell.css puts it in — until the button
+        genuinely exists to measure. */}
+    <AnimatePresence>
+      {spot && (
+        <>
+          <motion.div
+            className="hint-spot"
+            style={{
+              left: spot.cx - spot.r,
+              top: spot.cy - spot.r,
+              width: spot.r * 2,
+              height: spot.r * 2,
+            }}
+            initial={{ opacity: 0, scale: 0.6 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            transition={spring}
+            aria-hidden
+          />
+          {/* The anchor div owns position (fixed, right-edge-relative so the
+              callout's own width, which varies with its text, never has to
+              be known in advance) and the vertical centering transform;
+              the motion.div inside owns only the slide-in transform, since
+              Motion overwrites an element's whole `transform` style and
+              the two would otherwise fight over the same property. */}
+          <div
+            className="hint-callout-anchor"
+            style={{ right: window.innerWidth - (spot.cx - spot.r) + 12, top: spot.cy }}
+            aria-hidden
+          >
+            <motion.div
+              className="hint-callout"
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 8 }}
+              transition={spring}
+            >
+              Try the 3D view
+              <ArrowRight size={14} />
+            </motion.div>
+          </div>
+        </>
+      )}
+    </AnimatePresence>
 
     <AnimatePresence>
       {aboutOpen && <About onClose={() => setAboutOpen(false)} />}

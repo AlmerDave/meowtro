@@ -4,7 +4,11 @@ import { ShieldCheck } from 'lucide-react'
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { Grain } from '@/Grain'
 import { MapCanvas, useMap } from '@/map/MapCanvas'
+import { CatMarkers } from '@/map/CatMarkers'
+import { MapControls } from '@/map/MapControls'
 import { nearestPlaceName } from '@/map/landmark'
+import { RecordCat } from '@/ui/RecordCat'
+import { ReportSighting } from '@/ui/ReportSighting'
 import { Plate } from '@/plate/Plate'
 import { useLenis } from '@/motion/lenis'
 import { springSoft } from '@/motion/springs'
@@ -22,8 +26,10 @@ import type { FeatureCollection, Polygon } from 'geojson'
    sibling) and so cannot call useMap() itself — that hook throws unless
    it is used somewhere MapCanvas actually rendered. MapCanvas's own
    `children` prop already exists for exactly this ("a child can drive
-   isFlat, theme and weather through useMap()"); this is the first caller
-   besides the landing's reel.
+   isFlat, theme and weather through useMap()"); the landing's reel was
+   the first caller, this the second, and CatMarkers/MapControls below
+   (moved here from inside MapCanvas.tsx itself, see that file's note by
+   <Storm>) the third and fourth.
 
    2026-08-26: used to mount only under `admin`, on the assumption that
    findNearestPlace below was "a feature only Approve uses" — wrong once
@@ -487,12 +493,72 @@ export default function App() {
         territories={territories}
         sightings={sightings}
         uid={uid}
-        onRecorded={onRecorded}
-        onOpenRecord={openRecord}
-        report={report}
-        admin={admin}
       >
         <MapInstanceBridge onMap={setMapInstance} />
+        {/* Rendered here rather than inside MapCanvas.tsx so the landing
+            entry (landing/Landing.tsx, which never imports App.tsx) never
+            pulls in any of these four components' motion/react dependency.
+            See MapCanvas.tsx's own comment by <Storm> for the full
+            reasoning; same props each of these always took, MapCanvas
+            itself just used to be the one forwarding them. */}
+        <CatMarkers
+          cats={cats}
+          territories={territories}
+          sightings={sightings}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          hoveredId={hoveredId}
+          onHover={setHoveredId}
+          uid={uid}
+          admin={admin}
+        />
+        <MapControls onSelect={setSelectedId} />
+
+        {/* RecordCat is on screen behind the role check, same as since
+            phase 6. ui/ReviewQueue.tsx is not: phase 9 replaced its
+            list-panel review with reviewing straight off the map (the
+            pulsing pin badge, the ghost territory, the plate's own
+            "Pending review" section) at the admin's own request that the
+            corner panel was "too crowded and unnecessary". The file itself
+            is left alone, unimported, same as plate/CatFigure.tsx after
+            the 3D view came out (Plate.tsx's own header explains that
+            precedent) — nothing here says its list-plus-audit-trail view
+            can never come back, only that nothing currently mounts it.
+
+            Once briefly carried a second "you are admin" tell, a small
+            badge beside the record button — replaced by the admin banner
+            above once that existed, since two indicators for one fact is
+            the kind of duplication this app argues against everywhere
+            else, and the corner one was the one that had gone unnoticed to
+            begin with.
+
+            Wrapped rather than owning its own fixed position: the first
+            version put the trigger at a hand-picked corner (top-left)
+            without noticing the rail already lives there at full height,
+            so it rendered directly underneath it and was, correctly,
+            reported as "hidden": DOM order put Rail after MapCanvas, so
+            Rail painted over it. .admin-controls (shell.css) fixes the
+            position once, beside the map-controls capsule, a corner
+            nothing else claims — kept as a wrapper rather than unwound to
+            a single positioned button because a second admin tool is
+            likely to want the same shelf again. */}
+        {admin && (
+          <div className="admin-controls">
+            <RecordCat onRecorded={onRecorded} />
+          </div>
+        )}
+
+        {/* The visitor's one contribution, and as of phase 8 a proposal
+            rather than an edit: it lands `pending` and moves nothing until
+            an admin approves it. RecordCat above is the admin's
+            counterpart, now that there is somebody to do the reviewing. */}
+        <ReportSighting
+          cats={cats}
+          territories={territories}
+          onReported={onRecorded}
+          onOpenRecord={openRecord}
+          report={report}
+        />
       </MapCanvas>
       <Grain />
 
@@ -588,6 +654,7 @@ export default function App() {
           admin={admin}
           uid={uid}
           onChanged={onRecorded}
+          loadToken={loadToken}
           territories={territories}
           nearestPlaceName={findNearestPlace}
         />
@@ -615,6 +682,7 @@ export default function App() {
                 admin={admin}
                 uid={uid}
                 onChanged={onRecorded}
+                loadToken={loadToken}
                 territories={territories}
                 nearestPlaceName={findNearestPlace}
               />

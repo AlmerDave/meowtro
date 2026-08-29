@@ -69,6 +69,9 @@ type Props = {
       reason `admin` is). */
   uid: string | null
   onChanged?: () => void
+  /** Also passed straight through to the plate — see plate/Plate.tsx's own
+      note on why it needs it. */
+  loadToken?: number
   territories: FeatureCollection<Polygon>
   nearestPlaceName?: (point: [number, number]) => string | null
 }
@@ -83,6 +86,7 @@ export function CatDeck({
   admin,
   uid,
   onChanged,
+  loadToken,
   territories,
   nearestPlaceName,
 }: Props) {
@@ -384,6 +388,7 @@ export function CatDeck({
                   admin={admin}
                   uid={uid}
                   onChanged={onChanged}
+                  loadToken={loadToken}
                   territories={territories}
                   nearestPlaceName={nearestPlaceName}
                   onReport={

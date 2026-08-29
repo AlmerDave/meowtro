@@ -8,33 +8,41 @@ import type { Cat } from './cats.seed'
    refuses the ones there is nothing to read in, and it does that with
    arithmetic, not with a claim.
 
-   Not real: the match. `identify` returns MILO. There is no model behind it
-   and there cannot be one that runs here: telling one cat from another is
-   fine-grained re-identification, which needs many labelled photos per
-   individual and a trained embedding, and the smallest honest version of
-   that is several megabytes of weights this app would have to host.
+   Not real, and no longer pretended to be: the match itself. `identify`
+   used to answer MILO for any readable frame, a placeholder confidence
+   score included, with the honesty carried by one caption at the bottom of
+   the panel rather than by the answer itself. Real re-identification needs
+   many labelled photos per individual and a trained embedding — worth
+   building only once the survey is real (feature roadmap, phase 11) — so
+   rather than leave a guessing mock running indefinitely, every readable
+   frame now answers `coming-soon` and says so as the result, not as a
+   footnote under it.
 
    ## Why the gate is worth having anyway
 
-   A scanner that answers MILO whatever you point it at answers MILO when
-   you point it at a ceiling, and that is the first thing anybody will try.
-   The gate means something real is checking, so the part that is pretending
-   is not the only part.
+   A scanner that says "not built yet" whatever you point it at is still
+   worth checking the frame first: it is the difference between "not built
+   yet" and "not built yet, and also that was a photo of the ceiling". The
+   gate means something real still runs before the honest answer, so a
+   person gets useful feedback (too dark, nothing in frame) even with no
+   name to give them.
 
-   Be precise about what it catches, though, because overstating it would
-   put the dishonesty back: it rejects EMPTY frames, not WRONG ones. A wall,
-   the sky, the inside of a pocket, a lens cap. It cannot tell a cat from a
-   dog or from a chair, and nothing in the UI says it can. Only a model does
-   that, and that is the thing this file is shaped to accept later.
+   Be precise about what it catches, though: it rejects EMPTY frames, not
+   WRONG ones. A wall, the sky, the inside of a pocket, a lens cap. It
+   cannot tell a cat from a dog or from a chair, and nothing in the UI says
+   it can.
 
    ## The seam
 
-   `identify` is one async function returning one of three shapes. Today it
-   is a mock. Tomorrow it is a fetch to a server, or a lazily-loaded
-   detector (the pattern plate/CatFigure.tsx already uses for three.js).
-   Nothing above it changes, because nothing above it knows: the UI awaits a
-   promise and renders a result, which is exactly what it would do against
-   a real one.
+   `identify` is one async function returning one of four shapes.
+   `coming-soon` is what every readable photo gets today. `match`/`unsure`
+   are what a real recogniser returns later (the pattern plate/CatFigure.tsx
+   already uses for three.js: a lazily-loaded detector, or a fetch to a
+   server) — the shapes stay in the union and ScanCat.tsx's rendering for
+   them stays in place, unused but ready, so making this real again is a
+   change to this function's body only. Nothing above it changes, because
+   nothing above it knows: the UI awaits a promise and renders a result,
+   which is exactly what it would do against a real one.
 
    The staged delay lives in here rather than in the UI for the same reason.
    Take it out and the UI is already awaiting real work. */
@@ -47,6 +55,9 @@ export type IdentifyResult =
       real recogniser returns this whenever nothing scores high enough. */
   | { status: 'unsure' }
   | { status: 'no-subject'; reason: Rejection }
+  /** Recognition itself: not built yet. Every readable frame lands here
+      today, honestly, rather than at a fake `match`. */
+  | { status: 'coming-soon' }
 
 /** Longest side the photo is sampled at. Statistics do not need pixels: a
     160px thumbnail of a 12 megapixel photo has the same mean and spread as
@@ -116,43 +127,27 @@ export const REJECTION_TEXT: Record<Rejection, string> = {
   flat: 'Nothing to read in that frame. Point it at the cat, not past it.',
 }
 
-/** Roughly how long the mock spends pretending. Long enough to read a line
-    of status text, short enough not to be a wait. A real recogniser will
-    take whatever it takes; the UI cycles its status text on its own clock
-    and does not assume this number. */
-const MOCK_MS = 1500
+/** How long a readable frame waits before the honest answer lands. Long
+    enough for the sweep animation and one status line to read, short
+    enough not to feel like a hang over a message that is, in the end,
+    "not yet". A real recogniser will take whatever it takes; the UI cycles
+    its status text on its own clock and does not assume this number. */
+const MOCK_MS = 900
 
-/* The mock. Everything above this line is real.
-
-   MILO by name rather than by position, with a fallback, because "the first
-   cat in the list" is a different cat once somebody records one and a
-   demo that answers a different name each run is a confusing demo. */
+/* Everything above this line is real. `cats` stays a parameter, unused for
+   now, so the real recogniser this becomes does not change this function's
+   signature when it arrives — it is the thing that will need the survey to
+   score against. */
 export async function identify(pixels: Uint8ClampedArray, cats: Cat[]): Promise<IdentifyResult> {
+  void cats
   const stats = frameStats(pixels)
   const rejection = gradeFrame(stats)
 
   /* Rejected frames come back fast and honestly. Making a refusal wait as
-     long as a match would be theatre applied to the one answer here that is
-     not theatre. */
+     long as the coming-soon answer would be theatre applied to the one
+     answer here that is not theatre. */
   if (rejection) return { status: 'no-subject', reason: rejection }
 
   await new Promise((resolve) => setTimeout(resolve, MOCK_MS))
-
-  const target = cats.find((cat) => cat.id === 'milo') ?? cats[0]
-  if (!target) return { status: 'unsure' }
-
-  /* The number is theatre and is labelled as such in the panel. It is tied
-     to frame contrast so that two photographs do not report an identical
-     figure, which is the detail that makes a fake number look fake.
-
-     The clamp is at 120 rather than at the top of the band. It sat at 60
-     once, which is inside the range real photographs actually occupy
-     (roughly 30 to 80), so any two ordinary shots saturated it and came
-     back with the same figure, which is the exact thing the mapping exists
-     to avoid. A ceiling has to sit past the data, not in it.
-
-     Linear, not hashed, so it behaves the way a real score would: similar
-     frames read similarly, rather than jumping around. */
-  const confidence = 0.86 + Math.min(stats.contrast, 120) / 1200
-  return { status: 'match', catId: target.id, confidence }
+  return { status: 'coming-soon' }
 }

@@ -25,14 +25,20 @@ import { Reel } from './Reel'
    landing IS the product, and a still image of it would be the one part of
    the page that could quietly stop matching what the app looks like. */
 
-/* The landing map is the basemap and nothing else.
+/* The landing map is the basemap and territories only.
 
-   <Territories> and <CatMarkers> both render from what they are handed, so
-   handing them nothing is the whole switch: no flag on MapCanvas, no branch
-   inside either component. Three overlapping territory washes plus three
-   pins plus the street labels was more than the hero could carry, and the
-   cats are on this page already, in the guide panel, at a size you can
-   actually see them. The map's job here is to be the city. */
+   <Territories> renders from what it's handed, so handing it NO_CATS is
+   the whole switch there: no flag, no branch inside the component. Three
+   overlapping territory washes plus the street labels was more than the
+   hero could carry, and the cats are on this page already, in the guide
+   panel, at a size you can actually see them.
+
+   CatMarkers and MapControls aren't merely switched off on this page,
+   they're not in its bundle at all: App.tsx mounts them as MapCanvas's
+   `children` rather than MapCanvas importing them itself (see
+   MapCanvas.tsx's note by <Storm>), because this page never uses the
+   motion/react code either one pulls in and used to pay for it anyway. The
+   map's job here is to be the city. */
 const NO_TERRITORIES: FeatureCollection<Polygon> = { type: 'FeatureCollection', features: [] }
 const NO_CATS: Cat[] = []
 const NO_SIGHTINGS: Sighting[] = []
@@ -196,9 +202,6 @@ export default function Landing() {
         onSelect={() => {}}
         hoveredId={null}
         onHover={() => {}}
-        onRecorded={() => {}}
-        onOpenRecord={() => {}}
-        report={null}
       >
         <Reel />
       </MapCanvas>

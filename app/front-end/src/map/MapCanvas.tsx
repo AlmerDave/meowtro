@@ -6,8 +6,6 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 import type { FeatureCollection, Polygon } from 'geojson'
 import type { Cat } from '@/data/catsRepo'
 import type { Sighting } from '@/data/sightings'
-import type { Request } from '@/App'
-import { ReportSighting } from '@/ui/ReportSighting'
 import {
   buildStyle,
   BGC_BOUNDS,
@@ -21,14 +19,11 @@ import {
   type Theme,
 } from './style'
 import { Territories } from './Territories'
-import { CatMarkers } from './CatMarkers'
 import { MapLabels } from './MapLabels'
 import { fetchWeather } from './liveWeather'
 import { isFatalMapError } from './mapError'
 import { Rain } from './Rain'
 import { Storm } from './Storm'
-import { MapControls } from './MapControls'
-import { RecordCat } from '@/ui/RecordCat'
 
 /* MapLibre 6 does not bundle its worker. With no worker URL the tiles never
    parse, the source never loads, and nothing throws: the map just spins.
@@ -151,12 +146,6 @@ type Props = {
       pending sighting on a cat regardless of who filed it, so it has no
       ownership-dependent logic to feed. */
   uid: string | null
-  /** A cat was recorded. App re-reads the repo. */
-  onRecorded: () => void
-  /** The scanner identified a cat and the person wants to read about it. */
-  onOpenRecord: (id: string) => void
-  /** A plate asked to start a sighting for a cat. */
-  report: Request | null
   /** Fired once the map has actually painted, for ui/Loading.tsx to hold on.
       Deliberately NOT the same thing as isLoaded: that tracks the `load`
       event, which means the style parsed, and a style can be parsed while
@@ -169,26 +158,27 @@ type Props = {
       second ceiling with nothing left to wait for: the app should stop
       holding the curtain up the moment this is known. */
   onFailed?: () => void
-  /** The app's own furniture: the control capsule, the sighting flow, and
-      the street/park/landmark labels. The landing page (landing/Landing.tsx)
-      mounts the same map with the same theme, weather and pitch machinery
-      but none of this, because on the front door the reel drives the view
-      and there is no person to orient with a street name yet — the point
-      of that page is to earn a click through to the one that does. Labels
-      travel with this flag rather than getting their own: they cost a real
-      per-frame DOM reprojection (MapLabels.tsx) that only pays for itself
-      while the map can be panned, and `interactive` below is what the
-      landing turns off at the same time. Defaults to true, so every
-      existing caller is unchanged. */
+  /** The street/park/landmark labels (MapLabels.tsx) and the "map did not
+      load" failure card — the two pieces of furniture that are genuinely
+      this file's own rather than App.tsx's children. The landing page
+      (landing/Landing.tsx) mounts the same map with the same theme, weather
+      and pitch machinery but neither of these, because on the front door
+      the reel drives the view and there is no person to orient with a
+      street name yet, and a failure card is a worse first impression than
+      blank paper there. Labels travel with this flag rather than getting
+      their own: they cost a real per-frame DOM reprojection that only pays
+      for itself while the map can be panned, and `interactive` below is
+      what the landing turns off at the same time. Defaults to true, so
+      every existing caller is unchanged.
+
+      The control capsule, the sighting flow and the record panel used to
+      be gated on this too, and are not any more — they moved to App.tsx's
+      `children` (see the comment by <Storm> below) so the landing's bundle
+      would stop paying for motion/react code it never uses. `chrome` is
+      still the right name for what is left: it is still "the app's own
+      furniture" versus the landing's bare map, just less of it now lives
+      in this file. */
   chrome?: boolean
-  /** Whether this visitor is holding the admin gate open (App.tsx's
-      useAdmin, phase 8's ?role=admin). Two things hang off it: the record
-      panel, which has been written and unmounted since phase 6 waiting for
-      somebody able to review what it produces, and the review queue itself.
-      A boolean rather than a role string, because there are two roles and
-      one of them is "everybody". Defaults to false, so the public app is
-      what you get by forgetting to pass it. */
-  admin?: boolean
   /** Whether the map responds to mouse, touch or keyboard input at all —
       MapLibre's own top-level `interactive` option, so this is one flag
       rather than disabling drag, scroll-zoom, box-zoom and touch
@@ -199,8 +189,10 @@ type Props = {
       to true. */
   interactive?: boolean
   /** Rendered inside the map context, so a child can drive isFlat, theme
-      and weather through useMap(). The landing's reel is the only caller;
-      the app passes nothing. */
+      and weather through useMap(). The landing's reel is one caller;
+      App.tsx is the other, and as of the motion-chunk split below, the
+      bigger one — CatMarkers and MapControls now mount from here rather
+      than from this file. */
   children?: ReactNode
 }
 
@@ -219,12 +211,8 @@ export function MapCanvas({
   onHover,
   onReady,
   onFailed,
-  onRecorded,
-  onOpenRecord,
-  report,
   chrome = true,
   interactive = true,
-  admin = false,
   children,
 }: Props) {
   const container = useRef<HTMLDivElement>(null)
@@ -483,17 +471,26 @@ export function MapCanvas({
               hoveredId={hoveredId}
               onHover={onHover}
             />
-            <CatMarkers
-              cats={cats}
-              territories={territories}
-              sightings={sightings}
-              selectedId={selectedId}
-              onSelect={onSelect}
-              hoveredId={hoveredId}
-              onHover={onHover}
-              uid={uid}
-              admin={admin}
-            />
+            {/* CatMarkers used to mount right here, unconditionally, same as
+               Territories above it. It moved to App.tsx's `children` slot
+               (cross-cutting roadmap item, "the landing pays for motion and
+               never animates with it") along with three others formerly
+               below — MapControls, RecordCat, ReportSighting — because all
+               four import motion/react, and a static import of any of them
+               here put that ~234kB into every page that imports
+               MapCanvas.tsx, landing included, even though the landing
+               renders zero markers (NO_CATS), no controls, no record panel
+               and no sighting flow at all (chrome={false}). A lazy import
+               was considered and rejected once already (same roadmap item)
+               for making the app's own markers/controls pop in a beat after
+               the map on the page where they matter — this way costs
+               nothing there instead, since it is not an async boundary at
+               all, only a different file importing them. Safe to relocate
+               freely: CatMarkers' pins attach to map.getCanvasContainer()
+               imperatively (its own header comment), and every one of the
+               other three renders into a `position: fixed` panel with its
+               own z-index (shell.css), so none of them depend on DOM order
+               for stacking. */}
             {/* Before <MapLabels> on purpose: the storm's veil shares the
                 labels' z-index rung, so this order is what keeps the
                 labels painting over it and out of the gloom. It is an AA
@@ -507,12 +504,12 @@ export function MapCanvas({
                 with this. Rendered unconditionally, like Storm: it decides
                 for itself whether there is anything to draw. */}
             <Rain />
-            {chrome && <MapControls onSelect={onSelect} />}
-            {/* The visitor's one contribution, and as of phase 8 a proposal
-                rather than an edit: it lands `pending` and moves nothing
-                until an admin approves it. The admin's counterpart,
-                ui/RecordCat.tsx, is mounted above behind `admin` now that
-                there is somebody to do the reviewing. */}
+            {/* MapControls, RecordCat and ReportSighting: see the CatMarkers
+                comment above <Storm> — same move, same reason. All four now
+                mount from App.tsx's children instead of from here; their
+                own history (the admin-controls DOM-order bug, the "you are
+                admin" tell dedup, the safety-first note on why a sighting
+                only ever lands pending) moved with them. */}
             {/* The basemap is gone and the app is still usable: the rail
                 still lists cats, a plate still opens, the panel just says
                 what happened and offers the one thing that can fix it.
@@ -536,51 +533,6 @@ export function MapCanvas({
               </div>
             )}
 
-            {/* RecordCat is back on screen behind the role check, same as
-                since phase 6. ui/ReviewQueue.tsx is not: phase 9 replaced
-                its list-panel review with reviewing straight off the map
-                (the pulsing pin badge above, the ghost territory below, and
-                the plate's own "Pending review" section) at the admin's own
-                request that the corner panel was "too crowded and
-                unnecessary". The file itself is left alone, unimported,
-                same as plate/CatFigure.tsx after the 3D view came out
-                (Plate.tsx's own header explains that precedent) — nothing
-                here says its list-plus-audit-trail view can never come
-                back, only that nothing currently mounts it.
-
-                Once briefly carried a second "you are admin" tell, a small
-                badge beside the record button — replaced with the banner
-                across the top of the app (App.tsx, shell.css's own note on
-                it) once that existed, since two indicators for one fact is
-                the kind of duplication this app argues against everywhere
-                else, and the corner one was the one that had gone unnoticed
-                to begin with.
-
-                Wrapped rather than owning its own fixed position: the first
-                version put the trigger at a hand-picked corner (top-left)
-                without noticing the rail already lives there at full
-                height, so it rendered directly underneath it and was,
-                correctly, reported as "hidden": DOM order put Rail after
-                MapCanvas, so Rail painted over it. .admin-controls (shell.
-                css) fixes the position once, beside the map-controls
-                capsule, a corner nothing else claims — kept as a wrapper
-                rather than unwound to a single positioned button because a
-                second admin tool is likely to want the same shelf again. */}
-            {chrome && admin && (
-              <div className="admin-controls">
-                <RecordCat onRecorded={onRecorded} />
-              </div>
-            )}
-
-            {chrome && (
-              <ReportSighting
-                cats={cats}
-                territories={territories}
-                onReported={onRecorded}
-                onOpenRecord={onOpenRecord}
-                report={report}
-              />
-            )}
             {children}
           </>
         )}

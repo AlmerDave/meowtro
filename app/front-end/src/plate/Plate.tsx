@@ -108,6 +108,15 @@ type Props = {
       (App.tsx's onRecorded) — editing an existing one needs exactly the
       same door back in. */
   onChanged?: () => void
+  /** App.tsx's own refresh counter (its `loadToken`), bumped by every
+      `onChanged` anywhere in the app — including ReportSighting.tsx's
+      flow, which sits outside this component entirely and used to leave
+      an already-open plate showing a stale sighting list until it was
+      closed and reopened. Read only to force loadSightings below to run
+      again; the number itself means nothing here. Optional so the
+      styleguide's specimen plate (no App.tsx behind it) can render
+      without one. */
+  loadToken?: number
   /** The live territory shapes — the same FeatureCollection App.tsx already
       fetches for the map (catsRepo's listTerritories, which applies
       translateToward for the newest approved sighting). Read here for
@@ -220,6 +229,7 @@ export function Plate({
   admin = false,
   uid = null,
   onChanged,
+  loadToken,
   territories,
   nearestPlaceName,
 }: Props) {
@@ -256,7 +266,13 @@ export function Plate({
     return () => {
       live = false
     }
-  }, [cat.id, uid])
+    /* loadToken is in this array for one reason: a report filed through
+       ReportSighting.tsx, which lives outside this component and cannot
+       call loadSightings directly, still bumps App.tsx's shared counter on
+       success. Every action *inside* this plate already calls
+       loadSightings() itself below; this is the one path in from outside
+       it. */
+  }, [cat.id, uid, loadToken])
 
   useEffect(() => loadSightings(), [loadSightings])
 

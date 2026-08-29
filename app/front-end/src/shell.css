@@ -252,6 +252,47 @@ body[data-admin='true'] {
     transform: translateY(-50%) translateX(0) scale(1);
   }
 }
+/* The first-visit 3D hint (map/MapControls.tsx): a spotlight rather than
+   data-tip's hover label, since a touch-only visitor never satisfies
+   `hover: hover` and would otherwise never see any label at all. z-index
+   8 sits above every panel (.about is the highest of those, at 4) and
+   below only the loading curtain (10), which will already be long gone
+   by the time this fires 900ms after the capsule mounts. */
+.hint-spot {
+  position: fixed;
+  z-index: 8;
+  border-radius: 50%;
+  pointer-events: none;
+  /* The spotlight itself: everything outside this circle reads as one
+     enormous shadow rather than a separate dimming layer, which is what
+     keeps this a single element with nothing to click on by accident. */
+  box-shadow: 0 0 0 9999px color-mix(in srgb, var(--ink) 60%, transparent);
+}
+.hint-callout-anchor {
+  position: fixed;
+  z-index: 8;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+.hint-callout {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border-radius: 999px;
+  background: var(--surface-glass-strong);
+  backdrop-filter: blur(var(--blur-glass));
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  box-shadow: var(--shadow-glass), var(--edge-highlight);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  white-space: nowrap;
+}
+.hint-callout svg {
+  color: var(--rust);
+  flex-shrink: 0;
+}
 /* The material now lives on .map-controls (the capsule); these are plain
    transparent targets inside it. grid rather than place-items alone because
    both glyph states share cell 1/1 while they cross.

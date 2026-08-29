@@ -44,11 +44,7 @@ type Props = {
   onBack: () => void
 }
 
-const STAGES = [
-  'Reading the frame…',
-  'Looking for markings…',
-  'Matching against the survey…',
-]
+const STAGES = ['Reading the frame…', 'Looking for a clear shot…']
 
 /* Browser-only, and deliberately not in data/identify.ts: keeping that file
    free of the DOM is what lets its arithmetic be checked outside a browser.
@@ -192,6 +188,10 @@ export function ScanCat({ cats, onOpenRecord, onBack }: Props) {
           <p className="scan-bad">No match in the survey. Pick from the list instead.</p>
         )}
 
+        {!working && result?.status === 'coming-soon' && (
+          <p className="scan-bad">Cat recognition isn't built yet. Pick your cat from the list instead.</p>
+        )}
+
         {/* The card. An answer to "what is that cat", which is the question
             that was actually asked, and nothing more: identifying a cat is
             not the same act as reporting where it was, and running the two
@@ -288,8 +288,8 @@ export function ScanCat({ cats, onOpenRecord, onBack }: Props) {
 
       {/* Said plainly rather than buried, for the same reason the sighting
           panel says nobody reviews sightings yet. The frame check above is
-          real; the name is not. */}
-      <p className="sight-hint">Recognition is not live yet. This match is a stand-in.</p>
+          real; there is no name behind it yet. */}
+      <p className="sight-hint">Recognition isn't built yet — this only checks that your photo is readable.</p>
     </div>
   )
 }
