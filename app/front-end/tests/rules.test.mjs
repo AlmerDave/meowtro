@@ -222,6 +222,47 @@ await assertSucceeds(admin.doc('sightings/pending-2').update({ status: 'discarde
 await assertFails(other.doc('sightings/pending-2/votes/' + VISITOR_UID).set({ direction: 'up' }))
 await assertSucceeds(visitor.doc('sightings/pending-2/votes/' + VISITOR_UID).set({ direction: 'up' }))
 
+/* --- Feeder tier (spec 2026-09-01) ------------------------------------
+
+   feeders/{uid} is an admin-written marker, mirroring admins/{uid}.
+   feederRequests/{uid} is a visitor's application: theirs to create and
+   withdraw, an admin's to read and clear, never updated in place. */
+
+const VALID_REQUEST = { name: 'Vee', email: 'vee@example.com', reason: 'I feed the 30th St colony', at: Date.now() }
+
+// A signed-in visitor may file their own request; not one at another uid's
+// path, not one with an extra field, not one with an oversized reason.
+await assertSucceeds(visitor.doc('feederRequests/' + VISITOR_UID).set(VALID_REQUEST))
+await assertFails(visitor.doc('feederRequests/' + OTHER_UID).set(VALID_REQUEST))
+await assertFails(
+  other.doc('feederRequests/' + OTHER_UID).set({ ...VALID_REQUEST, role: 'admin' })
+)
+await assertFails(
+  other.doc('feederRequests/' + OTHER_UID).set({ ...VALID_REQUEST, reason: 'x'.repeat(501) })
+)
+await assertFails(anon.doc('feederRequests/anon-1').set(VALID_REQUEST))
+
+// Readable by its author and by an admin; not by another visitor.
+await assertSucceeds(visitor.doc('feederRequests/' + VISITOR_UID).get())
+await assertSucceeds(admin.doc('feederRequests/' + VISITOR_UID).get())
+await assertFails(other.doc('feederRequests/' + VISITOR_UID).get())
+
+// Never updated in place, by anyone.
+await assertFails(visitor.doc('feederRequests/' + VISITOR_UID).update({ reason: 'changed' }))
+await assertFails(admin.doc('feederRequests/' + VISITOR_UID).update({ reason: 'changed' }))
+
+// The marker: only an admin writes it.
+await assertFails(visitor.doc('feeders/' + VISITOR_UID).set({ at: Date.now() }))
+await assertSucceeds(admin.doc('feeders/' + VISITOR_UID).set({ at: Date.now() }))
+// Any signed-in caller may read a marker (the map tier check); signed out
+// may not.
+await assertSucceeds(other.doc('feeders/' + VISITOR_UID).get())
+await assertFails(anon.doc('feeders/' + VISITOR_UID).get())
+
+// A visitor withdraws their own request; a stranger cannot.
+await assertFails(other.doc('feederRequests/' + VISITOR_UID).delete())
+await assertSucceeds(visitor.doc('feederRequests/' + VISITOR_UID).delete())
+
 /* --- Storage ------------------------------------------------------------
 
    RulesTestContext.storage() hands back a compat (v8-shaped) Storage

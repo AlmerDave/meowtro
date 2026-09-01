@@ -17,6 +17,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Approved feeders, the second trust tier (spec 2026-09-01). One
+    // marker doc per uid, same shape and provisioning story as
+    // admins/{uid} except that an admin CAN write one from the app
+    // (data/feeders.ts approveFeeder, driven by the in-app requests
+    // panel). A visitor asking for access writes feederRequests/{uid}
+    // below, never this.
+    match /feeders/{uid} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // A signed-in visitor's request to be approved as a feeder. Theirs to
+    // create and to withdraw; an admin reads the queue and approves
+    // (writes feeders/{uid}, deletes this) or declines (deletes this).
+    // Never updated in place. Keyed by uid: one open request per person,
+    // and a re-apply after a decline is a fresh create at the same path.
+    match /feederRequests/{uid} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow create: if isSignedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'email', 'reason', 'at'])
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 500;
+      allow delete: if isAdmin() || (isSignedIn() && request.auth.uid == uid);
+      allow update: if false;
+    }
+
     match /cats/{catId} {
       allow read: if true;
       allow create, delete: if isAdmin();
