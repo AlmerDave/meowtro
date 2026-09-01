@@ -517,7 +517,8 @@ body[data-admin='true'] {
 .about,
 .user-chip,
 .account-menu-trigger,
-.account-menu-panel {
+.account-menu-panel,
+.feeder-requests {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
@@ -1574,6 +1575,29 @@ body[data-admin='true'] {
   line-height: 1.45;
 }
 
+/* The feeder-only lock that stands in for the "near X" line and the
+   coordinates row when this viewer is looking at a decoy-placed cat
+   (spec 2026-09-01). --rust for the icon, matching .plate-locked-msg:
+   both say "there is something here you do not have access to". */
+.plate-range-locked,
+.plate-coords-locked {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  font-size: var(--t-sm);
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+.plate-coords-locked {
+  margin: 0;
+}
+.plate-range-locked svg,
+.plate-coords-locked svg {
+  flex-shrink: 0;
+  margin-top: 0.15em;
+  color: var(--rust);
+}
+
 /* --- Sighting photographs, components/ui/card-stack.tsx ----------------
    The stylesheet the registry component expected did not ship with it (see
    the note at the top of that file), so this is ours, and being ours is
@@ -1845,6 +1869,69 @@ body[data-admin='true'] {
 }
 .admin-pending-actions {
   flex-shrink: 0;
+  display: flex;
+  gap: var(--s-1);
+}
+
+/* --- Feeder applications, ui/FeederRequests.tsx (spec 2026-09-01) -------
+   Its own fixed panel, top-left just under the admin banner, in the gap
+   between the banner and the rail's top. Only an admin sees it and only
+   when at least one application is open (the component returns null
+   otherwise), so it is not holding this corner the rest of the time.
+   Material comes from the shared .rail/.review list above. */
+.feeder-requests {
+  position: fixed;
+  z-index: 3;
+  left: calc(var(--s-4) + var(--safe-l));
+  top: calc(var(--s-4) + 3rem + var(--safe-t));
+  width: 21rem;
+  max-width: calc(100vw - 2 * var(--s-4));
+  max-height: calc(100dvh - 9rem - var(--safe-t) - var(--safe-b));
+  overflow-y: auto;
+  padding: var(--s-3);
+  border-radius: var(--radius);
+}
+.feeder-requests-eyebrow {
+  margin: 0 0 var(--s-2);
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.feeder-requests ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.feeder-request {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  padding: var(--s-2);
+  border-radius: calc(var(--radius) * 0.7);
+  background: var(--well);
+}
+.feeder-request-who {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: var(--t-sm);
+}
+.feeder-request-who span {
+  font-family: var(--font-mono);
+  font-size: var(--t-xs);
+  color: var(--ink-soft);
+}
+.feeder-request-reason {
+  margin: 0;
+  font-size: var(--t-sm);
+  line-height: 1.45;
+}
+.feeder-request-actions {
   display: flex;
   gap: var(--s-1);
 }

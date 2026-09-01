@@ -582,10 +582,6 @@ export default function App() {
         {admin && (
           <div className="admin-controls">
             <RecordCat onRecorded={onRecorded} />
-            {/* The feeder-approval queue. Renders nothing while empty (its
-                own guard), so the shelf stays clear until somebody
-                applies. */}
-            <FeederRequests />
           </div>
         )}
 
@@ -644,6 +640,11 @@ export default function App() {
           </button>
         </div>
       )}
+
+      {/* The feeder-approval queue, its own fixed panel just under the admin
+          banner. Renders nothing at all until somebody applies (its own
+          guard), so it is not competing for a corner the rest of the time. */}
+      {admin && <FeederRequests />}
 
       {/* The gap the admin banner's own comment names: a signed-in
           non-admin had no indicator and no way out. A small top-centre

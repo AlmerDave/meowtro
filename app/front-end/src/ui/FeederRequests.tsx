@@ -60,10 +60,13 @@ export function FeederRequests() {
               <span>{r.email}</span>
             </div>
             {r.reason && <p className="feeder-request-reason">{r.reason}</p>}
+            {/* Reuses .review-yes/.review-no wholesale, the same way
+                .admin-pending does: approve or turn down a request is the
+                same shape of action the sighting queue's buttons are. */}
             <div className="feeder-request-actions">
               <button
                 type="button"
-                className="feeder-request-no"
+                className="review-no"
                 disabled={busy === r.uid}
                 onClick={() => void act(r.uid, declineFeeder)}
               >
@@ -72,7 +75,7 @@ export function FeederRequests() {
               </button>
               <button
                 type="button"
-                className="feeder-request-yes"
+                className="review-yes"
                 disabled={busy === r.uid}
                 onClick={() => void act(r.uid, approveFeeder)}
               >

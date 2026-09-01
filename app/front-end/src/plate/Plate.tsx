@@ -729,11 +729,23 @@ export function Plate({
             there is nothing about this line an editor could ever be right
             about. cat.range itself is untouched in the data (Rail.tsx's
             search still reads it), just no longer shown here. */}
+        {/* The shape is real, its position is not for an unprivileged viewer
+            (spec 2026-09-01): the cat on screen is decoy-placed, so the
+            "near X" line would name a real BGC spot the cat does not live
+            at. The outline glyph stays (it is an abstract shape, no
+            coordinate in it); the place line is replaced by the lock. */}
         <motion.div className="plate-range" variants={line}>
           <TerritoryGlyph ring={catRing} delay={0.3} />
           <div className="plate-range-text">
             <span className="plate-label">Range</span>
-            {nearbyPlace && <span className="plate-value">{nearbyPlace}</span>}
+            {canSeePrecise ? (
+              nearbyPlace && <span className="plate-value">{nearbyPlace}</span>
+            ) : (
+              <span className="plate-range-locked">
+                <Lock size={12} aria-hidden />
+                Location hidden. Sign in and get approved as a feeder to see the accurate territory.
+              </span>
+            )}
           </div>
         </motion.div>
 
@@ -1092,7 +1104,19 @@ export function Plate({
             of which reached this client, plus the door in rather than the
             question. Nothing open at all, either way, gets the report
             button. */}
-        {someoneElsesPending && oldestPending ? (
+        {!canSeePrecise ? (
+          /* Reporting is feeder-gated (spec 2026-09-01): this viewer is
+             looking at a decoy map, so a point they tap on it is a real
+             coordinate against a fake place. The vote UI is gone for the
+             same reason (nothing here is a truthful location to weigh
+             in on). */
+          <motion.div className="plate-locked" variants={line}>
+            <p className="plate-locked-msg">
+              <Lock size={12} aria-hidden />
+              Get approved as a feeder to report sightings and see accurate territories.
+            </p>
+          </motion.div>
+        ) : someoneElsesPending && oldestPending ? (
           <motion.div className="plate-locked" variants={line}>
             <p className="plate-locked-msg">
               <Lock size={12} aria-hidden />A sighting of {cat.name} was reported
@@ -1231,7 +1255,17 @@ export function Plate({
         {/* Coordinates are the one value here anyone would want out of the
             app, so they are the one value you can take with you. The label
             states what happened, in the past tense of the button that did
-            it. clipboard is undefined on insecure origins, hence the guard. */}
+            it. clipboard is undefined on insecure origins, hence the guard.
+
+            Withheld entirely for an unprivileged viewer (spec 2026-09-01):
+            cat.coordinates is blanked upstream (data/catsRepo.ts) so the
+            real point is never in the DOM, and the copy button would just
+            offer an empty string. The lock line takes its place. */}
+        {!canSeePrecise ? (
+          <p className="plate-coords-locked">
+            <Lock size={12} aria-hidden /> Accurate location is feeder-only
+          </p>
+        ) : (
         <button
           type="button"
           className="plate-copy"
@@ -1270,6 +1304,7 @@ export function Plate({
                 : cat.coordinates}
           </span>
         </button>
+        )}
       </div>
     </motion.article>
   )
