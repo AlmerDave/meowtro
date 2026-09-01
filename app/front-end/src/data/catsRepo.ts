@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/firebase'
 import type { Cat } from './cats.seed'
+import { decoyFeature } from './decoy'
 import { flattenRing, shapeRing, slugify, unflattenRing, type CatDraft, type Shape } from './territoryShape'
 import {
   addAdminSighting,
@@ -110,7 +111,11 @@ function catFromDoc(id: string, data: CatDoc): Omit<Cat, 'lastSeen'> & { lastSee
     nothing else) stay a single call, and so nothing outside this file had
     to change to get the saving. Passing it turns three round trips per
     page load into one. */
-export async function listCats(publicSightings?: Sighting[]): Promise<Cat[]> {
+export async function listCats(
+  publicSightings?: Sighting[],
+  /* Defaults false so an un-updated caller degrades rather than leaks. */
+  canSeePrecise = false
+): Promise<Cat[]> {
   const [snap, sightings] = await Promise.all([
     getDocs(collection(db, COLLECTION)),
     publicSightings ? Promise.resolve(publicSightings) : listPublicSightings(),
@@ -127,12 +132,17 @@ export async function listCats(publicSightings?: Sighting[]): Promise<Cat[]> {
        is what lets the derived value win when there is no override and the
        admin's correction win when there is one, the same precedence the
        old overlay-applied-after-derivation gave. */
-    return { ...cat, lastSeen: cat.lastSeen ?? (sighting ? describeWhen(sighting.at) : undefined) }
+    const resolved = { ...cat, lastSeen: cat.lastSeen ?? (sighting ? describeWhen(sighting.at) : undefined) }
+    /* ponytail: view-only degrade (spec 2026-09-01). cat.coordinates is a
+       real lat/lng string built from the true centroid; left intact it
+       would hand the real location back as text while the map shows a
+       decoy. cat.range stays: it states size, not position. */
+    return canSeePrecise ? resolved : { ...resolved, coordinates: '' }
   })
 }
 
-export async function getCat(id: string): Promise<Cat | null> {
-  return (await listCats()).find((cat) => cat.id === id) ?? null
+export async function getCat(id: string, canSeePrecise = false): Promise<Cat | null> {
+  return (await listCats(undefined, canSeePrecise)).find((cat) => cat.id === id) ?? null
 }
 
 /** How many cats an admin has recorded through this survey's own panel,
@@ -354,7 +364,9 @@ export async function deleteCat(id: string): Promise<boolean> {
    so a newly recorded cat would have had a marker, a rail row and a plate,
    and no territory under any of them. */
 export async function listTerritories(
-  publicSightings?: Sighting[]
+  publicSightings?: Sighting[],
+  /* Defaults false so an un-updated caller degrades rather than leaks. */
+  canSeePrecise = false
 ): Promise<FeatureCollection<Polygon>> {
   const [snap, sightings] = await Promise.all([
     getDocs(collection(db, COLLECTION)),
@@ -377,6 +389,12 @@ export async function listTerritories(
         properties: { id: docSnap.id, name: data.name },
         geometry: { type: 'Polygon', coordinates: [unflattenRing(data.territory)] },
       }
+      /* ponytail: view-only degrade (spec 2026-09-01). An unprivileged
+         viewer gets the real outline moved to a fake BGC point, and NO
+         sighting translation: applying the real "seen elsewhere" shift to
+         a decoy would drag it back toward the true point and re-leak the
+         location. The frozen decoy is the whole point. */
+      if (!canSeePrecise) return decoyFeature(feature, docSnap.id)
       const sighting = seen.get(docSnap.id)
       return sighting ? translateToward(feature, sighting.point) : feature
     }),
