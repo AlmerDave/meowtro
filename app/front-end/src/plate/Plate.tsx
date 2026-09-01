@@ -101,6 +101,14 @@ type Props = {
       with nothing behind this prop at all, so every call site below falls
       back to `uid ?? ''` or `uid ?? null` rather than assuming a string. */
   uid?: string | null
+  /** Whether this viewer may see accurate locations, i.e. admin or an
+      approved feeder (App.tsx's canSeePrecise, spec 2026-09-01). When
+      false the cat on screen is decoy-placed: the Range block and the
+      coordinates row become a "feeder-only" lock, and the "I saw this one
+      here" button is replaced by the same line, since a point tapped on a
+      decoy map is unusable. Optional and defaults true so the styleguide's
+      specimen plate (no App behind it) renders its full record. */
+  canSeePrecise?: boolean
   /** Told to re-read cats and territories after an edit or delete, since
       either can change what the rest of the app is showing: a renamed cat
       in the rail, a corrected lastSeen, a deleted cat's territory on the
@@ -228,6 +236,7 @@ export function Plate({
   onReport,
   admin = false,
   uid = null,
+  canSeePrecise = true,
   onChanged,
   loadToken,
   territories,

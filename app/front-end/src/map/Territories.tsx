@@ -190,6 +190,13 @@ type Props = {
      half of isOwnPending below (Sighting.authorUid's own note on why
      "mine" is now an account fact rather than a browser fact). */
   uid: string | null
+  /* Whether this viewer may see accurate territories (admin or approved
+     feeder, spec 2026-09-01). The shapes handed in `territories` are
+     already decoy-placed upstream when this is false; what this prop still
+     gates here are the two effects that plot ABSOLUTE real points, which a
+     relocated outline has nothing truthful to show: the habitat pings and
+     the pending ghost. */
+  canSeePrecise: boolean
   selectedId: string | null
   onSelect: (id: string | null) => void
   hoveredId: string | null
@@ -201,6 +208,7 @@ export function Territories({
   territories,
   sightings,
   uid,
+  canSeePrecise,
   selectedId,
   onSelect,
   hoveredId,
@@ -501,6 +509,12 @@ export function Territories({
      ever misbehave, deleting this effect changes nothing else on the map. */
   useEffect(() => {
     if (!map || !isLoaded || !selectedId) return
+    /* Unprivileged viewers see a frozen decoy (data/catsRepo.ts). The
+       pings plot the centroid and real sighting points as absolute
+       coordinates, so there is nothing truthful to draw over a relocated
+       outline. Returns before it adds a source, so there is nothing to
+       clean up. */
+    if (!canSeePrecise) return
 
     const feature = territories.features.find((f) => f.properties?.id === selectedId)
     const centre = centroids.get(selectedId)
@@ -621,7 +635,7 @@ export function Territories({
        from them: a new report, a review verdict or a sign-in/out all
        change which points this effect should be ringing, and none of
        those touch selectedId. */
-  }, [map, isLoaded, selectedId, territories, centroids, cats, theme, sightings, uid])
+  }, [map, isLoaded, selectedId, territories, centroids, cats, theme, sightings, uid, canSeePrecise])
 
   // theme is only a trigger here: the paint values themselves come from
   // re-reading :root, the same live-token pattern the mount effect above
@@ -708,7 +722,12 @@ export function Territories({
     const source = map.getSource(GHOST_SOURCE) as GeoJSONSource | undefined
     if (!source) return
 
-    const summary = selectedId ? pendingByCat(sightings).get(selectedId) : undefined
+    /* canSeePrecise gate, spec 2026-09-01: the ghost is where a real
+       pending report would move the territory, an absolute real point.
+       Over a decoy it would either lie or re-leak, so an unprivileged
+       viewer just gets the empty collection (the same state a cat with no
+       pending report already renders). */
+    const summary = selectedId && canSeePrecise ? pendingByCat(sightings).get(selectedId) : undefined
     const feature = selectedId
       ? territories.features.find((f) => f.properties?.id === selectedId)
       : undefined
@@ -717,7 +736,7 @@ export function Territories({
       type: 'FeatureCollection',
       features: feature && summary ? [translateToward(feature, summary.oldest.point)] : [],
     })
-  }, [map, selectedId, territories, sightings])
+  }, [map, selectedId, territories, sightings, canSeePrecise])
 
   return null
 }

@@ -68,6 +68,11 @@ type Props = {
       <Plate> below has one (App.tsx's useUid, threaded here for the same
       reason `admin` is). */
   uid: string | null
+  /** Straight through to the plate, same as `admin`/`uid`: whether this
+      viewer may see accurate locations (spec 2026-09-01). The plate locks
+      its range and coordinates rows, and its "I saw here" button, when
+      false. */
+  canSeePrecise?: boolean
   onChanged?: () => void
   /** Also passed straight through to the plate — see plate/Plate.tsx's own
       note on why it needs it. */
@@ -85,6 +90,7 @@ export function CatDeck({
   onReport,
   admin,
   uid,
+  canSeePrecise,
   onChanged,
   loadToken,
   territories,
@@ -387,6 +393,7 @@ export function CatDeck({
                   onClose={collapse}
                   admin={admin}
                   uid={uid}
+                  canSeePrecise={canSeePrecise}
                   onChanged={onChanged}
                   loadToken={loadToken}
                   territories={territories}

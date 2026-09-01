@@ -94,6 +94,13 @@ type Props = {
       badge a signed-in visitor does, but CatPin's label names the verdict
       action only an admin actually has. */
   admin?: boolean
+  /** Whether this viewer sees accurate territories (admin or approved
+      feeder, spec 2026-09-01). The pins already sit on decoy centroids
+      when false (they read `territories`, decoy-placed upstream); this
+      flag additionally drops the pulsing "open report" badge, since an
+      unprivileged viewer gets no sighting visuals at all and cannot
+      report or vote from the decoy map anyway. */
+  canSeePrecise?: boolean
 }
 
 type PinProps = {
@@ -258,6 +265,7 @@ export function CatMarkers({
   onHover,
   uid,
   admin = false,
+  canSeePrecise = true,
 }: Props) {
   /* Was a module-level const off a static JSON import, which was right
      while the only cats were the seeded three. A recorded cat (data/
@@ -280,7 +288,9 @@ export function CatMarkers({
      replaced, and still correctly re-run on the same trigger. A vote alone
      does not touch this set: see data/sightings.ts's pendingByCat for why
      a tally never changes who is in it. */
-  const pending = admin || uid ? pendingByCat(sightings) : null
+  /* canSeePrecise gate (spec 2026-09-01): an unprivileged viewer sees a
+     frozen decoy and no sighting visuals, the badge included. */
+  const pending = canSeePrecise && (admin || uid) ? pendingByCat(sightings) : null
 
   // The pitched-mode circle layer. isFlat is deliberately in this effect's
   // deps, 2026-08-17 — reverted from a split "create once, toggle visibility

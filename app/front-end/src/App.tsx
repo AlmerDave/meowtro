@@ -8,6 +8,7 @@ import { CatMarkers } from '@/map/CatMarkers'
 import { MapControls } from '@/map/MapControls'
 import { nearestPlaceName } from '@/map/landmark'
 import { RecordCat } from '@/ui/RecordCat'
+import { FeederRequests } from '@/ui/FeederRequests'
 import { ReportSighting } from '@/ui/ReportSighting'
 import { Plate } from '@/plate/Plate'
 import { useLenis } from '@/motion/lenis'
@@ -19,6 +20,7 @@ import { AccountMenu } from '@/ui/AccountMenu'
 import { listCats, listTerritories, type Cat } from '@/data/catsRepo'
 import { isSurveyed, listVisibleSightings, type Sighting } from '@/data/sightings'
 import { greetingName, isAdmin, signOutUser, subscribeAuth, type User } from '@/data/auth'
+import { isFeeder } from '@/data/feeders'
 import type { FeatureCollection, Polygon } from 'geojson'
 
 /* The one legal way to reach the live MapLibre instance from Plate.tsx,
@@ -132,6 +134,26 @@ function useAdmin(): boolean {
     })
   }, [])
   return admin
+}
+
+/* Approved-feeder status, the second trust tier (spec
+   2026-09-01-territory-visibility-decoy-design.md). Same shape as useAdmin,
+   and flips false to true after first paint the same way: onAuthStateChanged
+   fires once for a persisted session, then again on a fresh sign-in. An
+   admin is privileged too, so callers use `canSeePrecise` (admin || feeder)
+   rather than this alone. */
+function useFeeder(): boolean {
+  const [feeder, setFeeder] = useState(false)
+  useEffect(() => {
+    return subscribeAuth((user) => {
+      if (!user) {
+        setFeeder(false)
+        return
+      }
+      isFeeder(user.uid).then(setFeeder)
+    })
+  }, [])
+  return feeder
 }
 
 /* The signed-in visitor's own uid, tracked alongside admin rather than
@@ -272,8 +294,15 @@ export default function App() {
      sheet was still covering them, and the whole point of the reveal is that
      it reveals something arriving. */
   const admin = useAdmin()
+  const feeder = useFeeder()
   const uid = useUid()
   const user = useUser()
+
+  /* Who may see where a cat actually lives (spec
+     2026-09-01-territory-visibility-decoy-design.md). Everyone else is
+     shown each territory relocated to a stable fake BGC point by
+     data/catsRepo.ts. An admin is implicitly trusted here too. */
+  const canSeePrecise = admin || feeder
 
   /* Same reactive-attribute shape ui/ReportSighting.tsx already uses for
      `data-placing`: a body-level attribute is what lets shell.css reserve
@@ -369,18 +398,24 @@ export default function App() {
          (Territories.tsx's own 2026-08-26 note). Only the derived cats and
          territories are built from the surveyed half. */
       setSightings(visible)
-      Promise.all([listCats(publicSightings), listTerritories(publicSightings)]).then(
-        ([loadedCats, loadedTerritories]) => {
-          if (!live) return
-          setCats(loadedCats)
-          setTerritories(loadedTerritories)
-        }
-      )
+      Promise.all([
+        listCats(publicSightings, canSeePrecise),
+        listTerritories(publicSightings, canSeePrecise),
+      ]).then(([loadedCats, loadedTerritories]) => {
+        if (!live) return
+        setCats(loadedCats)
+        setTerritories(loadedTerritories)
+      })
     })
     return () => {
       live = false
     }
-  }, [loadToken, uid])
+    /* canSeePrecise is a dependency for the same reason uid is: it flips
+       from false to true a beat after mount once useFeeder/useAdmin
+       resolve, and a viewer who turns out to be a feeder needs the
+       accurate geometry refetched rather than staying on the decoys they
+       were served first. */
+  }, [loadToken, uid, canSeePrecise])
 
   /* Re-reads both after a cat has been recorded (ui/RecordCat.tsx). A
      counter rather than a callback that sets the data itself: the repo is
@@ -493,6 +528,7 @@ export default function App() {
         territories={territories}
         sightings={sightings}
         uid={uid}
+        canSeePrecise={canSeePrecise}
       >
         <MapInstanceBridge onMap={setMapInstance} />
         {/* Rendered here rather than inside MapCanvas.tsx so the landing
@@ -511,6 +547,7 @@ export default function App() {
           onHover={setHoveredId}
           uid={uid}
           admin={admin}
+          canSeePrecise={canSeePrecise}
         />
         <MapControls onSelect={setSelectedId} />
 
@@ -545,20 +582,32 @@ export default function App() {
         {admin && (
           <div className="admin-controls">
             <RecordCat onRecorded={onRecorded} />
+            {/* The feeder-approval queue. Renders nothing while empty (its
+                own guard), so the shelf stays clear until somebody
+                applies. */}
+            <FeederRequests />
           </div>
         )}
 
         {/* The visitor's one contribution, and as of phase 8 a proposal
             rather than an edit: it lands `pending` and moves nothing until
             an admin approves it. RecordCat above is the admin's
-            counterpart, now that there is somebody to do the reviewing. */}
-        <ReportSighting
-          cats={cats}
-          territories={territories}
-          onReported={onRecorded}
-          onOpenRecord={openRecord}
-          report={report}
-        />
+            counterpart, now that there is somebody to do the reviewing.
+
+            Gated on canSeePrecise (spec 2026-09-01): an unprivileged
+            viewer sees a decoy map, so a point they tap on it is a real
+            coordinate placed against a fake location, unusable data. The
+            plate carries the "get approved as a feeder" line where the
+            "I saw here" button would be. */}
+        {canSeePrecise && (
+          <ReportSighting
+            cats={cats}
+            territories={territories}
+            onReported={onRecorded}
+            onOpenRecord={openRecord}
+            report={report}
+          />
+        )}
       </MapCanvas>
       <Grain />
 
@@ -653,6 +702,7 @@ export default function App() {
           onReport={startReport}
           admin={admin}
           uid={uid}
+          canSeePrecise={canSeePrecise}
           onChanged={onRecorded}
           loadToken={loadToken}
           territories={territories}
@@ -681,6 +731,7 @@ export default function App() {
                 onReport={startReport}
                 admin={admin}
                 uid={uid}
+                canSeePrecise={canSeePrecise}
                 onChanged={onRecorded}
                 loadToken={loadToken}
                 territories={territories}

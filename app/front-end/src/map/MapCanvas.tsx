@@ -146,6 +146,12 @@ type Props = {
       pending sighting on a cat regardless of who filed it, so it has no
       ownership-dependent logic to feed. */
   uid: string | null
+  /** Whether this viewer may see accurate territories (admin or approved
+      feeder). Forwarded to Territories, which drops its habitat pings and
+      pending ghost when false; the shapes themselves are already
+      decoy-placed upstream by data/catsRepo.ts. Defaults true so the
+      landing and styleguide callers (no cats, no tiers) are unchanged. */
+  canSeePrecise?: boolean
   /** Fired once the map has actually painted, for ui/Loading.tsx to hold on.
       Deliberately NOT the same thing as isLoaded: that tracks the `load`
       event, which means the style parsed, and a style can be parsed while
@@ -205,6 +211,7 @@ export function MapCanvas({
   territories,
   sightings,
   uid,
+  canSeePrecise = true,
   selectedId,
   onSelect,
   hoveredId,
@@ -466,6 +473,7 @@ export function MapCanvas({
               territories={territories}
               sightings={sightings}
               uid={uid}
+              canSeePrecise={canSeePrecise}
               selectedId={selectedId}
               onSelect={onSelect}
               hoveredId={hoveredId}
