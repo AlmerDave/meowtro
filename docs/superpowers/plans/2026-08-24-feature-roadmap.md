@@ -294,6 +294,28 @@ embedding. Worth doing only if the survey earns a real corpus first.
 
 Independent of the phases. Any of these can be picked up at any time.
 
+- [x] **Territory visibility tiers** — done 2026-09-01, branch
+      `feature/territory-visibility-security`, spec
+      `specs/2026-09-01-territory-visibility-decoy-design.md`.
+      `canSeePrecise = admin || approved feeder`. `feeders/{uid}` is an
+      admin-written marker mirroring `admins/{uid}`; `feederRequests/{uid}`
+      is the in-app application, approved from a small admin panel
+      (`ui/FeederRequests.tsx`) or declined. An unprivileged viewer (signed
+      out, or signed in and not approved) sees every territory relocated to
+      a stable fake BGC point by `data/decoy.ts` (real shape and size, fake
+      position, frozen: no sighting shift, no habitat pings, no pending
+      ghost, no pending badge), `cat.coordinates` blanked, and a feeder-only
+      lock where the plate's Range line and coordinates row were. Sighting
+      reporting (`ui/ReportSighting.tsx` and the plate's "I saw here") is
+      feeder-gated. **Visual-only by decision:** the real polygon still
+      ships to every browser inside `cats/{id}`, so this degrades the view,
+      not the data. The real boundary (a public fuzzed doc plus a gated
+      `cats/{id}/precise` doc) stays a Phase 10 item, "Enforce spec §9
+      server-side", and the decoy's own `ponytail:` note points at it.
+      **Still to look at with actual eyes:** decoy polygons overlapping each
+      other or sitting on a building, and the FeederRequests panel's
+      top-left placement against the rail.
+
 - [x] **Twelve cats instead of three** — done 2026-08-25. It was called data
       entry and it was mostly right, but four decisions came out of it.
       The palette went from three colours to eight (`--cat-*` in
