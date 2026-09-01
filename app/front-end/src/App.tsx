@@ -664,12 +664,14 @@ export default function App() {
         </div>
       )}
 
-      {/* The signed-out mirror of the user-chip above, same slot: whichever
-          of the two applies, something in this exact spot answers "who am
-          I here". AccountMenu unmounts itself the moment a sign-in
-          succeeds (subscribeAuth flips `user` from null), so there is
-          never a moment both are on screen. */}
-      {!admin && !user && <AccountMenu />}
+      {/* The visitor's account surface: the sign-in prompt while signed
+          out, the "Apply as a feeder" flow once signed in but not yet
+          approved (spec 2026-09-01). Gone for an approved feeder or an
+          admin, who already see accurate territories. A signed-in
+          non-feeder sees this (bottom-left, an action) alongside the
+          user-chip above (top-centre, an identity readout): different
+          jobs, different corners. */}
+      {!admin && !feeder && <AccountMenu user={user} />}
 
       {/* Above everything until the map has actually painted. A sibling of
           the map rather than a wrapper around it, deliberately: the map has

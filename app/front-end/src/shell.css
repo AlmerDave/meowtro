@@ -4666,6 +4666,24 @@ body[data-placing='true'] .maplibregl-canvas {
   color: var(--rust);
 }
 
+/* The "why do you want in" field on the feeder application (spec
+   2026-09-01). Same recipe as .record-input, the app's other multi-line
+   text field. */
+.account-menu-reason {
+  width: 100%;
+  padding: var(--s-2);
+  border: 1px solid var(--rule);
+  border-radius: calc(var(--radius) * 0.4);
+  background: var(--well);
+  font-family: inherit;
+  font-size: var(--t-sm);
+  color: var(--ink);
+  resize: vertical;
+}
+.account-menu-reason::placeholder {
+  color: color-mix(in srgb, var(--ink-soft) 65%, transparent);
+}
+
 /* --- Parked: the corner pill this replaced, 2026-08-26 -------------------
    .admin-controls (map/MapCanvas.tsx) briefly carried a second admin tell,
    a small chip beside the record button. Removed on user direction once
