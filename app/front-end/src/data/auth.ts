@@ -30,10 +30,23 @@ export function subscribeAuth(cb: (user: User | null) => void): () => void {
 
 /** Whether `uid` has an `admins/{uid}` marker doc (firestore.rules'
     `isAdmin()`, mirrored here for the client to decide what to render;
-    the rules are what actually enforce it, this is only ever a read). */
+    the rules are what actually enforce it, this is only ever a read).
+
+    A failed read answers `false` rather than throwing. Every caller is a
+    React effect that does `isAdmin(uid).then(setAdmin)` with no catch, so
+    a denied or offline read used to surface as an unhandled rejection and
+    leave the UI in whatever state it started in anyway. Answering here is
+    the same outcome without the noise, and it is the correct answer to
+    fail to: "we could not confirm you hold the gate" and "you do not hold
+    the gate" must render identically, or a rules outage becomes a
+    privilege escalation. The rules are still the thing that enforces it. */
 export async function isAdmin(uid: string): Promise<boolean> {
-  const snap = await getDoc(doc(db, 'admins', uid))
-  return snap.exists()
+  try {
+    const snap = await getDoc(doc(db, 'admins', uid))
+    return snap.exists()
+  } catch {
+    return false
+  }
 }
 
 /** One-shot read of the signed-in uid, unlike subscribeAuth's ongoing

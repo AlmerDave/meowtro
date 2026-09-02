@@ -582,6 +582,12 @@ export default function App() {
         {admin && (
           <div className="admin-controls">
             <RecordCat onRecorded={onRecorded} />
+            {/* The feeder-approval queue, an ordinary flex child of the
+                shelf beside the record trigger (see .admin-controls' own
+                note on why nothing in here positions itself). It reuses
+                ui/ReviewQueue.tsx's trigger-and-panel styling, whose panel
+                slot is free: phase 9 unmounted that queue. */}
+            <FeederRequests />
           </div>
         )}
 
@@ -641,10 +647,6 @@ export default function App() {
         </div>
       )}
 
-      {/* The feeder-approval queue, its own fixed panel just under the admin
-          banner. Renders nothing at all until somebody applies (its own
-          guard), so it is not competing for a corner the rest of the time. */}
-      {admin && <FeederRequests />}
 
       {/* The gap the admin banner's own comment names: a signed-in
           non-admin had no indicator and no way out. A small top-centre

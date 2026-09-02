@@ -36,17 +36,33 @@ export type FeederRequest = {
     isAdmin: the rules are what enforce access, this is only ever the read
     the client uses to pick what to render. */
 export async function isFeeder(uid: string): Promise<boolean> {
-  const snap = await getDoc(doc(db, 'feeders', uid))
-  return snap.exists()
+  try {
+    const snap = await getDoc(doc(db, 'feeders', uid))
+    return snap.exists()
+  } catch {
+    /* Fails closed, and for the reason data/auth.ts's isAdmin spells out
+       in full: "could not confirm" and "not approved" have to render the
+       same, or an outage in the rules hands somebody the accurate map. */
+    return false
+  }
 }
 
 /** approved if the marker exists, else pending if a request is open, else
     none. The extra read on the "none" path is fine: this runs once when
     the account menu opens, not on every render. */
 export async function myFeederStatus(uid: string): Promise<FeederStatus> {
-  if ((await getDoc(doc(db, 'feeders', uid))).exists()) return 'approved'
-  if ((await getDoc(doc(db, 'feederRequests', uid))).exists()) return 'pending'
-  return 'none'
+  try {
+    if ((await getDoc(doc(db, 'feeders', uid))).exists()) return 'approved'
+    if ((await getDoc(doc(db, 'feederRequests', uid))).exists()) return 'pending'
+    return 'none'
+  } catch {
+    /* 'none' on failure, same fail-closed reasoning as isFeeder above.
+       The one visible consequence is that the apply form is offered to
+       somebody who may already have applied; submitting again overwrites
+       their own feederRequests/{uid} rather than creating a second row
+       (it is keyed by uid), so the worst case is a refreshed timestamp. */
+    return 'none'
+  }
 }
 
 /** A signed-in visitor asking to be approved. Keyed by uid, so a re-apply

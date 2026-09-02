@@ -19,6 +19,7 @@
     "check:notechips": "tsc src/data/noteChips.check.ts --outDir node_modules/.tmp/ncheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck --rootDir src && node node_modules/.tmp/ncheck/data/noteChips.check.js",
     "check:imagesize": "tsc src/ui/imageToDataUrl.check.ts --outDir node_modules/.tmp/icheck --module commonjs --target es2022 --esModuleInterop --skipLibCheck --rootDir src && node node_modules/.tmp/icheck/ui/imageToDataUrl.check.js",
     "test:rules": "firebase emulators:exec --project meowtro-rules-test --only firestore,storage \"node tests/rules.test.mjs\"",
+    "deploy:rules": "firebase deploy --only firestore:rules,storage",
     "seed:firebase": "tsc scripts/migrateSeed.ts --outDir node_modules/.tmp/seed --module commonjs --target es2022 --esModuleInterop --skipLibCheck --resolveJsonModule --rootDir . && node node_modules/.tmp/seed/scripts/migrateSeed.js"
   },
   "dependencies": {

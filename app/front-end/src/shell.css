@@ -517,8 +517,7 @@ body[data-admin='true'] {
 .about,
 .user-chip,
 .account-menu-trigger,
-.account-menu-panel,
-.feeder-requests {
+.account-menu-panel {
   border: var(--panel-border);
   background: var(--surface-glass);
   backdrop-filter: blur(var(--blur-glass)) saturate(1.6);
@@ -622,9 +621,17 @@ body[data-admin='true'] {
 .sight :is(button, input):focus-visible,
 .record :is(button, input, textarea):focus-visible,
 .map-controls button:focus-visible,
+/* Both added 2026-09-02: the account panel grew a textarea and a submit
+   (the feeder application) and the review panel slot is now the feeder
+   queue's approve/decline pills, and neither surface had ever been in this
+   list, so every control inside them was keyboard-reachable with no ring. */
+.account-menu-panel :is(button, textarea):focus-visible,
+.review :is(button, input, textarea):focus-visible,
 .cat-pin:focus-visible,
 .cat-scrim:focus-visible,
 .sight-open:focus-visible,
+.review-trigger:focus-visible,
+.account-menu-trigger:focus-visible,
 .record-open:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1874,66 +1881,51 @@ body[data-admin='true'] {
 }
 
 /* --- Feeder applications, ui/FeederRequests.tsx (spec 2026-09-01) -------
-   Its own fixed panel, top-left just under the admin banner, in the gap
-   between the banner and the rail's top. Only an admin sees it and only
-   when at least one application is open (the component returns null
-   otherwise), so it is not holding this corner the rest of the time.
-   Material comes from the shared .rail/.review list above. */
-.feeder-requests {
-  position: fixed;
-  z-index: 3;
-  left: calc(var(--s-4) + var(--safe-l));
-  top: calc(var(--s-4) + 3rem + var(--safe-t));
-  width: 21rem;
-  max-width: calc(100vw - 2 * var(--s-4));
-  max-height: calc(100dvh - 9rem - var(--safe-t) - var(--safe-b));
-  overflow-y: auto;
-  padding: var(--s-3);
-  border-radius: var(--radius);
-}
-.feeder-requests-eyebrow {
-  margin: 0 0 var(--s-2);
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-.feeder-requests ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
+   Everything structural comes from .review-* above and below: the trigger,
+   the panel, both corners, the mobile sheet, the approve/decline pills.
+   That panel slot is free (phase 9 unmounted ui/ReviewQueue.tsx, see
+   map/MapCanvas.tsx's note), and a list of submissions with a verdict on
+   each row is the same object, so this is reuse rather than a second
+   implementation of it.
+
+   What is genuinely different is one row's content: .review-list li is a
+   space-between ROW (a name beside two buttons), and an application also
+   carries a paragraph of prose that has to sit under both. So the one
+   override is the axis. */
+.feeder-list li {
   flex-direction: column;
+  align-items: stretch;
   gap: var(--s-2);
-}
-.feeder-request {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-1);
-  padding: var(--s-2);
-  border-radius: calc(var(--radius) * 0.7);
-  background: var(--well);
+  /* No cat colour to key off, unlike a sighting row: an application is
+     about a person. --rust is the app's "somebody is asking for something"
+     accent, the same one .review-count already carries. */
+  border-left-color: color-mix(in srgb, var(--rust) 60%, transparent);
 }
 .feeder-request-who {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  font-size: var(--t-sm);
-}
-.feeder-request-who span {
-  font-family: var(--font-mono);
-  font-size: var(--t-xs);
-  color: var(--ink-soft);
+  min-width: 0;
 }
 .feeder-request-reason {
   margin: 0;
   font-size: var(--t-sm);
-  line-height: 1.45;
+  line-height: 1.5;
+  /* Someone else's words, so it reads as a quotation rather than as a
+     field of the record. */
+  padding-left: var(--s-2);
+  border-left: 1px solid var(--rule);
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
 }
 .feeder-request-actions {
   display: flex;
-  gap: var(--s-1);
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+/* Mid-write, both pills stand down rather than only the one pressed: the
+   two verdicts are mutually exclusive and a second click during the first
+   round trip is the way to fire both. */
+.feeder-request-actions button:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* --- Parked with plate/CatFigure.tsx, 2026-08-23 -----------------------
@@ -4516,11 +4508,22 @@ body[data-placing='true'] .maplibregl-canvas {
    unrelated triggers in two unrelated places. The mobile override, a
    different corner entirely, lives further down past .account-menu-panel's
    own base rule -- see that block's own note on why the ordering matters. */
+/* Bottom of the visitor's own column, the slot .sight-open occupies for
+   anyone who can actually report.
+
+   It used to sit one button-height ABOVE that slot, stacked on top of
+   .sight-open, because .sight-open was mounted for everybody and these two
+   shared the column. As of the visibility tiers (spec 2026-09-01) they are
+   mutually exclusive by construction: App.tsx mounts .sight-open only for
+   `canSeePrecise` (admin || feeder) and this only for `!admin && !feeder`,
+   which is its exact complement. Keeping the offset left this trigger
+   hovering a button-height off the bottom of the screen with nothing
+   underneath it, which read as a layout bug rather than as a column. */
 .account-menu-trigger {
   position: fixed;
   z-index: 3;
   left: calc(var(--s-6) + var(--safe-l));
-  bottom: calc(var(--s-6) + 2.25rem + var(--s-2) + var(--safe-b));
+  bottom: calc(var(--s-6) + var(--safe-b));
   display: grid;
   place-items: center;
   width: 2.25rem;
@@ -4551,7 +4554,10 @@ body[data-placing='true'] .maplibregl-canvas {
   z-index: 4;
   left: calc(var(--s-6) + var(--safe-l));
   transform-origin: bottom left;
-  bottom: calc(var(--s-6) + 2.25rem + var(--s-2) + 2.25rem + var(--s-2) + var(--safe-b));
+  /* Clears the trigger by one button plus a gap, from the trigger's new
+     bottom slot above (it used to clear two, back when .sight-open sat
+     under it). */
+  bottom: calc(var(--s-6) + 2.25rem + var(--s-2) + var(--safe-b));
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
@@ -4564,7 +4570,8 @@ body[data-placing='true'] .maplibregl-canvas {
 /* Below the breakpoint, the trigger moves off the bottom-left column above
    and over to top-right instead, the same corner .admin-controls claims
    there when it is mounted (never at once: this only ever mounts for
-   `!admin && !user`, that only for `admin`).
+   `!admin && !feeder`, that only for `admin`, so `!admin` alone already
+   separates them).
 
    THIS BLOCK MUST STAY AFTER THE BASE RULES ABOVE, not merely inside a
    media query: `@media` adds no specificity, so a plain selector and a
