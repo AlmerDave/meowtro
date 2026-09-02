@@ -388,7 +388,19 @@ export function Plate({
      signed-out client is allowed to have at all, a count with no point, no
      photo and no author behind it. Locks the report button the same way
      someoneElsesPending does, and offers signing in in place of the vote
-     prompt a signed-in stranger would see. */
+     prompt a signed-in stranger would see.
+
+     2026-09-02: currently UNREACHABLE, and parked rather than deleted.
+     `canSeePrecise` is `admin || approved feeder` (App.tsx), both of which
+     require a signed-in uid, so `canSeePrecise` implies `uid !== null` and
+     this condition's `!uid` can never hold on a branch that runs after the
+     `!canSeePrecise` lock below. Kept for the same reason ui/ReviewQueue.tsx
+     and plate/CatFigure.tsx are kept (this file's own header has the
+     precedent): relaxing the feeder gate on reporting, which is a UI-only
+     gate by design (spec 2026-09-01 §7), brings this straight back and it
+     should not have to be rewritten from the commit log when it does.
+     Recorded here so nobody spends an afternoon debugging why a correct
+     branch never renders. */
   const signedOutPending = !uid && (cat.pendingCount ?? 0) > 0
 
   /* The photographs on file for this cat. flatMap rather than filter-then-
