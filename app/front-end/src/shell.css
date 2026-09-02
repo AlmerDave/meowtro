@@ -1892,7 +1892,15 @@ body[data-admin='true'] {
    space-between ROW (a name beside two buttons), and an application also
    carries a paragraph of prose that has to sit under both. So the one
    override is the axis. */
-.feeder-list li {
+/* Two class names, not one. `.review-list li` (the rule this overrides)
+   is defined some 3000 lines below this, and a bare `.feeder-list li`
+   ties it on specificity, which source order then settles in the LOWER
+   rule's favour: the override was dead on arrival and the rows rendered
+   as horizontal space-between rows with the reason paragraph squeezed
+   between the name and the buttons. Matching both classes wins on
+   specificity instead, so this no longer depends on where in the file
+   either rule happens to sit. */
+.review-list.feeder-list li {
   flex-direction: column;
   align-items: stretch;
   gap: var(--s-2);

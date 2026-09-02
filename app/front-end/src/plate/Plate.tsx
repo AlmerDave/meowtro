@@ -741,9 +741,16 @@ export function Plate({
             {canSeePrecise ? (
               nearbyPlace && <span className="plate-value">{nearbyPlace}</span>
             ) : (
+              /* Says what IS true rather than only what is withheld: the
+                 shape and the size on this card are the real ones, it is
+                 the position on the map that has been moved. A reader who
+                 is told only "hidden" reasonably assumes the whole diagram
+                 is a placeholder. The way through the gate is one block
+                 down, next to the report button it replaces, rather than
+                 repeated here. */
               <span className="plate-range-locked">
                 <Lock size={12} aria-hidden />
-                Location hidden. Sign in and get approved as a feeder to see the accurate territory.
+                Real size and shape, placed at random. Feeders see where it actually is.
               </span>
             )}
           </div>
@@ -1109,12 +1116,44 @@ export function Plate({
              looking at a decoy map, so a point they tap on it is a real
              coordinate against a fake place. The vote UI is gone for the
              same reason (nothing here is a truthful location to weigh
-             in on). */
+             in on).
+
+             A gate has to carry its own way through it. The first version
+             of this said "sign in and get approved as a feeder" and gave a
+             signed-out reader nothing to press: the only sign-in in the
+             app is ui/AccountMenu.tsx, in a different corner of a
+             different layer, which is a instruction to go and find
+             something rather than an offer. Signed out, this now reuses
+             the same .plate-signin button the pending-report lock a few
+             branches below already uses, and the same signIn handler.
+             Signed in and merely unapproved, there is nothing to press
+             here (applying happens in the account menu, which is on screen
+             for exactly this person), so it says where to go instead. */
           <motion.div className="plate-locked" variants={line}>
             <p className="plate-locked-msg">
               <Lock size={12} aria-hidden />
-              Get approved as a feeder to report sightings and see accurate territories.
+              {uid
+                ? 'Territories are placed at random until the survey approves you as a feeder. Apply from the account menu.'
+                : `Where ${cat.name} actually lives is shown to approved feeders. Sign in to apply.`}
             </p>
+            {!uid && (
+              <>
+                <button
+                  type="button"
+                  className="plate-signin"
+                  disabled={signInBusy}
+                  onClick={() => void signIn()}
+                >
+                  <LogIn size={13} />
+                  {signInBusy ? 'Signing in…' : 'Sign in with Google'}
+                </button>
+                {signInError && (
+                  <p className="plate-signin-error" role="alert">
+                    {signInError}
+                  </p>
+                )}
+              </>
+            )}
           </motion.div>
         ) : someoneElsesPending && oldestPending ? (
           <motion.div className="plate-locked" variants={line}>
