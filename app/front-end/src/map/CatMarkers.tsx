@@ -414,6 +414,14 @@ export function CatMarkers({
      O(n), deterministic; a cat with an unshared range just never makes a
      group of MIN_CLUSTER and so never clusters. */
   const colonies = useMemo<Colony[]>(() => {
+    /* No clustering in the decoy view. catsRepo moves every cat's territory
+       to its OWN decoy point (decoyPoint(cat.id)), so a colony's members are
+       scattered across BGC rather than piled on one block — the exact
+       overlap the chip exists to fold away is gone. Left on, every colony's
+       centre averages out to near BGC centre, so all five chips stack on the
+       same spot and read as duplicates. An unprivileged viewer just gets one
+       plain pin per decoy point. */
+    if (!canSeePrecise) return []
     const groups = new Map<string, Cat[]>()
     for (const cat of cats) {
       if (!centroids.has(cat.id)) continue
@@ -440,7 +448,7 @@ export function CatMarkers({
       })
     }
     return out
-  }, [cats, centroids])
+  }, [cats, centroids, canSeePrecise])
 
   /* cat id -> its colony name, for the per-pin lookups in render. */
   const colonyOf = useMemo(() => {
