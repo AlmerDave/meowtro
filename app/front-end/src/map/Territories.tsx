@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import type { ExpressionSpecification, GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
+import { useEffect, useMemo } from 'react'
+import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from 'maplibre-gl'
 import type { FeatureCollection, Polygon } from 'geojson'
 import { useMap } from './MapCanvas'
 import { centroidsById } from './centroid'
@@ -18,18 +18,21 @@ import type { Cat } from '@/data/catsRepo'
    Hand-authored rather than installed: the shapes are the argument this whole
    project is making, so they do not come out of a registry.
 
-   Three layers over two sources:
+   Two layers over one source:
      fill   the cat's colour
      line   dashed ink boundary
-     glow   selection-only blurred circle on a centroid source — deliberately
-            NOT feature-state, see the GLOW_RADIUS_SELECTED comment below.
 
    fill/line are invisible at rest, 2026-08-17: CatMarkers.tsx's pin/dot is
-   the always-visible "where are the cats" layer, so this circle only needs
+   the always-visible "where are the cats" layer, so the fill only needs
    to exist as a hover/click payoff — it draws in on hover, full-strength on
    selection, and disappears the instant neither is true for that cat.
    Before markers existed this stayed faintly shaded at rest so the map read
    as "cats live here" on its own; that job belongs to the pins now.
+
+   A blurred rust "glow" circle used to sit under the fill on selection.
+   Removed: at the real cat density it read as a smear over the map, not a
+   focus cue. The coloured fill plus the dashed boundary is the whole
+   selection signal now.
 
    fill/line selection is `feature-state`, never a layer rebuild: `selected`/
    `hovered`/`dimmed`/`revealed` booleans per feature (see `byState` below). */
@@ -37,13 +40,6 @@ import type { Cat } from '@/data/catsRepo'
 const SOURCE = 'territories'
 const FILL = 'territory-fill'
 const LINE = 'territory-line'
-/* Its own centroid source, not CatMarkers' 'territory-centroids', even
-   though both hold the same three points: CatMarkers tears its source down
-   and rebuilds it on every flat/3D toggle, and sharing one would put this
-   layer's glow at the mercy of that lifecycle for no gain. Two geojson
-   sources of three points each cost nothing. */
-const GLOW_SOURCE = 'territory-glow-centroids'
-const GLOW = 'territory-glow'
 /* The pending ghost, phase 9. Its own source/pair of layers, see the effect
    below. */
 const GHOST_SOURCE = 'territory-ghost'
@@ -92,27 +88,6 @@ function metresPerPixel(lat: number, zoom: number): number {
     thousands of pixels across, which is a lot of fragment to fill for a
     shape whose visible part is a hairline. */
 const MAX_PING_PX = 520
-
-// Screen-pixel glow radius at the map's min/max zoom (MapCanvas.tsx:
-// minZoom 14.6, maxZoom 17). A flat pixel value would grow smaller than
-// the territory itself as you zoom in (territories are ~139m geographic
-// circles, so they grow ~5.3x across this zoom range while a fixed pixel
-// radius would not) — interpolating keeps the glow's halo proportionate.
-// This is a camera-only expression (depends only on zoom, not on feature
-// state), which matters beyond visuals: MapLibre does not transition
-// data-driven (feature-state-based) paint values, but it does transition
-// camera-only ones, which is what makes the bloom-in animation below work
-// at all.
-const GLOW_RADIUS_SELECTED: ExpressionSpecification = [
-  'interpolate',
-  ['exponential', 2],
-  ['zoom'],
-  14.6,
-  48,
-  17,
-  254,
-]
-const GLOW_OPACITY_SELECTED = 0.55
 
 /* The zoom a selected territory is framed at. Territories are near-regular
    circles of similar size (see the note on centroid.ts), so one number
@@ -235,10 +210,6 @@ export function Territories({
   const focusLat = focus?.[1]
 
   const { map, isLoaded, theme, placing } = useMap()
-  // The glow's filter tracks this instead of selectedId directly, so a
-  // deselect (selectedId -> null) doesn't yank the filter to '' on the same
-  // render as the fade-out starts. See the selection effect below.
-  const lastGlowId = useRef<string | null>(null)
 
   // Layers are added once, on load, and torn down on unmount. StrictMode
   // mounts this twice in dev, so every add is paired with a remove.
@@ -261,35 +232,6 @@ export function Territories({
       data: territories,
       // feature-state needs a real feature id, and ours lives in properties.
       promoteId: 'id',
-    })
-
-    map.addSource(GLOW_SOURCE, {
-      type: 'geojson',
-      data: {
-        type: 'FeatureCollection',
-        features: [...centroids].map(([id, coordinates]) => ({
-          type: 'Feature',
-          properties: { id },
-          geometry: { type: 'Point', coordinates },
-        })),
-      } as FeatureCollection,
-    })
-
-    map.addLayer({
-      id: GLOW,
-      type: 'circle',
-      source: GLOW_SOURCE,
-      // No feature is selected on load, so nothing matches — set for real by
-      // the selection effect below.
-      filter: ['==', ['get', 'id'], ''],
-      paint: {
-        'circle-color': token('--rust'),
-        'circle-radius': 0,
-        'circle-blur': 1,
-        'circle-opacity': 0,
-        'circle-radius-transition': inkIn,
-        'circle-opacity-transition': inkIn,
-      },
     })
 
     map.addLayer({
@@ -335,12 +277,10 @@ export function Territories({
 
     return () => {
       for (const timer of timers) clearTimeout(timer)
-      for (const id of [LINE, FILL, GLOW]) {
+      for (const id of [LINE, FILL]) {
         if (map.getLayer(id)) map.removeLayer(id)
       }
-      for (const source of [SOURCE, GLOW_SOURCE]) {
-        if (map.getSource(source)) map.removeSource(source)
-      }
+      if (map.getSource(SOURCE)) map.removeSource(SOURCE)
     }
   }, [map, isLoaded, cats, territories, centroids])
 
@@ -443,23 +383,6 @@ export function Territories({
         }
       )
     }
-
-    // GLOW is filter + camera-only paint, not feature-state (see the
-    // GLOW_RADIUS_SELECTED comment above) — driven once per selection
-    // change here, not per-cat like the loop above. The filter is pinned to
-    // lastGlowId, not selectedId directly: on deselect, selectedId goes
-    // null on this same render, and filtering on it directly would yank the
-    // filter to '' before the radius/opacity transition below ever gets to
-    // play, clipping the feature away instead of fading it. Only updating
-    // lastGlowId when there IS a selection means the filter keeps pointing
-    // at the last-selected feature through a deselect, so radius/opacity
-    // can animate down to 0 on that same (still-matching) feature.
-    if (selectedId !== null) lastGlowId.current = selectedId
-    if (map.getLayer(GLOW)) {
-      map.setFilter(GLOW, ['==', ['get', 'id'], lastGlowId.current ?? ''])
-      map.setPaintProperty(GLOW, 'circle-radius', selectedId !== null ? GLOW_RADIUS_SELECTED : 0)
-      map.setPaintProperty(GLOW, 'circle-opacity', selectedId !== null ? GLOW_OPACITY_SELECTED : 0)
-    }
   }, [map, isLoaded, cats, selectedId, hoveredId])
 
   /* The map goes to the cat you picked.
@@ -474,9 +397,8 @@ export function Territories({
      easeTo on the centroid, not fitBounds on the polygon. fitBounds solves
      for a flat camera, and this one is pitched 55 degrees whenever the 3D
      toggle is on, so a fitted box frames a tilted territory far too tight.
-     The centroid is already computed here for the glow and shared with the
-     pins, so the cat, its glow and the camera cannot disagree about where
-     it is.
+     The centroid is already computed here and shared with the pins, so the
+     cat and the camera cannot disagree about where it is.
 
      Not in the selection effect above, deliberately: that one also runs on
      hover, and a camera that chases the pointer around the map is a
@@ -502,11 +424,8 @@ export function Territories({
      its own source, its own two layers, its own loop, created when a cat is
      selected and gone when one is not.
 
-     It does not touch the glow, and that is not tidiness. The glow is
-     filter-driven rather than feature-state driven for a specific reason
-     written at the top of this file, and it took a session to get right;
-     the cheapest way not to break it is not to reach into it. If the pings
-     ever misbehave, deleting this effect changes nothing else on the map. */
+     It touches nothing else on the map: if the pings ever misbehave,
+     deleting this effect changes nothing but the pings. */
   useEffect(() => {
     if (!map || !isLoaded || !selectedId) return
     /* Unprivileged viewers see a frozen decoy (data/catsRepo.ts). The
@@ -561,9 +480,8 @@ export function Territories({
     })
 
     const colour = token(cats.find((cat) => cat.id === selectedId)?.colour ?? '--rust')
-    /* Under the fill, over the glow. The glow is the soft mass that says
-       "this one"; the rings are linework over it, and drawing them beneath
-       the fill keeps them from competing with the shape they describe. */
+    /* Under the fill: the rings are linework, and drawing them beneath the
+       fill keeps them from competing with the shape they describe. */
     const before = map.getLayer(FILL) ? FILL : undefined
 
     for (const [id] of PING_PHASES) {
@@ -655,8 +573,6 @@ export function Territories({
       'line-color',
       byState(token('--rust'), token('--ink'), token('--ink'), token('--ink'), token('--ink')) as never
     )
-
-    map.setPaintProperty(GLOW, 'circle-color', token('--rust'))
   }, [map, isLoaded, cats, theme])
 
   /* --- The pending ghost, phase 9 -----------------------------------------
@@ -668,9 +584,8 @@ export function Territories({
      version was, and at any real number of cats with open reports it drew
      a small crowd of overlapping dashed shapes across the whole map, no
      more readable than the badges it was supposed to explain. One at a
-     time, revealed the same way the selection glow above is: click a cat,
-     see its ghost; click elsewhere, it is gone. Two effects for the same
-     reason the glow is two mechanisms rather than one — mount once, then
+     time, revealed the same way the selection is: click a cat, see its
+     ghost; click elsewhere, it is gone. Two effects — mount once, then
      only ever `setData`/`setLayoutProperty` on selection change, the same
      shape map/ReportSighting.tsx's own PREVIEW source already uses for an
      identical one-dashed-polygon-at-a-time job.
