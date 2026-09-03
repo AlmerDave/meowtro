@@ -8,3 +8,10 @@ dist
 *.tsbuildinfo
 *.local
 .DS_Store
+
+# Firebase service-account keys — real credentials, never commit
+*-firebase-adminsdk-*.json
+serviceAccount*.json
+
+# Raw survey export — imported into the seed files by scripts/importUmap.ts
+docs/resources/cat.json
