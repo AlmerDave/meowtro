@@ -347,6 +347,27 @@ body[data-admin='true'] {
   border: none;
   background: none;
   cursor: pointer;
+  /* The marker wrapper is pointer-events:none (map/CatMarkers.tsx) so
+     stacked markers don't trap each other's clicks; the button opts back
+     in as the one real hit target. */
+  pointer-events: auto;
+  /* Fades out when its colony shows as a chip; glides on `transform` to its
+     slot on the fan ring when that colony is spiderfied (map/CatMarkers.tsx).
+     The per-pin transition-delay is set inline for a staggered fade-in. */
+  transition:
+    opacity var(--dur-ui) var(--ease-out),
+    transform var(--dur-ui) var(--ease-out);
+}
+.cat-pin[data-clustered='true'] {
+  opacity: 0;
+  pointer-events: none;
+  /* Exit is faster than enter and never staggered (Emil). */
+  transition-duration: var(--dur-micro);
+  transition-delay: 0ms !important;
+}
+/* Fanned out from the pile: the stake would point at nothing, so drop it. */
+.cat-pin[data-spiderfied='true'] .cat-pin-stake {
+  opacity: 0;
 }
 /* Flat mode has no ground disc (the circle layer is pitched-only), so the
    stake would end in nothing. This is that mode's ground: a small foot, only
@@ -412,7 +433,9 @@ body[data-admin='true'] {
     var(--accent),
     color-mix(in srgb, var(--accent) 15%, transparent)
   );
-  transition: height var(--dur-panel) var(--ease-out);
+  transition:
+    height var(--dur-panel) var(--ease-out),
+    opacity var(--dur-ui) var(--ease-out);
 }
 /* Pitched: taller, so the pin clears the low buildings. Deliberately a fixed
    height rather than something chasing the skyline with zoom, see CatPin. */
@@ -445,6 +468,142 @@ body[data-admin='true'] {
   box-shadow:
     0 2px 10px color-mix(in srgb, var(--ink) 40%, transparent),
     0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* --- Colony chip, map/CatMarkers.tsx ---------------------------------
+   One marker standing in for a whole colony whose pins the map can never
+   spread far enough apart to pick individually (z17 ceiling, ~60m colony).
+   An ink-ringed paper disc with a count and a drawn pair of ears, so it
+   reads as "cats here", not as a generic cluster dot. Neutral, never a
+   cat's colour: it is a group, not an animal.
+
+   Mounted the whole time, shown/hidden by data-open, so a fast interaction
+   scrubs the transition instead of thrashing a portal. The body scales and
+   blurs on its way out: the blur bridges the moment chip and fanned pins
+   are both partly visible so the eye reads one change, not two objects
+   swapping (Emil). */
+.cat-chip {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  /* Opt back in — the marker wrapper around it is pointer-events:none. */
+  pointer-events: auto;
+  transition: opacity var(--dur-ui) var(--ease-out);
+}
+.cat-chip[data-open='true'] {
+  opacity: 0;
+  pointer-events: none;
+  transition-duration: var(--dur-micro);
+}
+/* The part that moves. Kept off the <button> so its hit-box never shifts
+   under a resting cursor (same rule as .cat-pin-head). */
+.cat-chip-body {
+  position: relative;
+  display: grid;
+  place-items: center;
+  transition:
+    transform var(--dur-ui) var(--ease-out),
+    filter var(--dur-ui) var(--ease-out);
+}
+.cat-chip[data-open='true'] .cat-chip-body {
+  transform: scale(0.9);
+  filter: blur(3px);
+}
+.cat-chip:active .cat-chip-body {
+  transform: scale(0.97);
+}
+@media (hover: hover) and (pointer: fine) {
+  .cat-chip:hover .cat-chip-body {
+    transform: scale(1.04);
+  }
+}
+.cat-chip-disc {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: 1.5px solid var(--ink);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--ink) 35%, transparent);
+}
+/* Two ears behind the disc: the disc's opaque paper face covers their
+   bases, so only the pointed tops show. */
+.cat-chip-ears {
+  position: absolute;
+  z-index: 0;
+  bottom: calc(100% - 0.5rem);
+  width: 2rem;
+  height: auto;
+  fill: var(--paper);
+  stroke: var(--ink);
+  stroke-linejoin: round;
+  overflow: visible;
+}
+.cat-chip-ears path {
+  vector-effect: non-scaling-stroke;
+  stroke-width: 1.5;
+}
+.cat-chip-count {
+  font-family: var(--font-mono);
+  font-size: var(--t-sm);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.03em;
+  color: var(--ink);
+}
+/* What the chip is, on hover or keyboard focus. Not shown at rest — five
+   standing callouts is a legend, not a map. Scales up from the chip
+   (transform-origin bottom), a tooltip's job (Emil). */
+.cat-chip-tip {
+  position: absolute;
+  bottom: calc(100% + 0.5rem);
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 0.32rem 0.5rem;
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  background: var(--paper);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ink) 30%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.5625rem;
+  letter-spacing: 0.06em;
+  line-height: 1.4;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 4px) scale(0.96);
+  transform-origin: bottom center;
+  transition:
+    opacity var(--dur-press) var(--ease-out),
+    transform var(--dur-press) var(--ease-out);
+}
+.cat-chip-tip-name {
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+@media (hover: hover) and (pointer: fine) {
+  .cat-chip:hover .cat-chip-tip {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+.cat-chip:focus-visible .cat-chip-tip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
 }
 
 /* --- The pending badge, map/CatMarkers.tsx, phase 9, admin-only --------
@@ -634,6 +793,12 @@ body[data-admin='true'] {
 .account-menu-trigger:focus-visible,
 .record-open:focus-visible {
   outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The chip carries no --accent (it is a group, not a cat), so it takes the
+   no-blue fallback rust like the other unaccented controls. */
+.cat-chip:focus-visible {
+  outline: 2px solid var(--rust);
   outline-offset: 2px;
 }
 

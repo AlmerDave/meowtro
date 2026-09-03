@@ -46,6 +46,28 @@ const CIRCLE = 'territory-dot'
 const token = (name: string) =>
   getComputedStyle(document.documentElement).getPropertyValue(name).trim()
 
+/* A marker wrapper that is invisible to the pointer. maplibregl.Marker
+   appends every marker element as a sibling in one container, in creation
+   order, so a chip created before its colony's pins ends up UNDER ~12 pin
+   wrappers — and a wrapper div is `pointer-events: auto` even when the
+   `.cat-pin` button inside it is `none`, so those dead wrappers were
+   eating every click aimed at the chip (grab cursor, drag, no click).
+
+   Setting the wrapper to `pointer-events: none` and the buttons back to
+   `auto` (shell.css) means only a real button is ever a hit target;
+   stacked wrappers pass the event straight through to whatever is behind.
+   Listeners still fire on the way through (a `none` ancestor still sees a
+   bubbling event from an `auto` descendant), so the stopPropagation below
+   keeps a marker press from also starting a map drag. */
+function makeMarkerEl(): HTMLDivElement {
+  const el = document.createElement('div')
+  el.style.pointerEvents = 'none'
+  for (const type of ['pointerdown', 'mousedown', 'touchstart', 'click']) {
+    el.addEventListener(type, (e) => e.stopPropagation())
+  }
+  return el
+}
+
 /** selected / hovered / dimmed / resting. No hidden/pre-reveal state like
     Territories' byState — markers are the always-visible wayfinding layer
     the design settled on, not the ambient-by-default territory shapes. */
@@ -59,6 +81,82 @@ const byState = <T,>(selected: T, hovered: T, dimmed: T, resting: T) => [
   dimmed,
   resting,
 ]
+
+/* Colonies below this many cats never become a chip — a "2" bubble is
+   sillier than two overlapping pins. The five real colonies (Le Grand
+   Colony, Steel Parking, Asiatown, Jusmag, McDonald's) all clear it.
+
+   There is no zoom threshold: the map tops out at z17 (MapCanvas), where
+   even the loosest of these colonies is ~80px across and the tightest is
+   ~50px, so no amount of zooming un-piles a dozen 34px pins. A colony is
+   ALWAYS a chip unless it is spiderfied (chip tapped) or holds the current
+   selection. */
+const MIN_CLUSTER = 3
+
+/* Ring radius for a spiderfied colony of N pins: enough arc per pin that
+   34px discs do not touch. Floored so a colony of 3 still reads as a fan
+   and not a huddle. */
+const fanRadius = (n: number) => Math.max(52, n * 8.5)
+
+type Colony = {
+  name: string
+  members: Cat[]
+  center: [number, number]
+  ids: Set<string>
+}
+
+/* The stand-in for a whole colony: an ink-ringed paper disc with a count
+   and a pair of drawn ears, so it reads as "cats here" at a glance rather
+   than as a generic cluster bubble. Neutral, never a cat's colour — it is
+   a group, not an animal, and five differently-tinted bubbles would be
+   noise. A hover/focus tooltip spells out what it is. The button box never
+   transforms (same rule as CatPin); the body inside it does. */
+function ColonyChip({
+  colony,
+  open,
+  onOpen,
+}: {
+  colony: Colony
+  open: boolean
+  onOpen: () => void
+}) {
+  const n = colony.members.length
+  return (
+    <button
+      type="button"
+      className="cat-chip"
+      data-open={String(open)}
+      onClick={onOpen}
+      tabIndex={open ? -1 : undefined}
+      aria-label={`${colony.name}, ${n} cats sharing one spot. Activate to fan them out.`}
+      /* Directly on the button, not just the marker wrapper: MapLibre's
+         DragPan listens for mousedown/touchstart on the canvas container,
+         and its Marker only preventDefault()s — it never stops the bubble.
+         Without these a press that drifts a pixel pans the map and the
+         click is lost, so the chip reads as a dead spot you can only drag
+         from. */
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      {/* Reinforcement for sighted users; the button's aria-label already
+          carries the same words for everyone else. */}
+      <span className="cat-chip-tip" aria-hidden>
+        <span className="cat-chip-tip-name">{colony.name}</span>
+        {n} cats share this spot
+      </span>
+      <span className="cat-chip-body">
+        <svg className="cat-chip-ears" viewBox="0 0 44 22" aria-hidden>
+          <path d="M5 21 L12 3 L23 18 Z" />
+          <path d="M39 21 L32 3 L21 18 Z" />
+        </svg>
+        <span className="cat-chip-disc">
+          <span className="cat-chip-count">{n}</span>
+        </span>
+      </span>
+    </button>
+  )
+}
 
 type Props = {
   cats: Cat[]
@@ -108,6 +206,16 @@ type PinProps = {
   active: boolean
   /** Pitched mode: the stake grows so the pin clears low buildings. */
   lifted: boolean
+  /** Its colony is showing as a chip right now — fade out, ignore clicks.
+      See CatMarkers' `rawColony`. */
+  clustered: boolean
+  /** Pixel translate from this pin's true point to its slot on the fan
+      ring, while its colony is spiderfied. undefined = sit on the true
+      point. */
+  offset?: [number, number]
+  /** Fade-in delay in ms, so a fanned colony's pins cascade rather than
+      all snap in at once. Zero on the way out (the CSS drops it). */
+  staggerMs: number
   /** This cat has at least one sighting waiting on a verdict. */
   pending: boolean
   /** Only changes the pending label below: an admin can act on a report
@@ -171,7 +279,7 @@ type PinProps = {
    target this small that made mouseup land on the bare map instead, so the
    native click fired on an ancestor and onClick never ran. The button box
    never moves. Only what is inside it does. */
-function CatPin({ cat, active, lifted, pending, admin, onClick, onMouseEnter, onMouseLeave }: PinProps) {
+function CatPin({ cat, active, lifted, clustered, offset, staggerMs, pending, admin, onClick, onMouseEnter, onMouseLeave }: PinProps) {
   /* null while the photo is still in flight, so the glyph is not flashed up
      and then replaced a moment later on every marker at once. */
   const [hasPhoto, setHasPhoto] = useState<boolean | null>(null)
@@ -200,10 +308,25 @@ function CatPin({ cat, active, lifted, pending, admin, onClick, onMouseEnter, on
       className="cat-pin"
       data-active={String(active)}
       data-lifted={String(lifted)}
+      data-clustered={String(clustered)}
+      data-spiderfied={String(!!offset)}
       data-pending={String(pending)}
+      /* Hidden behind a chip: out of the tab order too, the chip speaks for
+         it. */
+      tabIndex={clustered ? -1 : undefined}
       /* The cat's own territory token themes the whole marker, straight out
-         of the data, exactly as the rail row and the plate do. */
-      style={{ '--accent': `var(${cat.colour})` } as React.CSSProperties}
+         of the data, exactly as the rail row and the plate do. `transform`
+         is the fan offset — the one case the button box itself moves, and
+         only for the ~200ms glide out to the ring, never under a resting
+         cursor (see the note below on why the head, not the box, normally
+         carries motion). */
+      style={
+        {
+          '--accent': `var(${cat.colour})`,
+          transitionDelay: `${staggerMs}ms`,
+          transform: offset ? `translate(${offset[0]}px, ${offset[1]}px)` : undefined,
+        } as React.CSSProperties
+      }
       aria-label={
         pending
           ? admin
@@ -277,6 +400,131 @@ export function CatMarkers({
 
   const { map, isLoaded, isFlat, theme } = useMap()
   const [domMarkers, setDomMarkers] = useState<DomMarker[]>([])
+  const [chipMarkers, setChipMarkers] = useState<{ colony: Colony; el: HTMLDivElement }[]>([])
+  /* The one colony currently fanned out, and the per-cat pixel offset from
+     its true (piled) point to its slot on the ring. Computed once when the
+     chip is tapped; the fan closes on any user-driven map move, so the
+     offsets never go stale. null = nothing fanned. */
+  const [spider, setSpider] = useState<{ name: string; offsets: Map<string, [number, number]> } | null>(
+    null
+  )
+
+  /* Cats grouped by their colony (the `range` string is the colony name,
+     since importUmap.ts built one territory cluster per surveyed spot).
+     O(n), deterministic; a cat with an unshared range just never makes a
+     group of MIN_CLUSTER and so never clusters. */
+  const colonies = useMemo<Colony[]>(() => {
+    const groups = new Map<string, Cat[]>()
+    for (const cat of cats) {
+      if (!centroids.has(cat.id)) continue
+      const key = cat.range || cat.id
+      const list = groups.get(key)
+      if (list) list.push(cat)
+      else groups.set(key, [cat])
+    }
+    const out: Colony[] = []
+    for (const [name, members] of groups) {
+      if (members.length < MIN_CLUSTER) continue
+      let sx = 0
+      let sy = 0
+      for (const m of members) {
+        const c = centroids.get(m.id) as [number, number]
+        sx += c[0]
+        sy += c[1]
+      }
+      out.push({
+        name,
+        members,
+        center: [sx / members.length, sy / members.length],
+        ids: new Set(members.map((m) => m.id)),
+      })
+    }
+    return out
+  }, [cats, centroids])
+
+  /* cat id -> its colony name, for the per-pin lookups in render. */
+  const colonyOf = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const colony of colonies) for (const id of colony.ids) m.set(id, colony.name)
+    return m
+  }, [colonies])
+
+  /* The one colony, if any, allowed to show its pins rather than a chip:
+     the fanned one, or the one holding the selection (a pin picked from
+     the rail must not stay hidden in a bubble). */
+  const rawColony =
+    spider?.name ??
+    colonies.find((c) => selectedId != null && c.ids.has(selectedId))?.name ??
+    null
+
+  /* Pins that are hidden behind a chip right now (everything in a colony
+     that is not the raw one). Drives both the fade-out and the ground-dot
+     filter. */
+  const clusteredIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const colony of colonies) {
+      if (colony.name === rawColony) continue
+      for (const id of colony.ids) s.add(id)
+    }
+    return s
+  }, [colonies, rawColony])
+
+  /* Ground dots to hide: the chipped colonies, plus the fanned one (its
+     pins are off at ring positions, so a dot left at the pile reads as a
+     stray). A selected-but-not-fanned colony keeps its dots — they help
+     place the overlapping pins. */
+  const hiddenDotIds = useMemo(() => {
+    if (!spider) return clusteredIds
+    const s = new Set(clusteredIds)
+    const fanned = colonies.find((c) => c.name === spider.name)
+    if (fanned) for (const id of fanned.ids) s.add(id)
+    return s
+  }, [clusteredIds, spider, colonies])
+
+  /* Per-pin fade-in delay, so a fanned colony's pins cascade around the
+     ring rather than all snapping in. A third of --ink-stagger each (so it
+     is 0 under reduced motion, for free), capped so a 12-cat colony still
+     finishes its cascade in under ~200ms. */
+  const stagger = useMemo(() => {
+    const raw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--ink-stagger'))
+    const step = (Number.isFinite(raw) ? raw : 60) / 3
+    const m = new Map<string, number>()
+    for (const colony of colonies) {
+      colony.members.forEach((cat, i) => m.set(cat.id, Math.min(i, 10) * step))
+    }
+    return m
+  }, [colonies])
+
+  /* Tap a chip: ease the camera in on the colony, then — once it has
+     settled — fan its pins into a ring around the centroid so all of them
+     are individually clickable (a 60m colony still overlaps at z17, so the
+     zoom alone can't separate them; the ring finishes the job). Offsets
+     are pin-true-point -> ring-slot in pixels, measured at the FINAL
+     camera and applied as a CSS translate the pins glide into.
+
+     The fan is set on `moveend`, not now, so it isn't torn straight back
+     down by this very ease (the close-on-move effect only listens while a
+     fan is open). */
+  const openColony = (colony: Colony) => {
+    if (!map) return
+    map.easeTo({
+      center: colony.center,
+      zoom: Math.min(17, map.getZoom() + 2.5),
+      duration: 600,
+    })
+    map.once('moveend', () => {
+      const anchor = map.project(colony.center)
+      const n = colony.members.length
+      const r = fanRadius(n)
+      const offsets = new Map<string, [number, number]>()
+      colony.members.forEach((cat, i) => {
+        const angle = -Math.PI / 2 + (i * 2 * Math.PI) / n
+        const p = map.project(centroids.get(cat.id) as [number, number])
+        offsets.set(cat.id, [anchor.x + Math.cos(angle) * r - p.x, anchor.y + Math.sin(angle) * r - p.y])
+      })
+      setSpider({ name: colony.name, offsets })
+    })
+  }
 
   /* Read plainly at render time, not in an effect: it is a cheap pass over
      an already-fetched array (the `sightings` prop, App.tsx's own
@@ -372,6 +620,48 @@ export function CatMarkers({
     }
   }, [map, isLoaded, cats, selectedId, hoveredId, isFlat, theme])
 
+  /* Close the fan on any map move (offsets are a one-time screen-space
+     snapshot, so they go wrong the moment the camera changes) and on a
+     click that reaches the bare map — pin and chip both stopPropagation,
+     so `click` here only fires on background. */
+  useEffect(() => {
+    if (!map || !isLoaded || !spider) return
+    const close = () => setSpider(null)
+    map.on('movestart', close)
+    map.on('click', close)
+    return () => {
+      map.off('movestart', close)
+      map.off('click', close)
+    }
+  }, [map, isLoaded, spider])
+
+  /* A selection anywhere retires an explicit fan: the selected cat's colony
+     then shows its pins raw (overlapping, the picked one lifted), which is
+     the right read once you've drilled into one. Also drop it if the
+     colony set itself changes under us (a data refetch). */
+  useEffect(() => {
+    if (selectedId) setSpider(null)
+  }, [selectedId])
+  useEffect(() => {
+    setSpider(null)
+  }, [colonies])
+
+  /* Keep the pitched ground-dot layer in step with the chips: a chipped
+     colony gets one chip, not a dozen dots under it, and a fanned colony's
+     dots are pulled too (its pins are away at the ring). `null` clears the
+     filter. isFlat/theme are in the deps because the circle effect above
+     rebuilds the layer from scratch on those, and a fresh layer has no
+     filter — this re-applies it after. */
+  useEffect(() => {
+    if (!map || !isLoaded || !map.getLayer(CIRCLE)) return
+    map.setFilter(
+      CIRCLE,
+      hiddenDotIds.size === 0
+        ? null
+        : ['!', ['in', ['get', 'id'], ['literal', [...hiddenDotIds]]]]
+    )
+  }, [map, isLoaded, hiddenDotIds, isFlat, theme])
+
   /* The DOM pins, in both modes. Note the deps: isFlat is deliberately NOT
      among them, because the toggle no longer changes which marker exists,
      only how tall its stake is, and that is a prop CatPin reads. Rebuilding
@@ -386,16 +676,12 @@ export function CatMarkers({
     const instances = cats
       .filter((cat) => centroids.has(cat.id))
       .map((cat) => {
-        const el = document.createElement('div')
-        // maplibregl.Marker appends el into map.getCanvasContainer() — the
-        // same element MapLibre's own click handling listens on — so a pin
-        // click bubbles into MapLibre's pipeline too, re-firing Territories'
-        // FILL click handlers (including the bare-paper-clears-selection
-        // one) right after this pin's own onClick already set selection.
-        // Stopped here, before it reaches that container, not in the pin's
-        // onClick, since MapLibre's listener sits closer to the target and
-        // fires first.
-        el.addEventListener('click', (e) => e.stopPropagation())
+        // makeMarkerEl stops pointerdown/mousedown/touchstart/click from
+        // reaching the map: no press-drift pan (the marker stayed dead if
+        // you moved a pixel between down and up), and no click bubbling
+        // into Territories' FILL handlers to re-toggle the selection this
+        // pin's own onClick just set.
+        const el = makeMarkerEl()
         const marker = new Marker({ element: el, anchor: 'bottom' })
           .setLngLat(centroids.get(cat.id) as [number, number])
           .addTo(map)
@@ -409,6 +695,29 @@ export function CatMarkers({
       setDomMarkers([])
     }
   }, [map, isLoaded, cats, centroids])
+
+  /* Colony chips, created AFTER the pins above so their marker elements are
+     the last siblings in MapLibre's one shared marker container — i.e. on
+     top. A chip must never sit under a stack of its own colony's (hidden)
+     pin wrappers, which is what made "click the 12" land on dead air and
+     drag the map instead. Belt to the pointer-events:none suspenders in
+     makeMarkerEl. */
+  useEffect(() => {
+    if (!map || !isLoaded || colonies.length === 0) return
+
+    const instances = colonies.map((colony) => {
+      const el = makeMarkerEl()
+      const marker = new Marker({ element: el, anchor: 'bottom' }).setLngLat(colony.center).addTo(map)
+      return { colony, el, marker }
+    })
+
+    setChipMarkers(instances.map(({ colony, el }) => ({ colony, el })))
+
+    return () => {
+      for (const { marker } of instances) marker.remove()
+      setChipMarkers([])
+    }
+  }, [map, isLoaded, colonies])
 
   /* No swap any more. The pin is the marker in both modes, and the flat/3D
      toggle only changes how tall its stake is, which CatPin reads from its
@@ -427,6 +736,9 @@ export function CatMarkers({
             cat={cat}
             active={cat.id === selectedId || cat.id === hoveredId}
             lifted={!isFlat}
+            clustered={clusteredIds.has(cat.id)}
+            offset={spider && colonyOf.get(cat.id) === spider.name ? spider.offsets.get(cat.id) : undefined}
+            staggerMs={stagger.get(cat.id) ?? 0}
             pending={pending?.has(cat.id) ?? false}
             admin={admin}
             onClick={() => onSelect(cat.id === selectedId ? null : cat.id)}
@@ -435,6 +747,18 @@ export function CatMarkers({
           />,
           el,
           cat.id
+        )
+      )}
+      {chipMarkers.map(({ colony, el }) =>
+        createPortal(
+          <ColonyChip
+            key={colony.name}
+            colony={colony}
+            open={colony.name === rawColony}
+            onOpen={() => openColony(colony)}
+          />,
+          el,
+          colony.name
         )
       )}
     </>
